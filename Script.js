@@ -577,7 +577,7 @@ function main(config) {
             EXCLUDED_NAMES.has(_sanitizedProxy.toUpperCase()) ||
             EXCLUDED_CN_RE.test(_sanitizedProxy)) {
             console.error(`❌ 代理组排除断言触发：proxyGroupName 解析为排除出口 [${proxyGroupName}]`);
-            console.error(`   入规则出口语义异常，allow/proxy 层将失效，脚本中止注入以保护安全边界`);
+            console.error(`   注入规则出口语义异常，allow/proxy 层将失效，脚本中止注入以保护安全边界`);
             return config;
         }
     }
