@@ -370,7 +370,7 @@ function main(config) {
         return name.replace(_SANITIZE_RE, '').trim();
     }
 
-    // _isFallbackGroupCore：isFallbackGroup 的内部核心逻辑，接受已清洗字符串，跳过二次 sanitizeName。
+    // _isFallbackGroupCore：isFallbackGroup 的内部核心逻辑，接受已清洗字符串，避免重复 sanitizeName。
     // 命名说明：Core 表示"不含清洗步骤的核心判断"，区别于公开接口 isFallbackGroup（内部含 sanitizeName 清洗步骤）。
     // 仅供内部调用（isEligibleGroup 内部、优选策略回调中 cleanName 已清洗的场景）。
     // 设计原因：isEligibleGroup 已对 name 清洗得到 trimmed，再传入 isFallbackGroup 时，
@@ -383,7 +383,7 @@ function main(config) {
         return FALLBACK_CN_RE.test(trimmed);
     }
 
-    // _isEligibleGroupCore：isEligibleGroup 的内部核心逻辑，接受已清洗字符串，跳过二次 sanitizeName。
+    // _isEligibleGroupCore：isEligibleGroup 的内部核心逻辑，接受已清洗字符串，避免重复 sanitizeName。
     // 命名说明：Core 表示"不含清洗步骤的核心判断"，区别于公开接口 isEligibleGroup（内部含 sanitizeName 清洗步骤）。
     // 仅供内部调用（优选策略回调中 cleanName 已清洗的场景）。
     // 设计原因：与 _isFallbackGroupCore 对称——两者均接受已清洗字符串，避免在回调内部
@@ -1696,7 +1696,7 @@ function main(config) {
 
     if (ENABLE_HOSTS_TRICK) {
         // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
-        console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 正确开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」");
+        console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」");
         // console.warn("❗ 前提1：CVR › DNS 覆写 → 必须开启「启用 DNS」（关闭则 dns 块整体失效）");
         // console.warn("❗ 前提2：CVR › DNS 覆写 → 必须开启「使用 Hosts」");
         // console.warn("❗ 脚本注入的 use-hosts:true 会被 CVR UI 层覆盖，必须手动开启，脚本无法替代手动操作");
