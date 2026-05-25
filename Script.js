@@ -1322,7 +1322,7 @@ function main(config) {
         // "PROCESS-NAME,Wps.exe,REJECT",                    // ⚠️ 慎用：WPS 主进程，拦截后全部联网功能失效（包括文档云同步）
     ];
     const processProxyRules = [ // 进程代理（当前为空占位，示例见下方）
-        // 示例：修改进程名后取消注释即可——策略组名由脚本自动填入（proxyGroupName），依赖前提：proxyGroupName  已通过代理组排除断言、Token 断言与存在性断言，此处取值为合法代理出口组名
+        // 示例：修改进程名后取消注释即可——策略组名由脚本自动填入（proxyGroupName），依赖前提：proxyGroupName 已通过代理组排除断言、Token 断言与存在性断言，此处取值为合法代理出口组名
         // `PROCESS-NAME,Telegram.exe,${proxyGroupName}`,
         // `PROCESS-NAME,Slack.exe,${proxyGroupName}`,
     ];
