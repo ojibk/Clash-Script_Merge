@@ -1381,6 +1381,7 @@ function main(config) {
         "DOMAIN-SUFFIX,423down.com,DIRECT",       // 知名绿色软件站
         "DOMAIN-SUFFIX,ghxi.com,DIRECT",          // 果核剥壳（绿色软件站）
         "DOMAIN-SUFFIX,mpyit.com,DIRECT",         // 殁漂遥软件分享站
+        "DOMAIN-SUFFIX,apphot.cc,DIRECT",         // App热（原心海e站）
         "DOMAIN-SUFFIX,25xianbao.com,DIRECT",     // 卡圈线报
         "DOMAIN-SUFFIX,dir28.com,DIRECT",         // 羊毛活动
         // "DOMAIN-KEYWORD,amazon,DIRECT",           // 亚马逊直连（⚠️ 覆盖所有含 amazon 的域名，含 AWS；若 AWS 服务需代理，改用精确 DOMAIN-SUFFIX 规则或外部规则集合）
