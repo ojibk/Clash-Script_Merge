@@ -1,5 +1,5 @@
 /**
- *   Clash-Script 扩展脚本 · 幂等规则注入与 Firefly 精确豁免 v260526
+ *   Clash-Script 扩展脚本 · 幂等规则注入与 Firefly 精确豁免 v260527
  * 
  * ══════════════════════════ ░░ 脚本自述 ░░ ══════════════════════════
  *
@@ -642,7 +642,7 @@ function main(config) {
     //   取舍依据：非官方激活环境中，补丁通过阻断 AdobeGCClient.exe 的出站网络连接来绕过激活验证，
     //   其余进程的心跳即便放行也不会触发重新验证。进程规则本身需管理员+TUN，不可靠。
     //
-    // ⚠️【QUIC（RFC 9000；基于 UDP 的安全传输协议，强制集成 TLS 1.3）豁免机制】Firefly 相关 .adobe.io 域名在 adobeUdpBlock 之前注入（first-match），
+    // ⚠️【QUIC（RFC 9000；基于 UDP 的安全传输协议，内嵌 TLS 1.3）豁免机制】Firefly 相关 .adobe.io 域名在 adobeUdpBlock 之前注入（first-match），
     //   其 UDP 流量先命中 allow 层走代理，adobeUdpBlock 的 adobe.io 通配不再执行。
     //   → 豁免效果由注入顺序自动保证（allow 层先于 adobeUdpBlock 入 pool，先命中即生效），无需额外处理。
     //   ⚠️ 前提：此豁免仅在 Mihomo 能识别 SNI 或存在 Fake-IP 映射时成立。
@@ -741,7 +741,7 @@ function main(config) {
         `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE_STR},REJECT`,
     ];
 
-    // QUIC（RFC 9000；基于 UDP 的安全传输协议，强制集成 TLS 1.3）/ UDP 拦截：强制 Adobe 回退至 HTTPS (TCP)，再被上方域名规则捕获。
+    // QUIC（RFC 9000；基于 UDP 的安全传输协议，内嵌 TLS 1.3）/ UDP 拦截：强制 Adobe 回退至 HTTPS (TCP)，再被上方域名规则捕获。
     // ❗ 生效前提：仅 TUN 模式。UDP 拦截规则在系统代理模式下完全无效。
     // ⚠️ DOMAIN-SUFFIX / DOMAIN-REGEX / DOMAIN-KEYWORD 类规则依赖 Mihomo 能获取域名信息：
     //    Mihomo 通过 DNS 解析映射（已走 Mihomo DNS 的流量）或 Sniffer（嗅探 QUIC 握手 SNI）
@@ -771,7 +771,7 @@ function main(config) {
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",          // 阻断 adobe.com 所有 UDP 流量（含 QUIC/443）
         `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE_STR})),REJECT`,
         // 阻断随机子域 QUIC（遥测特征，8-12位，引用 _ADOBE_RAND_RE_STR 统一引用源）
-        // ⚠️ 转义链路：JS 字符串 "\\." → 字符串值 "\." → Mihomo 正则接收 \. → 匹配字面点，转义正确。
+        // ⚠️ 转义链路：JS 字符串 "\\\." → 字符串值 "\." → Mihomo 正则接收 \. → 匹配字面点，转义正确。
         //    AND 规则内嵌 DOMAIN-REGEX 的括号解析基于 Mihomo v1.15+ 实测；旧版可能静默忽略整条 AND 规则，
         //    此时 adobeUdpBlock 其余精确条目（DOMAIN-SUFFIX）仍有效，此条失效不影响整体覆盖。
         "AND,((NETWORK,UDP),(DST-PORT,443),(DOMAIN-KEYWORD,adobe)),REJECT", // 兜底：UDP + 443端口 + adobe 关键词，覆盖未列举子域
@@ -1789,7 +1789,8 @@ function main(config) {
             //    连接能否被拦截仍取决于 rules 层（backdoorSuffix REJECT-DROP）；
             //    硬编码 IP 路径（应用绕过 DNS）下 DOMAIN 类规则全部失效，需依赖 PROCESS-NAME / IP-CIDR。
             //    hosts 命中时请求直接返回拦截地址，根本不走到 Fake-IP 分配阶段，
-            //    此处追加是 hosts 未生效时（用户未开启「使用 Hosts」）的辅助防护措施。
+            //    此处追加的意义是：防止 Fake-IP 分配导致 198.18.x.x 虚拟 IP 被注入规则，使 IP 类规则误命中；
+            //     hosts 未生效时此追加对拦截无任何贡献（DOMAIN 规则仍可正常命中），真正的兜底是 rules 层中的 REJECT-DROP 规则。
             //
             // [优化] 仅追加新条目，不对全量 fake-ip-filter 排序，保留订阅原有顺序。
             //        全量重排会触发 Mihomo DNS hash 重建，可能导致连接瞬断，故仅追加。
@@ -1979,11 +1980,9 @@ function main(config) {
  *   ──────────────────────────────────────────────────────────────
  *
  *   ── isFireflyActive 派生开关（Derived State，单向只读投影）──
- *     isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK
- *     本质是派生状态（Derived State）：无独立存储，是两个上游开关逻辑与运算的投影，
- *     无法反向影响 ENABLE_FIREFLY 或 ENABLE_BLOCK。
- *     所有 Firefly 逻辑均使用此变量，防止"看起来开了但没生效"的状态误读
- *     （ENABLE_FIREFLY=true + ENABLE_BLOCK=false 时自动降级为 false）。
+ *     isFireflyActive 是 ENABLE_FIREFLY && ENABLE_BLOCK 的派生值，无独立存储，是两个上游开关逻辑与运算的投影，
+ *     无法独立修改，即无法反向影响 ENABLE_FIREFLY 或 ENABLE_BLOCK。
+ *     所有 Firefly 逻辑均使用此变量，防止"看起来开了但没生效"的状态误读（ENABLE_FIREFLY=true + ENABLE_BLOCK=false 时自动降级为 false）。
  *   ──────────────────────────────────────────────────────────────
  *
  * ══════════════════════════ ░░ 维护规范 ░░ ══════════════════════════
