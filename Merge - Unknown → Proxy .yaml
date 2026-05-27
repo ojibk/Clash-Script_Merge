@@ -207,24 +207,25 @@ rule-providers:
     lazy: true        # ⚙️ 懒加载：威胁阻断集可容忍首次命中短时延迟。MRS 格式加载开销极小，首次阻塞时间可忽略不计。
     interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设定较短缓存周期以跟进更新。
 
-  block: # 🚫 威胁域名拦截集（追踪器 / 恶意软件 / C2 命令与控制域名）
+  threat: # 🚫 威胁域名拦截集（追踪器 / 恶意软件 / C2 命令与控制域名）
     # 💡 与 Advertising 的语义区分：
-    #   block.mrs           → 恶意特征（恶意软件 / 追踪器 / C2 命令与控制域名） → 安全防护
-    #   Advertising         → 应用内广告域名 → 体验优化
+    #   threat              → 恶意特征（恶意软件 / 追踪器 / C2 命令与控制域名） → 安全防护
+    #   Advertising         → 广告域名 → 体验优化
     #   两者互补，非替代关系。
     #    数据源采用 blackmatrix7/EasyPrivacy，由 peiyingyao 每日自动构建并以 MRS 格式分发。
     # 💡 启动性能：MRS 格式加载开销极小，懒加载纯属保守策略，首次阻塞时间可忽略不计。
-    # ⚠️ 前置依赖（强联动约束）：若需禁用，须同时注释此块与 rules 段的 RULE-SET,block,REJECT 行后再重载。
-    #    · 风险：仅注释此块而 rules 行仍活跃：内核启动即报"provider block not found"，整个配置加载失败。
+    # ⚠️ 前置依赖（强联动约束）：若需禁用，须同时注释此块与 rules 段的 RULE-SET,threat,REJECT 行后再重载。
+    #    · 风险：仅注释此块而 rules 行仍活跃：内核启动即报"provider threat not found"，整个配置加载失败。
     #    · 两者互为前置依赖，作为强联动约束必须同步禁用，不可分步重载。
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
-    url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
+    # url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
+    url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs"    
                       # ℹ️ 远程地址：jsDelivr 官方 Cloudflare 节点，国内可达性优于 fastly 节点。
                       #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/EasyPrivacy
                       #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs
-    path: "./rules/providers/block.mrs"
+    path: "./rules/providers/threat.mrs"
     lazy: true        # ⚙️ 懒加载：威胁阻断集可容忍首次命中短时延迟。MRS 格式加载开销极小，首次阻塞时间可忽略不计。
     interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设定较短缓存周期以跟进更新。
 
@@ -417,8 +418,8 @@ rules:
   #                 适用场景：防止进程感知被拦截后快速切换备用链路或频繁重试。
   #   ⚡ 代价：软件启动时若命中 REJECT-DROP 规则，会有明显卡顿；如遇此情况，可改为 REJECT。
   - RULE-SET,Advertising,REJECT        # 🚫 主流应用广告域名 → 拒绝，完整广告域名集。
-  - RULE-SET,block,REJECT              # 🚫 恶意特征域名拦截集 → 拒绝，追踪器/恶意软件/C2 域名。
-  # ⚠️ 若需禁用，须同时注释此行与 rule-providers 中的 block 块后再重载（强联动约束），不可分步。
+  - RULE-SET,threat,REJECT              # 🚫 恶意特征域名拦截集 → 拒绝，追踪器/恶意软件/C2 域名。
+  # ⚠️ 若需禁用，须同时注释此行与 rule-providers 中的 threat 块后再重载（强联动约束），不可分步。
 
   # ▌域名分流集 — 依赖远程规则集加载状态，cn 在前确保国内域名优先命中
   - RULE-SET,cn,DIRECT                 # 🔓 国内主流域名 → 直连，基于 Domain Trie 极速命中。
@@ -771,7 +772,7 @@ rules:
 # # MetaCubeX、peiyingyao、DustinWin 源（当前主力来源）
 # #   基于各规则集数据源的 mrs 分支，每日自动构建。
 # #   提供 MRS 二进制格式（format: mrs），覆盖 geo/geosite 与 geo/geoip 两大类别。
-# #   本配置 private / lan_cidr / Advertising / block / cn / non-cn
+# #   本配置 private / lan_cidr / Advertising / threat / cn / non-cn
 # #   均迁移至此来源，通过 jsDelivr CF 节点分发。
 # #
 # # Loyalsoldier 源（已迁移，仅作历史参考）
@@ -825,9 +826,9 @@ rules:
 # #  目的：在 DNS 污染环境下，强制解析可能将 CDN 多归属 IP 误判为国内而错误直连；
 # #  未命中流量滑落至 MATCH 代理兜底，宁可错绕，不可错放。
 # #
-# # 【block 规则集 — 强联动约束】
-# #  block.mrs 提供追踪器 / 恶意软件 / C2 防护层（与 blackmatrix7/EasyPrivacy 语义近似），当前已启用。
-# #  ⚠️ 禁用时须同步注释 rule-providers 中的 block 块与 rules 段的 RULE-SET,block,REJECT 行，
+# # 【threat 规则集 — 强联动约束】
+# #  threat 提供追踪器 / 恶意软件 / C2 防护层（与 blackmatrix7/EasyPrivacy 语义近似）。
+# #  ⚠️ 启用或禁用时须同步 rule-providers 中的 threat 块与 rules 段的 RULE-SET,threat,REJECT 行的注释状态，
 # #  不可分步重载——仅注释其中一处，内核启动即报 provider not found，整个配置加载失败。
 # #
 # # 【geodata-mode: true — GeoIP 数据库格式统一 + geox-url 落地】
