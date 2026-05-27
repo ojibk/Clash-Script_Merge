@@ -30,7 +30,7 @@ find-process-mode: strict       # ⚙️ 字段语义：控制进程信息获取
 
 geodata-mode: true              # ⚙️ GeoIP 数据库格式：true = dat 格式（数据文件由 MetaCubeX 自维护），false 或缺省（未声明）= mmdb 格式（Mihomo 默认）。
                                 # ℹ️ 本配置规则集来源多元化，不构成全线统一。
-                                #    切换 dat 格式的目的：使内置 GEOIP 命令（GEOIP,CN / GEOIP,PRIVATE）所查询的数据库与 MetaCubeX 来源的规则集在归类标准上对齐，
+                                #    切换 dat 格式的目的：使内置 GEOIP 命令（GEOIP,PRIVATE / GEOIP,CN）所查询的数据库与 MetaCubeX 来源的规则集在归类标准上对齐，
                                 #    缩小两者"规则集归类为国内、内置 GeoIP 库认定为境外"的口径分裂风险。切换理由仅为归类口径对齐（无更新频率收益）。
 geo-auto-update: true           # ⚙️ 启用 geodata 自动更新。不开启时 dat 文件停留在内核捆绑的出厂版本（不会按 geo-update-interval 自动拉取 geox-url 指定的 GEO 数据文件），
                                 #    geox-url 的下载地址声明会被静默忽略；geodata-mode: true 的口径统一目的无法在运行中兑现。
@@ -510,8 +510,7 @@ rules:
 # #
 # # 静态路由规则链（Static Routing Rule Chain）
 # #   本文件（Merge Config）实现的规则链，由固定配置描述，无运行时动态逻辑。
-# #   按误判风险由低到高排列：本地放行集 → 威胁阻断集 → 域名分流集 →
-# #   归属地映射 → 无条件兜底。
+# #   按误判风险由低到高排列：本地放行集 → 威胁阻断集 → 域名分流集 → 归属地映射 → 无条件兜底。
 # #
 # # 自完备规则链（Self-Contained Rule Chain）
 # #   rules 段必须独立覆盖所有流量场景，不依赖订阅原有 rules。
@@ -670,8 +669,7 @@ rules:
 # #   REJECT 动作在 TCP 场景下通过发送 RST 实现即时拦截；在 UDP 场景下通过返回 ICMP 不可达报文实现。
 # #
 # # IPC（进程间通信，Inter-Process Communication）
-# #   进程之间传递数据的机制。加载条目数量庞大的规则集时，内核与加载进程的 IPC
-# #   可能因耗时过长触发超时，导致启动失败或规则集加载不完整。
+# #   进程之间传递数据的机制。加载条目数量庞大的规则集时，内核与加载进程的 IPC 可能因耗时过长触发超时，导致启动失败或规则集加载不完整。
 # #
 # # ──────────────────────────────────────────────────────────────────────────────────────
 # # 【G】工程设计术语
@@ -746,12 +744,12 @@ rules:
 # # Loyalsoldier 源（已迁移，仅作历史参考）
 # #   github.com/Loyalsoldier/clash-rules @release 分支。
 # #   原提供 yaml 格式（首行 `payload:`），用于 private / lancidr / reject。
-# #   已由 MetaCubeX MRS 部分等效替代，不再直接引用。
+# #   已由 MetaCubeX mrs 数据源部分替代，不再直接引用。
 # #
 # # Blackmatrix7 源（已迁移，仅作历史参考）
 # #   github.com/blackmatrix7/ios_rule_script。
 # #   原提供 text 格式裸列表，用于 AdvertisingLite_Domain / ChinaMax_Domain / Global_Domain。
-# #   MetaCubeX cn.mrs 数据源即为 ChinaMax_Domain，已由 MRS 部分替代，不再直接引用。
+# #   已由 MetaCubeX mrs 数据源部分替代，不再直接引用。
 # #
 # # jsDelivr Cloudflare 节点（testingcf.jsdelivr.net）
 # #   jsDelivr CDN 的 Cloudflare 边缘节点，相比 fastly 节点在国内可达性更稳定，
@@ -763,8 +761,7 @@ rules:
 # # ======================================================================================
 # # 版本演进
 # # --------------------------------------------------------------------------------------
-# # 仅记录影响行为的架构决策及其理由。措辞调整、注释重写、中间过程不在此列。
-# # 新增条目直接覆盖同一问题的旧条目，不保留试错过程。
+# # 仅记录影响行为的架构决策及其理由。措辞调整、注释重写、中间过程不在此列。新增条目直接覆盖同一问题的旧条目，不保留试错过程。
 # # --------------------------------------------------------------------------------------
 # #
 # # 【广告拦截变体选型：Advertising.mrs 替代 AdvertisingLite】
@@ -789,7 +786,7 @@ rules:
 # # 【geodata-mode: true — GeoIP 数据库格式统一 + geox-url 落地】
 # #  切换内置 GeoIP 数据库为 dat 格式（MetaCubeX 自维护）。
 # #  同时配置 geo-auto-update: true / geo-update-interval: 24 / geox-url（jsDelivr CF 节点）；
-# #  缺少这三项时，dat 文件永久停留在内核捆绑的出厂版本，口径统一目的在运行中无法兑现。
+# #  缺少这三项时，dat 文件停留在内核捆绑的出厂版本，口径统一目的在运行中无法兑现。
 # #  注意：MetaCubeX 同时维护 mmdb 与 dat，均为每日构建；切换理由仅为归类口径对齐，无更新频率收益。
 # #
 # # 【sniffer — 补齐纯 IP 直连流量的域名匹配盲区】
