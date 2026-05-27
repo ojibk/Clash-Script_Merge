@@ -10,11 +10,10 @@
  *   基于哨兵标记的幂等性规则写入（栈重建算法：O(N) 时间 / O(N) 空间）
  *   默认模式：拦截优先 + Firefly 精确例外放行
  *     - ENABLE_FIREFLY = true：精确放行 Firefly 推理请求，其余拦截保持不变
- *     - 鉴权端点必要副效应：auth / cc-api / lcs 等端点因与 Firefly 共用鉴权链路而一并放行；
+ *     - Firefly 依赖端点必要副效应：auth / cc-api / lcs 等端点因 Firefly 功能依赖而一并放行；
  *       最终防线为 AdobeGCClient.exe → REJECT-DROP（静默丢包，需 ENABLE_PROCESS_RULE=true + TUN 模式，见风险边界）。
- *       注意：Creative Cloud.exe / CCXProcess.exe / CoreSync.exe 等进程同样
- *       访问鉴权链，进程规则仅覆盖 AdobeGCClient.exe，其余进程因依赖链考量予以必要豁免（原因见正文 §Firefly 必要副效应）
- *       （详见 adobeAuthChain 注释及设计取舍）。
+ *       注意：Creative Cloud.exe / CCXProcess.exe / CoreSync.exe 等进程同样访问这些端点，
+ *       进程规则仅覆盖 AdobeGCClient.exe，其余进程因依赖链考量予以必要豁免（原因见正文 §Firefly 必要副效应、详见 adobeFireflyDeps 注释及设计取舍）。
  *     - 适用场景：需要使用 PS 生成式填充、Firefly 等 Adobe AI 功能
  *
  * ══════════════════════════ ░░ 功能概览 ░░ ══════════════════════════
@@ -58,7 +57,7 @@ function main(config) {
     const ENABLE_FIREFLY      = true;            // 精确放行 Firefly 推理请求
                                                   // ⚠️ 注意：此开关实际生效由下方 isFireflyActive 派生值决定，见下方声明
                                                   // ⚠️ Firefly 放行使用 proxyGroupName 作为出口，该值由下方智能识别逻辑自动确定；
-                                                  //    若识别失败（全部策略均告失败），代理组排除断言（见下方"代理组排除断言"定义节）将中止注入，Firefly 请求将无法放行。
+                                                  //    若识别失败（全部策略均告失败），脚本直接 return config 中止注入，Firefly 请求将无法放行。
                                                   // 必要副效应：auth/cc-api 等鉴权端点同时放行。
                                                   // 最终防线为 AdobeGCClient.exe → REJECT-DROP（仅 ENABLE_PROCESS_RULE=true + TUN 模式下有效）
     const ENABLE_PROCESS_RULE = true;            // 进程规则模块（需 TUN 模式或 Service 模式 + 管理员权限；
@@ -82,9 +81,10 @@ function main(config) {
                                                   //   ② 次要：BLOCK 单独作为后缀会与 ENABLE_BLOCK 命名冲突，须加 GLOBAL_KEYWORD 前缀区分。
                                                   // 影响：含 telemetry/analytics/stats/metrics 的所有域名（含 google/cloudflare 等）
                                                   // 关闭时：if 第一个操作数短路为 false，pushKeyword 不会被调用；
-                                                  // length > 0 守卫作为独立防线，防止将来 globalKeyword 被意外清空时
-                                                  // 调用 pushKeyword 传入空数组，产生无意义的空规则注入调用
-                                                  //（即：开关为 true 但数组为空的极端情形）。
+                                                  // length > 0 守卫仅对「ENABLE_GLOBAL_KEYWORD_BLOCK=true 但数组被意外清空」
+                                                  // 的极端情形有效（防止传入空数组产生无意义的空规则注入调用）；
+                                                  // 注意：ENABLE_GLOBAL_KEYWORD_BLOCK=false 时 && 已短路，length > 0
+                                                  // 不会被求值，两者联立不存在"第一个为 false 但第二个能救场"的场景，不构成独立防线。
     const ENABLE_DIRECT       = true;            // 指定域名直连模块
     const ENABLE_HOSTS_TRICK  = true;            // Hosts DNS 覆写模块（四种映射子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
     // ❗ 生效前提：CVR › DNS 覆写，必须同时开启「启用 DNS」和「使用 Hosts」
@@ -247,15 +247,14 @@ function main(config) {
     let proxyGroupName = null; // 初始为 null，强制要求下游所有赋值路径全覆盖；
                                // 任何未赋值路径均会触发代理组排除断言安全拦截。
     // 注意：在当前实现路径中，null 不会进入代理组排除断言——
-    //   所有真实执行路径均会在策略链结束前显式赋值（成功时为 mainGroup.name，失败时为 "DIRECT"）；
-    //   真正触发断言的是失败兜底赋值的 "DIRECT"（在 EXCLUDED_NAMES 中）。
+    //   所有真实执行路径均会在策略链结束前显式赋值（成功时为 mainGroup.name）；
+    //   识别失败时直接 return config，不依赖 "DIRECT" 哨兵值触发断言。
     // 若将来新增分支遗漏赋值，sanitizeName(null) 返回 ""，断言 !_sanitizedProxy 为 true 并安全拦截。
-    // 💡 当前实现中 proxyGroupName 必定被赋值（成功时为组名，失败时为 "DIRECT"）。
+    // 💡 当前实现中识别成功时 proxyGroupName 必定被赋值为组名；
     //    若将来新增代码分支，须确保该分支也对 proxyGroupName 显式赋值，
     //    否则 null 会到达代理组排除断言并触发安全兜底（中止注入）。
     // 💡 出口控制说明：识别逻辑通过 EXCLUDED_NAMES 明确排除了绝大多数不适合的出口；
-    //    极端情况下（全部策略均失败）proxyGroupName 会被显式设为 "DIRECT"，
-    //    由代理组排除断言拦截并中止注入，使网络退回订阅原始规则，防止内核崩溃。
+    //    极端情况下（全部策略均失败）代码直接 return config，使网络退回订阅原始规则，防止内核崩溃。
 
     // 策略组分三类：
     //   排除组（EXCLUDED）：绝对不能用作代理出口，会导致代理规则失效（流量不经过任何代理节点）
@@ -310,7 +309,7 @@ function main(config) {
     {
         const _testWord = "全局";
         if (FALLBACK_CN_RE.test(_testWord) && EXCLUDED_CN_RE.test(_testWord))
-            throw new Error(`[Script] 配置断言失败："${_testWord}"同时被 FALLBACK_CN_RE 和 EXCLUDED_CN_RE 覆盖，兜底路径将失效`);
+            throw new Error(`[Script] 配置断言失败："${_testWord}" 同时匹配 FALLBACK_CN_RE 和 EXCLUDED_CN_RE，互斥约束被违反——兜底选取将被排除断言拦截，净效果为零`);
     }
 
     // 合法代理出口类型白名单（统一引用源：各轮策略均引用此常量，新增类型只需改此处）。
@@ -351,7 +350,16 @@ function main(config) {
     //   \u007F          DEL（删除符）：C0 集末位，无合法用途。
     //   ⚠️ \u0085（NEL，Next Line）未列入：C1 控制字符，YAML 1.2 规范认定的换行符，
     //      Token 断言（注入出口）已独立覆盖（见 Token 断言 \u0085 条目）。
-    //      sanitizeName 遵循「宽进」策略，刻意不剥离此字符，识别阶段宽容，注入出口严格拦截，两层职责有意不对称。
+    //      sanitizeName 遵循「宽进」策略，刻意不剥离此字符；识别阶段宽容（防止遗漏合法组名），
+    //      注入阶段严格（防止破坏 YAML/Clash 语法）——两层严格度有意梯度化，属纵深防御设计。
+    // 💡【两层字符覆盖范围权威差异——集中说明于此，Token 断言处为互补引用】
+    //    · 识别层（_SANITIZE_RE，即此正则）：覆盖软连字符 \u00AD / ALM \u061C / 零宽系列
+    //      \u200B-\u200F / 行段终止+Bidi 控制符 \u2028-\u202E / 词连接 \u2060 / Bidi 隔离
+    //      \u2066-\u2069 / BOM \uFEFF / C0 \u0000-\u0008 \u000B-\u000C \u000E-\u001F / DEL \u007F；
+    //      刻意不覆盖 \t \n \r（YAML 结构字符，识别宽容）和 \u0085（注入层单独处理）。
+    //    · 注入层（Token 断言）：仅覆盖能破坏 Clash/YAML 语法的字符——逗号 / C0 全集含 \t \n \r /
+    //      \u0085（NEL）/ \u2028 / \u2029；不覆盖 Bidi 控制符（视觉欺骗问题由识别层负责）。
+    //    将来修改任一层的覆盖范围时，须对照此处同步更新说明，避免两层独立演化后文档失真。
     //   ⚠️ \u0009(\t) / \u000A(\n) / \u000D(\r) 不在此清理：
     //      它们是 YAML 结构字符（行终止符 / 缩进控制符）。若在此清理，含这三个字符的原始组名
     //      在识别阶段会被净化匹配，但 proxyGroupName 存储的仍是原始值；注入时 Token 断言
@@ -405,8 +413,8 @@ function main(config) {
         // 预编译静态关键词正则（替代原 KEYWORDS 数组 + some/includes 多次子串搜索）：
         // /i 标志覆盖 ASCII 大小写变体（proxy/Proxy/PROXY/auto/AUTO 等），
         // 无需手动枚举多份硬编码字符串。中文字符与 emoji（🚀）在 /i 下无副作用，正常匹配。
-        // ⚠️ 覆盖扩展说明：原 KEYWORDS 数组只含大写 "AUTO"，/i 使小写 auto / 混合大小写（Auto 等）
-        //    均能命中——这是良性扩展，含 auto 的组名（如 auto-select）是合法的代理出口。
+        // ⚠️ /i 修复了原实现仅能匹配大写 AUTO 的遗漏（proxy/Proxy/auto-select 等混合大小写组名均无法命中），
+        //    现覆盖 ASCII 大小写所有变体，为正确行为；含 auto 的组名（如 auto-select）是合法的代理出口。
         // ⚠️ g 标志：_KW_RE 不含 g 标志，RegExp.test() 无 g 时不修改 lastIndex，完全无状态，
         //    在 _groupsPrepped.find() 中多次调用 .test() 行为一致，无需担心状态污染。
         //    🚀（U+1F680）为 BMP 外字符，无 u 标志时作代理对匹配，现代 V8 引擎行为正确；
@@ -481,7 +489,7 @@ function main(config) {
 
         // [最终容错选取] 安全兜底（全部前置策略失败时的最后屏障）────────────────
         // 前四轮策略（关键词/正则/类型优选 + 兜底组降级）全部失败时进入此分支。
-        // 目的：在赋值 proxyGroupName="DIRECT"（→代理组排除断言中止）之前，尽力寻找可用组。
+        // 目的：在显式 return config 中止注入之前，尽力寻找可用组。
         // 策略：仅排除出口语义不适合的类型（relay / url-latency-benchmark / smart），其他类型均允许；
         //   选中非理想类型（固定链路、测速专用或实验性自适应类型）虽有所妥协，但总比中止注入、让用户完全依赖订阅原始规则要好。
         //   注：load-balance 已纳入 VALID_PROXY_TYPES，不在 _UNSUITABLE_TYPES 排除列表中。
@@ -518,11 +526,9 @@ function main(config) {
             console.log(`${groupFlag} 代理组识别成功: [${proxyGroupName}] (type: ${mainGroup.type ?? "未知"})`); // ⚠️=兜底组，✅=优选组
         } else {
             // 容错选取策略也失败：订阅中无任何可注入的代理出口组（全被排除或类型不适）。
-            // 将 proxyGroupName 设为 "DIRECT"，由下方代理组排除断言拦截并中止注入，
-            // 完整降级为订阅原始规则，防止 Mihomo 内核因找不到策略组而崩溃。
-            console.error("❌ 致命：订阅中没有任何可用的代理组，proxyGroupName 强制设为 DIRECT");
-            console.error("   代理组排除断言将拦截此值并中止规则注入，网络将走订阅原始规则");
-            proxyGroupName = "DIRECT";
+            // 直接返回 config，完整降级为订阅原始规则，防止 Mihomo 内核因找不到策略组而崩溃。
+            console.error("❌ 致命：订阅中没有任何可用的代理组，中止规则注入");
+            console.error("   网络将走订阅原始规则，不注入任何自定义规则，防止 Mihomo 内核启动失败");
             console.log(`   已扫描的代理组:`);
             // groupsPrepped 已预计算 cleanName，错误路径同样零额外 sanitizeName 调用
             _groupsPrepped.forEach(({ g, cleanName }, idx) => {
@@ -530,16 +536,17 @@ function main(config) {
                 const count = g?.proxies?.length || 0;
                 console.log(`   ${idx + 1}. ${status} [${g?.name}] (${g?.type ?? "未知"}, ${count} 节点)`);
             });
+            return config;
         }
     } else {
         // 此 else 仅在 proxy-groups 为空（length === 0）时执行。
         // 注意：即使 if 块内五轮策略全部失败，也不会到达此处——
         //       if/else 的判断条件是 proxy-groups.length，而非策略是否成功。
-        // 强制设为 "DIRECT"，触发代理组排除断言（EXCLUDED_NAMES 包含 DIRECT），中止规则注入，
-        // 防止 Mihomo 内核因找不到策略组而崩溃，使网络退回订阅原始规则。
-        console.error("❌ 致命：proxy-groups 为空，强制降级 proxyGroupName=DIRECT，代理组排除断言将中止注入");
+        // 直接返回 config，中止规则注入，防止 Mihomo 内核因找不到策略组而崩溃，
+        // 使网络退回订阅原始规则。
+        console.error("❌ 致命：proxy-groups 为空，中止规则注入");
         console.error("   网络将走订阅原始规则，不注入任何自定义规则，防止 Mihomo 内核启动失败");
-        proxyGroupName = "DIRECT";
+        return config;
     }
 
     // 💡 Mihomo 规则语法中策略组名直接使用原始名称，空格 / emoji 均无需引号。
@@ -547,7 +554,9 @@ function main(config) {
 
     // ❗ 代理组排除断言：防止 proxyGroupName 解析为排除出口导致拦截规则静默失效。
     // 覆盖全部排除名：DIRECT / REJECT / COMPATIBLE / DEFAULT / MATCH 及中文等价排除词。
-    // 注：proxyGroupName 已通过 isEligibleGroup 过滤，此处再次清洗为防御纵深，避免极端路径绕过。
+    // 注：失败路径（全部策略失败 / proxy-groups 为空）均已在上方显式 return config，
+    //     正常执行到此处时 proxyGroupName 必然是识别成功的合法组名；
+    //     此断言作为防御纵深，防止将来新增代码路径绕过显式返回，或选组逻辑被重构后假设不再成立。
     // 注：兜底组已被剥离出排除正则，确保在优选降级触发时，它能顺利通过代理组排除断言而不被误杀。
     {
         const _sanitizedProxy = sanitizeName(proxyGroupName);
@@ -579,6 +588,9 @@ function main(config) {
     // 注：_SANITIZE_RE 中同样包含 \u2028/\u2029，但两者作用不同——
     //   _SANITIZE_RE 清洗的是识别阶段副本（sanitizeName 输出），
     //   此断言检验的是注入用原始值（proxyGroupName），两处不重叠，非冗余。
+    // 💡 两层覆盖范围的完整差异说明见 _SANITIZE_RE 注释（权威定义源）；
+    //    本断言为注入层权威说明：仅覆盖 Clash/YAML 语法破坏字符，不覆盖 Bidi 控制符
+    //    （Bidi 视觉欺骗问题由识别层处理，注入层不需要重复防御）。
     if (/[,\u0000-\u001F\u007F\u0085\u2028\u2029]/.test(proxyGroupName)) {
         console.error(`❌ Token 断言触发：proxyGroupName [${JSON.stringify(proxyGroupName)}] 含非法字符`);
         console.error(`   逗号截断规则语义；C0/NEL(\\u0085)控制字符（含 \\t/\\n/\\r）破坏 YAML 行边界；\\u2028/\\u2029 等效换行——均破坏 Clash 规则语法，脚本中止注入`);
@@ -623,14 +635,14 @@ function main(config) {
     const pushDomain  = (domains, action, pool) => domains.forEach(d => pool.push(`DOMAIN,${d},${action}`));
     const pushKeyword = (words,   action, pool) => words.forEach(k   => pool.push(`DOMAIN-KEYWORD,${k},${action}`));
 
-    // ─────────────────────── Adobe 鉴权链（统一引用源：所有用到该链的地方均引用此数组，修改时无需同步多处）───────────────────────
+    // ──── Adobe Firefly 依赖端点集（统一引用源：所有用到该集合的地方均引用此数组，修改时无需同步多处）────
     // adobeFireflyOnly 独立成数组（而非并入 adobeSuffix），是因为两者路由动作不同：
     // adobeFireflyOnly 在 isFireflyActive=true 时走代理（allow 层），
     // adobeSuffix 始终走 REJECT（block 层）；合并会丢失路由区分能力。
     //
     // 路由动作由 isFireflyActive 决定：
-    //   isFireflyActive=true  → pushSuffix(adobeAuthChain, proxyGroupName, layerPools.allow) → 走代理
-    //   isFireflyActive=false → pushSuffix(adobeAuthChain, "REJECT",       layerPools.block) → 走拦截
+    //   isFireflyActive=true  → pushSuffix(adobeFireflyDeps, proxyGroupName, layerPools.allow) → 走代理
+    //   isFireflyActive=false → pushSuffix(adobeFireflyDeps, "REJECT",       layerPools.block) → 走拦截
     //   两条分支覆盖相同域名集合，行为对称，单一维护点，修改只需改此数组。
     //
     // ⚠️【Firefly 必要副效应】auth.services.adobe.com / cc-api-cp.adobe.io 同时承载 CC 正版验证心跳。
@@ -652,7 +664,7 @@ function main(config) {
     //      · 路径B（应用绕过 Mihomo DNS，使用 DoH / DoT 或硬编码 IP）：无 Fake-IP 映射，
     //        Sniffer 又被 ECH 阻断，allow 层与 adobeUdpBlock 的域名规则同时失效，
     //        Firefly QUIC 流量不受规则层干预，滑落至 MATCH（详见 adobeUdpBlock 末尾说明）。
-    const adobeAuthChain = [
+    const adobeFireflyDeps = [
         // ──── 已确认条目（抓包或官方资料可支撑）────
         "ims-na1.adobelogin.com",                 // 登录令牌刷新（已确认）
         "adobeid-na1.services.adobe.com",         // Adobe ID 服务（已确认）
@@ -687,7 +699,7 @@ function main(config) {
     //      以此拖延被拦截进程感知失败的时间（Socket 等待超时而非立即失败），
     //      阻碍恶意程序发现阻断并切换备用域名的速度。
     //
-    // adobeAuthChain 条目已移出（路由动作由 isFireflyActive 决定），此处为非鉴权拦截域名。
+    // adobeFireflyDeps 条目已移出（路由动作由 isFireflyActive 决定），此处为非 Firefly 依赖的拦截域名。
     const adobeSuffix = [
         "adobestats.io",                          // 统计上报主域
         "activate.adobe.com",                     // 激活核心
@@ -761,8 +773,9 @@ function main(config) {
     //    收到 ICMP 后应用立即 fallback 至 TCP，TCP 连接再命中 directRules 的 DOMAIN-SUFFIX,DIRECT。
     //    整体路径：UDP→REJECT（立即） → TCP fallback → DIRECT。无延迟，行为符合预期。
     //
-    // AND 条件顺序：先筛简单的，让大多数流量在第一步就短路出局——
-    // NETWORK（读包头，几乎零代价）→ DST-PORT（整数比较）→ DOMAIN-*（依赖 SNI 嗅探，最贵）
+    // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核短路求值时优先淘汰低代价条件）：
+    // NETWORK（读包头）→ DST-PORT（整数比较）→ DOMAIN-*（依赖 SNI 嗅探）
+    // 实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
     const adobeUdpBlock = [
         // ⚠️ 以下各条均依赖 Mihomo DNS 映射或 Sniffer SNI 嗅探才能识别域名；
         //    纯 IP 形式 QUIC 流量或路径B（绕过 Mihomo DNS 且开启 ECH）下，DOMAIN 类规则对此无效（见末尾说明）
@@ -819,23 +832,22 @@ function main(config) {
         "wss.adobe.io",                           // 疑为 WSS（WebSocket Secure）遥测通道，命名推断，未经抓包确认协议类型（新版 CC 框架）
     ];
 
-    // 🔓 ─────────────── Firefly 生成式 AI 专属放行域名（不含鉴权链）───────────────
+    // 🔓 ─────────────── Firefly 生成式 AI 专属放行域名（不含 adobeFireflyDeps）───────────────
     // 原则：精确放行 Firefly 推理请求，保留其余激活/遥测域名的拦截。
     //
     // 【域名分类】
-    // 鉴权链：已统一到 adobeAuthChain（统一引用源），此处仅含 Firefly/Clio/Sensei 专属推理域名。
+    // Firefly 依赖端点集：已统一到 adobeFireflyDeps（统一引用源），此处仅含 Firefly/Clio/Sensei 专属推理域名。
     // 用于 Adobe AI 生成式填充，需在拦截层中优先放行，走代理以确保可用性：
     //   firefly.adobe.com / firefly.adobe.io / firefly-api.adobe.io /
     //   firefly-cliov2.adobe.com / clio.adobe.io / clio-prober.adobe.io /
     //   clio-assets.adobe.com / senseicore.adobe.io / senseimds.adobe.io
     //
-    // ⚠️【必要副效应】鉴权链（adobeAuthChain）同时承载 CC 正版验证心跳，
-    //           放行后激活拦截的最终防线为 PROCESS-NAME,AdobeGCClient.exe → REJECT-DROP
-    //           （需 ENABLE_PROCESS_RULE=true + TUN 模式 + 管理员权限，进程规则本身不可靠）。
-    //           其余未覆盖进程详见 adobeAuthChain 注释中的 §Firefly 必要副效应。
+    // ⚠️【必要副效应】adobeFireflyDeps 同时承载 CC 正版验证心跳，
+    //           放行后激活拦截的最终防线为 PROCESS-NAME,AdobeGCClient.exe → REJECT-DROP（需 ENABLE_PROCESS_RULE=true + TUN 模式 + 管理员权限，进程规则本身不可靠）。
+    //           其余未覆盖进程详见 adobeFireflyDeps 注释中的 §Firefly 必要副效应。
     // 关于 adobeUdpBlock 与 Firefly .adobe.io 域名的 QUIC 豁免机制：
     //   最终规则池展开顺序（由 LAYER_ORDER 决定，allow < block，与 push 调用书写顺序无关）：
-    //   adobeAuthChain+adobeFireflyOnly（allow 层）→ adobeSuffix → adobeRegex → adobeUdpBlock（block 层）
+    //   adobeFireflyDeps+adobeFireflyOnly（allow 层）→ adobeSuffix → adobeRegex → adobeUdpBlock（block 层）
     //   isFireflyActive=true 时，allow 层的精确 DOMAIN-SUFFIX 规则（如
     //   firefly-api.adobe.io / clio.adobe.io 等）已在 adobeUdpBlock 之前入 pool。
     //   Mihomo first-match（首条命中生效）：Firefly 域名的 UDP 流量先命中 allow 层走代理，
@@ -954,8 +966,10 @@ function main(config) {
     ];
     // 关键词兜底：覆盖 966v26.net / cdn.966v26.org 等非 .com TLD（顶级域名，Top-Level Domain）变种，
     // REJECT-DROP 策略与 backdoorSuffix 一致。
-    // ⚠️ 误命中风险评估："966v26" 为无语义随机字符组合，特异性极高，在合法域名中出现的概率接近零；
-    //    即使未来存在误命中，REJECT-DROP 的 15–30s 超时代价高，但鉴于字符串唯一性，此风险可接受。
+    // ⚠️ 误命中风险评估："966v26" 为 9 字符无语义随机字符组合，特异性极高；
+    //    在当前已知合法域名生态中，无任何域名含此子串，实际误命中概率为零。
+    //    若将来发现误命中（如某 CDN 域名恰好含此子串），可将 REJECT-DROP 改为 REJECT 降低影响面；
+    //    但鉴于字符串高度随机性，此情形极不可能发生，当前策略可接受。
     const backdoorKeyword = ["966v26"];
 
     // ──────────── IDM / Bandicam / Wondershare 等其他软件激活拦截 ────────────
@@ -1245,10 +1259,12 @@ function main(config) {
     // 例：video-stats.video.google.com / metrics.cloudflare.com / cdn.telemetry-static.com
     // 如需启用，建议仅保留最精确的词并放到所有具体规则之后。
     // 启用：将顶部配置区 ENABLE_GLOBAL_KEYWORD_BLOCK 改为 true；
-    // 关闭时：if 第一个操作数短路为 false，pushKeyword 不会被调用，globalKeyword 不参与守卫。
-    // length > 0 守卫的真实意义：防止将来 ENABLE_GLOBAL_KEYWORD_BLOCK=true 但数组被意外清空时
-    // 调用 pushKeyword 传入空数组，产生无意义的空规则注入调用（无副作用，但表意不清晰）
-    //（即：开关为 true 但数组为空的极端情形，见顶部 ENABLE_GLOBAL_KEYWORD_BLOCK 注释）。
+    // 关闭时：if 第一个操作数短路为 false，pushKeyword 不会被调用，globalKeyword 不参与求值。
+    // length > 0 守卫的真实意义：仅对「ENABLE_GLOBAL_KEYWORD_BLOCK=true 但数组被意外清空」
+    // 的极端情形有效，防止调用 pushKeyword 传入空数组产生无意义的空规则注入调用；
+    // 注意：ENABLE_GLOBAL_KEYWORD_BLOCK=false 时 && 已短路，length > 0 不会被求值，
+    // 两者联立不存在"第一个为 false 但第二个能救场"的场景，不构成独立防线。
+    //（开关为 true 但数组为空的极端情形，见顶部 ENABLE_GLOBAL_KEYWORD_BLOCK 注释）。
     const globalKeyword = ENABLE_GLOBAL_KEYWORD_BLOCK
         ? ["telemetry", "analytics", "stats", "metrics"]
         : [];
@@ -1271,8 +1287,9 @@ function main(config) {
         // ──── 功能上可归并为单条全流量 REJECT-DROP，但出于日志可观测性保留三条────
         //      （QUIC 443 / 普通 UDP / TCP 分别命中不同规则，便于按流量类型排查；
         //       若追求极简可安全移除前两条，仅保留全流量规则，但会损失流量类型的日志区分度）
-        // AND 条件顺序：先筛简单的，让大多数流量在第一步就短路出局——
-        // NETWORK（读包头，几乎零代价）→ DST-PORT（整数比较）→ PROCESS-NAME（查系统进程表，最贵）
+        // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核短路求值时优先淘汰低代价条件）：
+        // NETWORK（读包头）→ DST-PORT（整数比较）→ PROCESS-NAME（查系统进程表）
+        // 实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
         // first-match 语义下：
         //   QUIC 443 规则是全 UDP 规则的子集，是全流量规则的子集；三条动作完全相同（全部 REJECT-DROP），
         //   功能上等价于只保留全流量规则。
@@ -1300,7 +1317,10 @@ function main(config) {
         // "PROCESS-NAME,Wps.exe,REJECT",                    // ⚠️ 慎用：WPS 主进程，拦截后全部联网功能失效（包括文档云同步）
     ];
     const processProxyRules = [ // 进程代理（当前为空占位，示例见下方）
-        // 示例：修改进程名后取消注释即可——策略组名由脚本自动填入（proxyGroupName），依赖前提：proxyGroupName 已通过代理组排除断言、Token 断言与存在性断言，此处取值为合法代理出口组名
+        // 示例：修改进程名后取消注释即可——策略组名由脚本自动填入（proxyGroupName），
+        // 依赖前提：proxyGroupName 已通过代理组排除断言、Token 断言与存在性断言，此处取值为合法代理出口组名。
+        // 注意：以上三道断言与 ENABLE_PROXY 无关，即使 ENABLE_PROXY=false，proxyGroupName 仍有效；
+        //   此处取消注释后进程代理规则由 ENABLE_PROCESS_RULE 独立控制，ENABLE_PROXY=false 不影响其注入。
         // `PROCESS-NAME,Telegram.exe,${proxyGroupName}`,
         // `PROCESS-NAME,Slack.exe,${proxyGroupName}`,
     ];
@@ -1445,16 +1465,16 @@ function main(config) {
         };
 
         if (ENABLE_BLOCK) {
-            // ──── Firefly 放行（adobeAuthChain（统一引用源），isFireflyActive 决定路由动作）────
+            // ──── Firefly 放行（adobeFireflyDeps（统一引用源），isFireflyActive 决定路由动作）────
             if (isFireflyActive) {
-                // 鉴权链走代理（first-match 保证在 adobeSuffix REJECT 之前命中）
-                pushSuffix(adobeAuthChain, proxyGroupName, layerPools.allow);
+                // Firefly 依赖端点走代理（first-match 保证在 adobeSuffix REJECT 之前命中）
+                pushSuffix(adobeFireflyDeps, proxyGroupName, layerPools.allow);
                 // Firefly/Clio/Sensei 专属域名走代理。
                 pushSuffix(adobeFireflyOnly, proxyGroupName, layerPools.allow);
             } else {
                 // 本分支仅在 ENABLE_BLOCK=true && ENABLE_FIREFLY=false（即 isFireflyActive=false）时执行。
                 // 注意：ENABLE_BLOCK=false 时外层 if (ENABLE_BLOCK) 整体不进入，
-                //       adobeAuthChain / adobeFireflyOnly 既不走 allow 层也不走 block 层，
+                //       adobeFireflyDeps / adobeFireflyOnly 既不走 allow 层也不走 block 层，
                 //       本分支（及上方 if 分支）均不执行。
                 // ⚠️ adobeFireflyOnly 须在此处同步拦截（不可省略）：
                 //    isFireflyActive=false 时 adobeFireflyOnly 未被 allow 层放行，
@@ -1466,7 +1486,7 @@ function main(config) {
                 //    背离「关闭 ENABLE_FIREFLY = 禁用 Firefly 功能」的设计意图。
                 //    （senseicore / senseimds 恰好满足 adobeRegex 的 10/9 位条件，已被兜底覆盖；
                 //     但其余七条需此处显式处理，不可依赖正则侥幸命中。）
-                pushSuffix(adobeAuthChain,   "REJECT", layerPools.block);
+                pushSuffix(adobeFireflyDeps,   "REJECT", layerPools.block);
                 pushSuffix(adobeFireflyOnly, "REJECT", layerPools.block);
             }
             // Adobe（遥测/授权域改用 REJECT，软件立即进入离线模式，避免启动卡顿）
@@ -1509,7 +1529,8 @@ function main(config) {
             pushKeyword(youtubeKeyword, "REJECT", layerPools.block);
             // 通用广告联盟。
             pushSuffix(genericAdSuffix, "REJECT", layerPools.block);
-            // length > 0 守卫为防御性设计：防范将来有人直接修改三元表达式导致数组意外为空；
+            // length > 0 守卫：防范将来有人直接修改三元表达式导致数组意外为空时
+            // 调用 pushKeyword 传入空数组产生无意义调用（仅对 ENABLE_GLOBAL_KEYWORD_BLOCK=true 场景有意义）；
             // 当前代码路径下 ENABLE_GLOBAL_KEYWORD_BLOCK=true 时 globalKeyword 恒为四元素数组，永远非空。
             if (ENABLE_GLOBAL_KEYWORD_BLOCK && globalKeyword.length > 0) {
                 pushKeyword(globalKeyword, "REJECT", layerPools.block);
@@ -1587,7 +1608,7 @@ function main(config) {
         // Firefly 放行状态需结合 isFireflyActive 综合判断后显示。
         if (ENABLE_FIREFLY) {
             if (isFireflyActive) {
-                console.log(`   Firefly放行: ✅（isFireflyActive=true，鉴权链已从统一引用源注入）⚠️ 鉴权端点已放行`);
+                console.log(`   Firefly放行: ✅（isFireflyActive=true，Firefly 依赖端点集已从统一引用源注入）⚠️ Firefly 端点已放行`);
             } else {
                 console.log(`   Firefly放行: ❌ ENABLE_BLOCK=false，isFireflyActive 已自动降级（不生效）`);
             }
@@ -1619,9 +1640,9 @@ function main(config) {
         //    Hosts DNS 覆写（尤其是后门域名黑洞化）在规则注入失败时仍有独立防护价值，应尽力执行。
         // ⚠️ 降级场景的哨兵边界说明：
         //   _sentinelEnd 在 finalPool 构建阶段（LAYER_ORDER for 循环结束后）即已压入，
-        //   config.rules 赋值（finalPool.concat）是单一原子操作：
+        //   config.rules 赋值（finalPool.concat）是单条同步语句，在 JS 单线程模型中不会被中断：
         //     · 若错误发生在赋值之前（for 循环中），config.rules 尚未被写入，返回干净状态；
-        //     · 若错误发生在赋值之后（console.log 阶段），全量注入规则已完整写入（原子赋值，无半注入状态），
+        //     · 若错误发生在赋值之后（console.log 阶段），全量注入规则已完整写入（不存在半写入状态），
         //       且两端哨兵均已完整写入，不产生孤儿哨兵。
         //   结论：catch 块捕获的异常不会产生孤儿 START，返回的 config.rules 始终处于一致状态
         //   （赋值前为干净状态，赋值后为完整注入状态，不存在半截注入的中间状态）。
@@ -1788,9 +1809,12 @@ function main(config) {
             // ⚠️ fake-ip-filter 本身不阻断连接：加入后域名走真实 DNS，返回真实 IP，
             //    连接能否被拦截仍取决于 rules 层（backdoorSuffix REJECT-DROP）；
             //    硬编码 IP 路径（应用绕过 DNS）下 DOMAIN 类规则全部失效，需依赖 PROCESS-NAME / IP-CIDR。
-            //    hosts 命中时请求直接返回拦截地址，根本不走到 Fake-IP 分配阶段，
-            //    此处追加的意义是：防止 Fake-IP 分配导致 198.18.x.x 虚拟 IP 被注入规则，使 IP 类规则误命中；
-            //     hosts 未生效时此追加对拦截无任何贡献（DOMAIN 规则仍可正常命中），真正的兜底是 rules 层中的 REJECT-DROP 规则。
+            //    hosts 命中时请求直接返回拦截地址，根本不走到 Fake-IP 分配阶段；
+            //    此处追加的真实意义是：防止 Fake-IP（198.18.x.x）被分配给这些域名，
+            //    导致 IP 类规则产生误命中——不应将其理解为 hosts 失效时的替代防护。
+            //    hosts 未生效时，域名走真实 DNS 返回真实 IP，Mihomo 无 Fake-IP 映射可查，
+            //    DOMAIN 类规则对已解析 IP 的流量无效；此时 fake-ip-filter 条目的防护贡献几乎为零，
+            //    真正的兜底是 rules 层中的 REJECT-DROP 规则。
             //
             // [优化] 仅追加新条目，不对全量 fake-ip-filter 排序，保留订阅原有顺序。
             //        全量重排会触发 Mihomo DNS hash 重建，可能导致连接瞬断，故仅追加。
@@ -1901,7 +1925,7 @@ function main(config) {
  *      数据层按厂商拆分后各数组职责单一，跨数组重复概率极低，改由人工维护数据层唯一性。
  *      注：fake-ip-filter（虚假 IP 过滤表）合并使用 Set 仅为去重，顺序无关，与此场景不同。
  *
- *   💡 adobeAuthChain 推测项集中于数组末尾：
+ *   💡 adobeFireflyDeps 推测项集中于数组末尾：
  *      独立块注释区分「已确认 / 待抓包确认」，优先保证 Firefly 功能正常可用，而非严格遵循最小权限原则；
  *      待抓包确认后可视情况将推测项移至 adobeSuffix（改为 REJECT）。
  *
@@ -1940,7 +1964,7 @@ function main(config) {
  *     [优选·类型]   类型约束              ← 放宽数量约束
  *     [兜底降级]    兜底组选取             ← GLOBAL/"全局" 等
  *     [最终容错选取] 排除固定链路、测速专用或实验性自适应类型（relay / url-latency-benchmark / smart），最低限度类型语义过滤
- *     全部失败 → proxyGroupName="DIRECT" → 代理组排除断言拦截 → 中止注入
+ *     全部失败 → 直接 return config（显式中止注入，网络退回订阅原始规则）
  *   ──────────────────────────────────────────────────────────────
  *
  *   ── 哨兵清理算法（栈重建，O(N) 单次遍历，处理任意数量堆叠）──
@@ -1989,7 +2013,7 @@ function main(config) {
  *
  *   ⚠️ 位置解耦准则（严禁在注释中建立对绝对行号的空间依赖，防止代码重构引发锚点失效）：
  *     - 【禁止绝对坐标】禁止在注释中引用具体行号（如「见 120 行」），
- *                  必须使用变量名或锚点关键词定位（如「见 adobeAuthChain 注释」）
+ *                  必须使用变量名或锚点关键词定位（如「见 adobeFireflyDeps 注释」）
  *     - 【禁绝对值】禁止引用「数组第 N 项」、「前几项」、「第几个」等绝对坐标；
  *                  禁止引用策略编号（如「阶段 1」、「步骤 3」）；
  *                  必须使用逻辑描述或变量名作为锚点
