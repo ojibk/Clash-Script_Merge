@@ -9,7 +9,7 @@
  *
  *   基于哨兵标记的幂等性规则写入（栈重建算法：O(N) 时间 / O(N) 空间）
  *   默认模式：拦截优先 + Firefly 精确例外放行
- *     - ENABLE_FIREFLY = true：精确放行 Firefly 推理请求，其余拦截保持不变
+ *     - ENABLE_FIREFLY = true：精确放行 Firefly 推理请求，保留其他 Adobe 遥测/激活域名的拦截行为
  *     - Firefly 依赖端点必要副作用：auth / cc-api / lcs 等端点因 Firefly 功能依赖而一并放行；
  *       最终防线为 AdobeGCClient.exe → REJECT-DROP（静默丢包，需 ENABLE_PROCESS_RULE=true + TUN 模式，见风险边界），另还需配置文件的 find-process-mode 参数启用获取进程信息。
  *       注意：Creative Cloud.exe / CCXProcess.exe / CoreSync.exe 等进程同样访问这些端点，
