@@ -40,9 +40,12 @@ geox-url:                       # ⚙️ geodata 下载地址。未声明时 Mih
                                 #    注意：MetaCubeX MRS 规则集来自 @meta 分支；dat/mmdb 发布于 @release 分支，两者不同。
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
-  # ℹ️ mmdb 字段说明：geodata-mode: true 下主用 geoip.dat / geosite.dat；当 geodata-mode: false 时才使用 mmdb 字段，同时声明无副作用，保持配置完整性。
+# # ℹ️ mmdb 字段说明：geodata-mode: true 下主用 geoip.dat / geosite.dat；当 geodata-mode: false 时才使用 mmdb 字段，同时声明无副作用，保持配置完整性。
   mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
 
+# # ⚡ sniffer 配置是扩展脚本（Script.js）注入的 UDP/QUIC 域名类规则（adobeUdpBlock 等）正常生效的前提，禁用 sniffer 将导致这些规则在非 Fake-IP 路径下失效。
+# # force-dns-mapping: true：使 Script.js 注入的 adobeUdpBlock DOMAIN 类 AND 规则能通过 DNS 映射缓存识别域名；
+# # parse-pure-ip: true：使绕过 DNS 的纯 IP 流量也能触发嗅探，提升 Script.js 规则集的命中率。
 sniffer:
   enable: true                  # ⚙️ 启用流量嗅探：在协议握手或请求阶段提取目标域名，使内核在无 DNS 解析的情况下也能获取域名，用于域名规则匹配。
                                 # ℹ️ 核心价值：应用若直接以 IP 建立连接（绕过 DNS 解析），内核无域名可用，
@@ -73,7 +76,7 @@ profile:
   store-selected: true          # ⚙️ 策略组节点选择状态持久化：将节点选择写入 cache.db（本地持久化缓存数据库），防止重启或订阅更新、配置重载时导致节点选择状态重置。
                                 # ⚠️ 隐私审计：cache.db 存储 Fake-IP 映射表与策略组选中节点，极端隐私需求可定期手动清理。
 
-#  store-fake-ip: false         # ⚙️ Fake-IP（虚假 IP DNS 模式）映射持久化：设为 true 则持久化，重启后保持域名→伪 IP 的映射一致；
+#  store-fake-ip: false         # ⚙️ Fake-IP（虚假 IP DNS 模式）映射持久化：设为 true 则持久化，重启后保持域名与伪 IP 的映射一致；
 #                               # 设为 false（Mihomo 默认值）——重启后伪 IP 映射可能变动，应用程序可能因伪 IP 变化触发重连。
 #                               # ⚠️ 仅 DNS 模式为 fake-ip 时有效，redir-host（真实 IP 重定向模式）下无意义。
 #                               #    维持注释状态即默认禁用，等效于遵循 Mihomo 默认值 false。
@@ -161,7 +164,7 @@ proxy-groups:
 # #  加载时直接内存映射，跳过文本词法/语法分析及 Trie 构建，启动开销接近于零。
 # #  yaml/text 格式需经"磁盘 IO → 反序列化 → Trie 构建"三阶段；MRS 仅需"磁盘 IO → 映射"。
 # #
-# # 【策略动作下沉原则】
+# # 【策略动作解耦原则】
 # #  所有规则集文件均不内置策略动作，流量最终去向完全由 rules 段行末指令统一决定。
 # #  采用"纯列表 + 外挂 RULE-SET 指令"时，Trie 树命中后需一次哈希查找将规则集名映射至策略组，开销约为 O(1)，实际可忽略不计。
 # #  这是一个有意识的取舍：以极微小的二次寻址开销，换取"同一规则集可被不同 rules 行以不同动作引用"的配置复用灵活性。
@@ -414,7 +417,7 @@ rules:
   # 【运行模式】以未被注释的 MATCH 规则为准。
   # ⚠️ 严禁同时取消两行注释——MATCH 命中即停止，后置行永远不会被求值到，静默失效。若同时取消注释（即同时启用两行），兜底为直连而非代理。
   - MATCH,DIRECT      # 🔓 兜底直连：未命中流量直连出站，适用于国内为主的使用场景。
-  # - MATCH,节点选择      # 🛡️ 兜底代理：未命中流量送入锚点组 [节点选择]，适用于 Unknown → Proxy 立场：宁可错绕（走代理），不可错放（直连导致隐私泄露）。
+  # - MATCH,节点选择      # 🛡️ 兜底代理：未命中流量送入锚点组 [节点选择]，适用于 Unknown → Proxy 立场：宁可错绕（走代理），不可错放（直连可能导致隐私泄露）。
 
 # # ========================================= 附录 =======================================
 # #
