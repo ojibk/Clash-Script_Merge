@@ -7,7 +7,7 @@
 # # ======================================================================================
 # # 【运行范式】
 # #  本文件基于锚点组架构，负责静态路由规则链（本地放行集 → 威胁阻断集 → 域名分流集 → 归属地映射 → 无条件兜底）。
-# #  本配置支持独立运行；若同时启用扩展脚本，则由动态注入层在覆写配置合并完成后、内核执行规则前介入，执行覆盖修改，注入的规则在流量匹配路径上优先于本文件的静态规则链，最终合并入生效配置。
+# #  本配置支持独立运行；若同时启用扩展脚本，则由动态注入层在覆写配置合并完成后、内核执行规则前介入执行覆盖修改，注入的规则在流量匹配上优先于本文件的静态规则链，最终合并入生效配置。
 # #  配置处理流：订阅 → Merge Config → Script 修改 → 最终配置 → Mihomo rules 执行
 # #  职责分工：
 # #    rule-providers → Map 合并，将自定义规则集键值对并入订阅原有条目
@@ -31,9 +31,9 @@ find-process-mode: strict       # ⚙️ 字段语义：控制进程信息获取
 geodata-mode: true              # ⚙️ GeoIP 数据库格式：true = dat 格式（数据文件由 MetaCubeX 自维护），false 或缺省（未声明）= mmdb 格式（Mihomo 默认）。
                                 # ℹ️ 本配置规则集来源多元化，不构成全线统一。
                                 #    切换 dat 格式的目的：使内置 GEOIP 命令（GEOIP,PRIVATE / GEOIP,CN）所查询的数据库与 MetaCubeX 来源的规则集在归类标准上对齐，
-                                #    缩小两者"规则集归类为国内、内置 GeoIP 库认定为境外"的归类不一致风险。切换理由仅为归类口径对齐（无更新频率收益）。
+                                #    缩小两者"规则集归类为国内、内置 GeoIP 库认定为境外"的归类不一致风险。切换理由仅为统一归属判定基准（无更新频率收益）。
 geo-auto-update: true           # ⚙️ 启用 geodata 自动更新。不开启时 dat 文件停留在内核捆绑的出厂版本（不会按 geo-update-interval 自动拉取 geox-url 指定的 GEO 数据文件），
-                                #    geox-url 的下载地址声明会被静默忽略；geodata-mode: true 的归类口径对齐目的无法在运行中兑现。
+                                #    geox-url 的下载地址声明会被静默忽略；geodata-mode: true 的统一归属判定基准目的无法在运行中兑现。
 geo-update-interval: 24         # ⏱️ geodata 更新间隔，单位：小时。24 = 每日一次，与上游（MetaCubeX 同时维护 mmdb 与 dat，通常均为每日构建）节奏对齐。
 geox-url:                       # ⚙️ geodata 下载地址。未声明时 Mihomo 回退至内置默认地址（指向 GitHub Release 直链，国内大概率无法访问）。
                                 #    统一指向 MetaCubeX/meta-rules-dat @release 分支（jsDelivr CF 节点）。
@@ -43,8 +43,9 @@ geox-url:                       # ⚙️ geodata 下载地址。未声明时 Mih
 # # ℹ️ mmdb 字段说明：geodata-mode: true 下主用 geoip.dat / geosite.dat；当 geodata-mode: false 时才使用 mmdb 字段，同时声明无副作用，保持配置完整性。
   mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
 
-# # ⚡ sniffer 配置是扩展脚本（Script.js）注入的 UDP/QUIC 域名类规则（adobeUdpBlock 等）正常生效的前提，禁用 sniffer 将导致这些规则在非 Fake-IP 路径下失效。
-# # force-dns-mapping: true：使 Script.js 注入的 adobeUdpBlock DOMAIN 类 AND 规则能通过 DNS 映射缓存识别域名；
+# # ⚠️ sniffer 配置是扩展脚本（Script.js）注入的 UDP/QUIC 域名类规则正常生效的前提，
+# # 禁用 sniffer 将导致这些规则在纯 IP 直连路径（应用绕过 DNS、直接以 IP 建立 UDP/QUIC 连接）下失效。
+# # force-dns-mapping: true：使 Script.js 注入的 DOMAIN 类 AND 规则能通过 DNS 映射缓存识别域名；
 # # parse-pure-ip: true：使绕过 DNS 的纯 IP 流量也能触发嗅探，提升 Script.js 规则集的命中率。
 sniffer:
   enable: true                  # ⚙️ 启用流量嗅探：在协议握手或请求阶段提取目标域名，使内核在无 DNS 解析的情况下也能获取域名，用于域名规则匹配。
@@ -183,7 +184,7 @@ proxy-groups:
 # #  ⚠️ 规则集失效退化路径：
 # #    加载失败 → 优先使用缓存；首次启动且下载失败 → 该规则集条目数为 0。
 # #    当威胁阻断集与域名分流集均为 0 条时，规则链穿透路径为：本地放行集 → 归属地映射 → 无条件兜底（MATCH）
-# #    ⚡ 当 MATCH 设置为代理出口时实际效果：几乎全部流量进入代理出口（回退为近似全局代理模式），用户无明显提示。
+# #    ⚡ 当 MATCH 设置为代理出口时效果：几乎全部流量进入代理出口（回退为近似全局代理模式），用户无明显提示。
 # #    建议通过日志或 CVR「规则集」界面定期检查规则集加载状态。
 
 rule-providers:
@@ -210,7 +211,7 @@ rule-providers:
                       #    · 若需将缓存写入工作目录外的路径，须将目标路径加入系统环境变量 SAFE_PATHS
                       #      （详见 Mihomo v1.19.6+ Release Notes；不可在 YAML 中以字段形式声明）。
     lazy: false       # ⚙️ 启动即加载，本地放行集属于核心路由，必须启动即就绪，不应启用懒加载。MRS 格式加载开销极小，无性能顾虑。
-    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
+    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
                       #    私有/保留域名（如 localhost）列表，内容基于 IETF 标准，属极低频变动项，设 7 天以减少不必要的远程拉取请求。
 
   # lan_cidr: # 🔓 局域网私有 IP 段直连集
@@ -244,7 +245,7 @@ rule-providers:
                       #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs
     path: "./rules/providers/Advertising.mrs"
     lazy: true        # ⚙️ 懒加载：威胁阻断集可容忍首次命中短时延迟。MRS 格式加载开销极小，首次阻塞时间可忽略不计。
-    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设定较短缓存周期以跟进更新。
+    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
 
   threat: # 🚫 威胁域名拦截集（追踪器 / 恶意软件 / C2 命令与控制域名）
     # 💡threat 与 Advertising 的语义区分（两者互补，非替代关系）：
@@ -269,7 +270,7 @@ rule-providers:
                       #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs
     path: "./rules/providers/threat.mrs"
     lazy: true        # ⚙️ 懒加载：威胁阻断集可容忍首次命中短时延迟。MRS 格式加载开销极小，首次阻塞时间可忽略不计。
-    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设定较短缓存周期以跟进更新。
+    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
 
   # cn: # 🔓 国内域名直连集
   #   # 💡 收录国内主流及长尾域名，覆盖局限：小众 / 地区性 / 企业内部域名仍可能不在列表内，由后续归属地映射（GEOIP,CN,DIRECT,no-resolve）以 IP 维度补盲。
@@ -284,20 +285,7 @@ rule-providers:
   #                     #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs
   #   path: "./rules/providers/cn.mrs"
   #   lazy: false       # ⚙️ 启动即加载。MRS 直接内存映射，无 Trie 构建阶段，大规则集下的 IPC 超时风险不再存在，无需懒加载权衡。
-  #   interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设定较短缓存周期以跟进更新。
-
-  # cnip: # 🔓 国内 IP 直连集
-  #   # 💡 收录国内 IPv4 和 IPv6 地址。覆盖局限：小众 / 地区性 / 企业内部 IP 仍可能不在列表内，由后续归属地映射（GEOIP,CN,DIRECT,no-resolve）以 IP 维度补盲。
-  #   type: http        # ℹ️ 类型：远程 HTTP 资源。
-  #   behavior: ipcidr  # ℹ️ 行为：IP 网段模式，MRS 直接内存映射已构建的前缀匹配树（CIDR Trie），与 domain 模式不可互换。
-  #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
-  #                     #    原用 text 格式时因条目数量庞大须懒加载以规避 IPC 超时；MRS 格式已无此顾虑，改为启动即就绪。
-  #   url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/cnip.mrs"
-  #                     #    来源仓库：https://github.com/DustinWin/ruleset_geodata/blob/mihomo-ruleset/cnip.list
-  #                     #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/cnip.mrs
-  #   path: "./rules/providers/cnip.mrs"
-  #   lazy: false       # ⚙️ 启动即加载。MRS 直接内存映射，无 Trie 构建阶段，大规则集下的 IPC 超时风险不再存在，无需懒加载权衡。
-  #   interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设定较短缓存周期以跟进更新。
+  #   interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
 
   non-cn: # 🛡️ 境外常用需代理域名集
     # 💡 收录 Google / GitHub / Telegram / Twitter (X) / YouTube 等高频境外服务域名。
@@ -312,7 +300,7 @@ rule-providers:
                       #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs
     path: "./rules/providers/non-cn.mrs"
     lazy: false       # ⚙️ 启动即加载，代理核心分流规则必须启动即就绪。MRS 格式加载开销极小，无性能顾虑。
-    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。境外代理域名列表变动较频繁，设定较短缓存周期以跟进更新。
+    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。境外域名列表变动较频繁，设较短缓存周期以跟进更新。
 
   amazon_shopping: # 🔓 亚马逊购物常用域名集 (ojibk/rules amazon_shopping.mrs)
     # 💡 收录亚马逊全球零售站点 + 静态图片资产 + 广告与前端组件库 + 卖家及物流体系规则集（不含 AWS 基础云，防止 AWS 流量被误送入代理出口）
@@ -325,7 +313,7 @@ rule-providers:
                       #    备用直链：https://raw.githubusercontent.com/ojibk/rules/main/amazon_shopping.mrs
     path: "./rules/providers/amazon_shopping.mrs"
     lazy: true        # ⚙️ 专用规则集，使用率低。故采用懒加载作为权衡。无缓存时首次命中会穿透至后续规则可能走代理，属已知取舍。
-    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
+    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
 
 # # ======================================================================================
 # # ░░ 路由规则 (Rules) — 自完备规则链（Array 类型，全量替换）
@@ -358,7 +346,7 @@ rule-providers:
 # #                 GeoIP 数据库出现 CN 归属误判时，PRIVATE 仍可确定性命中，不受误判影响。
 # #  ▌无条件兜底：   MATCH 确保规则链始终有明确出口，承接所有未命中流量。
 # #
-# #  本地放行集以域名与 IP 段双维度精确匹配，归属地映射为 IP 级统计性补盲，其中 lan_cidr 与 GEOIP,PRIVATE 在 RFC 1918 私有 IP 段存在重叠，由规则顺序决定优先命中，双层覆盖属有意冗余。
+# #  本地放行集以域名与 IP 段双维度精确匹配，归属地映射为 IP 级统计性补盲，其中 lan_cidr 与 GEOIP,PRIVATE 在 RFC 1918 私有 IP 段存在重叠，两者互为补充属有意冗余。
 # #
 # # 【策略动作来源】
 # #  所有 rule-providers 文件均无内置策略，行末动作指令是流量去向的唯一依据。
@@ -394,7 +382,6 @@ rules:
   # - RULE-SET,cn,DIRECT                 # 🔓 国内主流域名 → 直连，基于 Domain Trie 极速命中。
                                        #    精确域名匹配直接放行，无需经过 GeoIP 推断，自然规避 CDN 多归属场景下的归属误判；
                                        #    小众域名盲区由归属地映射层（GEOIP,CN）补盲覆盖。
-  # - RULE-SET,cnip,DIRECT,no-resolve    # 🔓 国内主流 IP → 直连，基于 CIDR Trie 极速命中
   - RULE-SET,amazon_shopping,DIRECT    # 🔓 个人扩展：亚马逊购物常用域名集 → 直连，基于 Domain Trie 极速命中。
   - RULE-SET,non-cn,节点选择            # 🛡️ 境外代理域名 → 送入锚点组 [节点选择]，经用户所选代理节点出站。
 
@@ -412,9 +399,8 @@ rules:
                                         #    风险注意：对有数据不出境合规要求的场景（金融 / 医疗 / 政务），须手动添加精确直连规则覆盖。
 
   # ▌无条件兜底 — 承接所有未命中流量，MATCH 保证规则链始终有出口锚点
-  # ⚠️ 若所有 rule-providers 加载失败且无缓存，将回退为近似全局代理模式，用户无明显提示。
-  # ⚙️ 兜底出口配置级选择（取消注释其中一行，需重载配置生效）：
-  # 【运行模式】以未被注释的 MATCH 规则为准。
+  # ⚠️ 若所有 rule-providers 加载失败且无缓存，将回退为近似全局代理/直连模式（取决于 MATCH 兜底出口设置），用户无明显提示。
+  # ⚙️ 兜底出口配置级选择（取消注释其中一行，需重载配置生效）：【运行模式】以未被注释的 MATCH 规则为准。
   # ⚠️ 严禁同时取消两行注释——MATCH 命中即停止，后置行永远不会被求值到，静默失效。若同时取消注释（即同时启用两行），兜底为直连而非代理。
   - MATCH,DIRECT      # 🔓 兜底直连：未命中流量直连出站，适用于国内为主的使用场景。
   # - MATCH,节点选择      # 🛡️ 兜底代理：未命中流量送入锚点组 [节点选择]，适用于 Unknown → Proxy 立场：宁可错绕（走代理），不可错放（直连可能导致隐私泄露）。
@@ -541,7 +527,7 @@ rules:
 # #   相关规则不命中，流量滑落至后续规则，内核不报错不中断。
 # #   ⚠️ 静默容错意味着失效无提示，首次启动无缓存且下载失败时，不会在日志中产生 error，需通过 CVR「规则集」界面主动检查条目数。
 # #
-# # 策略动作下沉原则（Policy Delegation）
+# # 策略动作解耦原则（Action Decoupling）
 # #   rule-providers 文件均不内置流量动作（如 DIRECT / REJECT），
 # #   动作仅由 rules 段引用该规则集时的行末指令决定。
 # #   好处：同一规则集可被不同规则行以不同动作引用。
@@ -562,14 +548,13 @@ rules:
 # #   若该策略组为空，则按 Fail-Fast 显式暴露问题，不静默降级。
 # #
 # # no-resolve（禁止主动 DNS 解析修饰符）
-# #   统一附加于 GEOIP 规则后，禁止内核为域名流量主动触发 DNS 解析以获取 IP。
-# #   目的：在 DNS 污染环境下，强制解析可能将 CDN 多归属 IP 误判为国内而错误直连；
-# #   常见路径：流量已有 IP → 直接比对 GeoIP 库；仅有域名且上方未命中 → 匹配失败，
-# #   流量滑落至 MATCH 兜底（而 MATCH 指定代理出口是 Unknown → Proxy 立场的实现基础）。
+# #   统一附加于 GEOIP 规则后，禁止内核为域名流量主动触发 DNS 解析以获取 IP。目的：在 DNS 污染环境下，强制解析可能将 CDN 多归属 IP 误判为国内而错误直连；
+# #   常见路径：流量已有 IP → 直接比对 GeoIP 库；仅有域名且上方未命中 → 因无 IP 可比对而匹配失败，流量顺延至 MATCH 兜底，这是规则链拓扑的必然结果，
+# #   而非 no-resolve 的主动作为（MATCH 指定代理出口是 Unknown → Proxy 立场的实现基础）。
 # #  ℹ️ 边界条件：no-resolve 跳过的是内核主动发起的 DNS 解析；已有真实 IP 的流量仍可正常命中 GeoIP 规则。
 # #    性能效益：减少规则匹配阶段的 DNS 查询等待，降低延迟。
 # #    若上方规则已使流量获得真实 IP（如通过 redir-host 模式的真实 DNS 解析），后续带 no-resolve 的 GEOIP 规则仍可对该 IP 进行匹配。"仅有域名 → 滑落 MATCH"是常见路径，非唯一边界。
-# #    ⚠️ 此逻辑在 redir-host 模式下同样生效：no-resolve 禁止的是规则匹配阶段内核的追加 DNS 解析，redir-host 自身的 DNS 解析过程不受影响；未命中 GeoIP 的域名流量仍滑落至 MATCH 兜底。
+# #    ⚠️ 此逻辑在 redir-host 模式下同样生效：no-resolve 禁止的是规则匹配阶段内核的追加 DNS 解析，redir-host 自身的 DNS 解析过程不受影响；未命中 GeoIP 的域名流量仍滑落至 MATCH。
 # #  ℹ️ Fake-IP 模式说明：Fake-IP 连接携带的是 198.18.x.x 保留段伪 IP（默认范围，可通过 dns.fake-ip-range 调整）；
 # #    内核通过映射表逆向还原为域名后走域名规则匹配，不会直接命中 GEOIP 类规则。GEOIP 规则的 IP 比对仅对真实 IP 有效。
 # #
@@ -773,11 +758,11 @@ rules:
 # #  ⚠️ 启用或禁用时须同步 rule-providers 中的 threat 块与 rules 段的 RULE-SET,threat,REJECT 行的注释状态，
 # #  不可分步重载——仅注释其中一处，内核启动即报 provider not found，整个配置加载失败。
 # #
-# # 【geodata-mode: true — GeoIP 数据库格式切换（归类口径对齐）+ geox-url 落地】
+# # 【geodata-mode: true — GeoIP 数据库格式切换（统一归属判定基准）+ geox-url 落地】
 # #  切换内置 GeoIP 数据库为 dat 格式（MetaCubeX 自维护）。
 # #  同时配置 geo-auto-update: true / geo-update-interval: 24 / geox-url（jsDelivr CF 节点）；
-# #  缺少这三项时，dat 文件停留在内核捆绑的出厂版本，归类口径对齐目的在运行中无法兑现。
-# #  注意：MetaCubeX 同时维护 mmdb 与 dat，通常均为每日构建；切换理由仅为归类口径对齐，无更新频率收益。
+# #  缺少这三项时，dat 文件停留在内核捆绑的出厂版本，统一归属判定基准目的在运行中无法兑现。
+# #  注意：MetaCubeX 同时维护 mmdb 与 dat，通常均为每日构建；切换理由仅为统一归属判定基准，无更新频率收益。
 # #
 # # 【sniffer — 补齐纯 IP 直连流量的域名匹配盲区】
 # #  启用字段：enable / force-dns-mapping / parse-pure-ip / sniff(TLS+HTTP+QUIC)

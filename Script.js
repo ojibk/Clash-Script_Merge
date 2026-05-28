@@ -11,7 +11,7 @@
  *   默认模式：拦截优先 + Firefly 精确例外放行
  *     - ENABLE_FIREFLY = true：精确放行 Firefly 推理请求，其余拦截保持不变
  *     - Firefly 依赖端点必要副效应：auth / cc-api / lcs 等端点因 Firefly 功能依赖而一并放行；
- *       最终防线为 AdobeGCClient.exe → REJECT-DROP（静默丢包，需 ENABLE_PROCESS_RULE=true + TUN 模式，见风险边界）。
+ *       最终防线为 AdobeGCClient.exe → REJECT-DROP（静默丢包，需 ENABLE_PROCESS_RULE=true + TUN 模式，见风险边界），另还需配置文件的 find-process-mode 参数启用获取进程信息。
  *       注意：Creative Cloud.exe / CCXProcess.exe / CoreSync.exe 等进程同样访问这些端点，
  *       进程规则仅覆盖 AdobeGCClient.exe，其余进程因依赖链考量予以必要豁免（原因见正文 §Firefly 必要副效应、详见 adobeFireflyDeps 注释及设计取舍）。
  *     - 适用场景：需要使用 PS 生成式填充、Firefly 等 Adobe AI 功能
@@ -53,16 +53,15 @@ function main(config) {
     //      · ENABLE_BLOCK 与 ENABLE_FIREFLY 相邻声明便于阅读（两者分属 block/allow 层，语义紧密关联）
     //      · ENABLE_GLOBAL_KEYWORD_BLOCK 属 block 层子开关，因说明篇幅较长集中声明于配置区末尾
     //      · ENABLE_SCRIPT、ENABLE_HOSTS_OVERRIDE 独立于此六层结构之外────
-    const ENABLE_BLOCK        = true;            // 拦截模块（优先级高于代理/直连规则；当 isFireflyActive=true 时，allow 层 Firefly 放行规则先于 block 层规则执行，见 LAYER_ORDER）
+    const ENABLE_BLOCK        = true;            // 拦截模块（规则优先级最高；当 isFireflyActive=true 时，allow 层 Firefly 放行规则先于 block 层执行，见 LAYER_ORDER）
     const ENABLE_FIREFLY      = true;            // 精确放行 Firefly 推理请求
                                                   // ⚠️ 注意：此开关实际生效由下方 isFireflyActive 派生值决定，见下方声明
                                                   // ⚠️ Firefly 放行使用 proxyGroupName 作为出口，该值由下方智能识别逻辑自动确定；
                                                   //    若识别失败（全部策略均告失败），脚本直接 return config 中止注入，Firefly 请求将无法放行。
                                                   // 必要副效应：auth/cc-api 等鉴权端点同时放行。
                                                   // 最终防线为 AdobeGCClient.exe → REJECT-DROP（仅 ENABLE_PROCESS_RULE=true + TUN 模式下有效）
-    const ENABLE_PROCESS_RULE = true;            // 进程规则模块（需 TUN 模式或 Service 模式 + 管理员权限；
-                                                  // TUN：Mihomo 创建虚拟网卡接管全部流量；Service 模式效果等同，区别仅在启动方式；
-                                                  // 两种模式均透明代理全流量，系统代理模式下完全无效）
+    const ENABLE_PROCESS_RULE = true;            // 进程规则模块（需 TUN 模式或 Service 模式 + 管理员权限；另还需配置文件的 find-process-mode 参数启用获取进程信息。）
+                                                  // TUN：Mihomo 创建虚拟网卡接管全部流量；Service 模式效果等同，区别仅在启动方式；两种模式均透明代理全流量，系统代理模式下无效。
     const ENABLE_PROXY        = true;            // 指定域名走代理模块
     const ENABLE_AGGRESSIVE   = false;           // 激进阻断模块（⚠️ 慎启用，可能影响官网/插件商店访问）
                                                   // ⚠️ 已知受影响域名（用户可能感知到的主要副作用）：
@@ -324,9 +323,9 @@ function main(config) {
     // @param {string} name - 原始组名，函数内部负责清洗；调用方无需预先清洗，传入原始字符串即可。
     // @returns {string} 清洗后的组名（已移除不可见控制符并 trim）；非字符串输入返回空字符串。
     // ⚠️ 攻击场景：
-    //    · 不可见字符（如 \u200B、\u2060、\u00AD）：视觉上与合法组名无法区分，但字符串比较失配。
+    //   · 不可见字符（如 \u200B、\u2060、\u00AD）：视觉上与合法组名无法区分，但字符串比较失配。
     //      典型形如 "D\u2060IRECT"、"\u200B默认"、"DIR\u00ADECT"
-    //    · Bidi 覆盖控制符（如 \u202E RLO）：使组名在渲染时以 RTL（从右向左）方向排列，字符序列本身不变，仅渲染方向被反转，造成视觉欺骗（如 "DIRECT" 显示为 "TCERID"），同样绕过比较。
+    //   · Bidi 覆盖控制符（如 \u202E RLO）：使组名在渲染时以 RTL（从右向左）方向排列，字符序列本身不变，仅渲染方向被反转，造成视觉欺骗（如 "DIRECT" 显示为 "TCERID"），也绕过比较。
     //      典型形如 "\u202EDIRECT"，支持 Bidi 渲染时显示为 TCERID
     // 清理范围（覆盖已知 Unicode Bidi（双向文本）控制符及不可见干扰字符，按码点升序排列）：
     //   \u00AD          软连字符（Soft Hyphen）
@@ -507,9 +506,10 @@ function main(config) {
                 Array.isArray(g?.proxies) && g.proxies.length > 0
             );
             if (_mainEntry) {
-                console.error(`🚨 严重警告：关键词/正则/类型优选 + 兜底组降级全部失败，触发最终容错选取`);
-                console.error(`   已排除固定链路 / 测速专用 / 实验性自适应类型（relay / url-latency-benchmark / smart），抓取首个合法组 [${_mainEntry.g.name}] (type: ${_mainEntry.g.type ?? "未知"})`);
-                console.error(`   建议检查订阅结构是否符合关键词列表`);
+                console.warn(`🚨 严重警告：关键词/正则/类型优选 + 兜底组降级全部失败，触发最终容错选取`);
+                console.warn(`   已排除固定链路 / 测速专用 / 实验性自适应类型（relay / url-latency-benchmark / smart），`
+                + `选取首个可用组 [${_mainEntry.g.name}] (type: ${_mainEntry.g.type ?? "未知"})`);
+                console.warn(`   建议检查订阅结构是否符合关键词列表`);
             }
         }
 
@@ -712,7 +712,7 @@ function main(config) {
         "p13n.adobe.io",                          // 个性化遥测（p13n = personalization 缩写）
         "ic.adobe.io",                            // Insight Collector（洞察收集器）
         "lcs-mobile.adobe.io",                    // 新版 CC 移动端授权
-        "adobe-dns.adobe.com",                    // Adobe 自有 DNS 服务（拦截后可减少软件绕过系统 DNS、向 Adobe 自有解析器查询激活/遥测 IP 的可能性，降低 hosts 层拦截被旁路的概率）
+        "adobe-dns.adobe.com",                    // Adobe 自有 DNS 服务（拦截后可减少软件绕过系统 DNS、向自有解析器查询激活/遥测 IP 的可能性，降低 hosts 层拦截被旁路的概率）
         "adobe-dns-2.adobe.com",                  // Adobe 自有 DNS 备用节点 2（同上）
         "adobe-dns-3.adobe.com",                  // Adobe 自有 DNS 备用节点 3（同上）
         "practivate.adobe.com",                   // 预激活服务
@@ -733,7 +733,7 @@ function main(config) {
     // 注意：adobestats.io 已在 adobeSuffix 以 DOMAIN-SUFFIX 全覆盖（含所有子域），
     // 本 REGEX 在实际注入顺序下被前置 SUFFIX 规则遮蔽，功能冗余但无害；保留的意义仅为正则规则集的完整性表达。
     const _ADOBE_RAND_RE_STR      = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$";       // adobe.io 随机子域（8-12位）
-    const _ADOBESTATS_RAND_RE_STR = "^[A-Za-z0-9]{10}\\.adobestats\\.io$";   // adobestats.io 随机子域（社区记录为固定10位，与 adobe.io 的 8-12 位范围不同；若实测发现其他长度，请调整此正则）
+    const _ADOBESTATS_RAND_RE_STR = "^[A-Za-z0-9]{10}\\.adobestats\\.io$";   // adobestats.io 随机子域（社区记录为固定10位，若实测发现其他长度，请调整此正则）
 
     // 正则：拦截随机子域（遥测特征：8-12 位随机字符）
     // 改用 REJECT（非 REJECT-DROP）：遥测随机子域无"拖延感知"的必要——此类域名不存在切换备用域名的自适应逻辑，
@@ -753,8 +753,8 @@ function main(config) {
     // QUIC（RFC 9000；基于 UDP 的安全传输协议，内嵌 TLS 1.3）/ UDP 拦截：强制 Adobe 回退至 HTTPS (TCP)，再被上方域名规则捕获。
     // ❗ 生效前提：仅 TUN 模式。UDP 拦截规则在系统代理模式下完全无效。
     // ⚠️ DOMAIN-SUFFIX / DOMAIN-REGEX / DOMAIN-KEYWORD 类规则依赖 Mihomo 能获取域名信息：
-    //    Mihomo 通过 DNS 解析映射（已走 Mihomo DNS 的流量）或 Sniffer（嗅探 QUIC 握手 SNI）
-    //    识别域名；纯 IP 形式的 UDP/QUIC 流量无域名信息可供匹配，DOMAIN 类规则对其无效。
+    //    Mihomo 通过 DNS 解析映射（已走 Mihomo DNS 的流量）或 Sniffer（嗅探 QUIC 握手 SNI）识别域名；
+    //    纯 IP 形式的 UDP/QUIC 流量无域名信息可供匹配，DOMAIN 类规则对其无效。
     // ⚠️ PROCESS-NAME 规则不依赖 SNI 嗅探（通过系统 Socket 直接获取进程信息），
     //    在路径B（应用绕过 Mihomo DNS 且开启 ECH，DOMAIN 类规则全部失效）下，
     //    是唯一有效的域名无关进程级拦截手段；路径A（Fake-IP 正常）下 DOMAIN 规则已生效，
@@ -1323,13 +1323,13 @@ function main(config) {
     ];
     const processDirectRules = [ // 进程直连
         "PROCESS-NAME,BaiduNetdisk.exe,DIRECT",              // 强制直连，提升下载速度
-        "PROCESS-NAME,filezilla.exe,DIRECT",                 // FTP 数据通道使用随机端口，系统代理模式下路由难以全量覆盖；⚠️ TUN 模式下 FTP 端口已被全量捕获，强制 DIRECT 为保守策略
+        "PROCESS-NAME,filezilla.exe,DIRECT",                 // FTP 数据通道使用随机端口，系统代理模式下路由难以全量覆盖；TUN 模式下端口已被全量捕获，强制 DIRECT 为保守策略
     ];
 
     // ────────────────────────────── 代理规则 ──────────────────────────────
     // ⚠️ Google 风控：Gemini 检测出口 IP 漂移，google.com 与 gemini.google.com 必须命中同一策略组，否则可能触发 403 或账号异常
     const proxySuffixList = [
-        "copilot.microsoft.com",                 // Microsoft Copilot AI 助手（注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct）
+        "copilot.microsoft.com",                 // Copilot AI 助手（注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct）
         "linkedin.com",                          // 领英职场社交网络
         // "openai.com",           // 按需取消注释。
         // "gemini.google.com",    // 按需取消注释（⚠️ 见上方 Google 风控警告：google.com 必须与 gemini.google.com 命中同一策略组）
