@@ -52,7 +52,7 @@ function main(config) {
     //      但声明顺序不代表注入顺序（注入顺序由 LAYER_ORDER 唯一决定）：
     //      · ENABLE_BLOCK 与 ENABLE_FIREFLY 相邻声明便于阅读（两者分属 block/allow 层，语义紧密关联）
     //      · ENABLE_GLOBAL_KEYWORD_BLOCK 属 block 层子开关，因说明篇幅较长集中声明于配置区末尾
-    //      · ENABLE_SCRIPT、ENABLE_HOSTS_TRICK 独立于此六层结构之外────
+    //      · ENABLE_SCRIPT、ENABLE_HOSTS_OVERRIDE 独立于此六层结构之外────
     const ENABLE_BLOCK        = true;            // 拦截模块（优先级高于代理/直连规则；当 isFireflyActive=true 时，allow 层 Firefly 放行规则先于 block 层规则执行，见 LAYER_ORDER）
     const ENABLE_FIREFLY      = true;            // 精确放行 Firefly 推理请求
                                                   // ⚠️ 注意：此开关实际生效由下方 isFireflyActive 派生值决定，见下方声明
@@ -86,7 +86,7 @@ function main(config) {
                                                   // 注意：ENABLE_GLOBAL_KEYWORD_BLOCK=false 时 && 已短路，length > 0
                                                   // 不会被求值，两者联立不存在"第一个为 false 但第二个能救场"的场景，不构成独立防线。
     const ENABLE_DIRECT       = true;            // 指定域名直连模块
-    const ENABLE_HOSTS_TRICK  = true;            // Hosts DNS 覆写模块（四种映射子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
+    const ENABLE_HOSTS_OVERRIDE  = true;            // Hosts DNS 覆写模块（四种映射子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
     // ❗ 生效前提：CVR › DNS 覆写，必须同时开启「启用 DNS」和「使用 Hosts」
     //    两个开关缺一不可，脚本无法感知 UI 层开关状态；未开启时本模块失效（脚本仍打印成功日志，但 Hosts 覆写不生效）。
     //    注意：「使用系统 Hosts」与脚本注入的 Mihomo hosts 是两套完全独立的机制——
@@ -121,12 +121,12 @@ function main(config) {
     //
     // 【默认推荐】拦截 + Firefly 放行 + 代理 + 直连 + Hosts DNS 覆写（激进模式关闭）
     //   ENABLE_BLOCK=true  ENABLE_FIREFLY=true  ENABLE_PROCESS_RULE=true
-    //   ENABLE_PROXY=true  ENABLE_DIRECT=true   ENABLE_HOSTS_TRICK=true
+    //   ENABLE_PROXY=true  ENABLE_DIRECT=true   ENABLE_HOSTS_OVERRIDE=true
     //   ENABLE_AGGRESSIVE=false   HOSTS_MODE="ipv4-loopback"
     //
     // 【纯拦截模式】只拦截，不注入代理/直连规则，适合规则轻量化场景。
     //   ENABLE_BLOCK=true  ENABLE_FIREFLY=false  ENABLE_PROCESS_RULE=false
-    //   ENABLE_PROXY=false ENABLE_DIRECT=false   ENABLE_HOSTS_TRICK=true
+    //   ENABLE_PROXY=false ENABLE_DIRECT=false   ENABLE_HOSTS_OVERRIDE=true
     //   ENABLE_AGGRESSIVE=false
     //
     // 【激进模式】在默认推荐基础上额外开启激进阻断，彻底封堵 adobe.io / adsk.com 等。
@@ -1292,7 +1292,7 @@ function main(config) {
         //   功能上等价于只保留全流量规则。
         //   保留 QUIC 443 / 全 UDP 两条仅为明确表达流量类型覆盖意图，非功能必要。
         //   若追求极简，可安全移除前两条，仅保留全流量 REJECT-DROP。
-        "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP",
+        "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 端口条件可能加快匹配（内核短路求值）
         "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP",
         "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证（最重要）
         "PROCESS-NAME,AdskLicensingService.exe,REJECT-DROP", // Autodesk 许可验证
@@ -1622,7 +1622,7 @@ function main(config) {
             console.log(`   激进模式:   ❌`);
         }
         console.log(`   直连规则:   ${ENABLE_DIRECT        ? "✅" : "❌"}`);
-        console.log(`   Hosts 覆写:  ${ENABLE_HOSTS_TRICK   ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
+        console.log(`   Hosts 覆写:  ${ENABLE_HOSTS_OVERRIDE   ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
         console.log(`   注入规则数: ${finalPool.length} 条（含首尾哨兵）`);
         console.log(`   总规则数:   ${config.rules.length} 条`);
         console.log(`   耗时:       ${Date.now() - _startTime} ms`);
@@ -1700,7 +1700,7 @@ function main(config) {
     //     但部分版本 Mihomo 对单元素数组解析行为未明确，
     //     本脚本统一使用字符串（单 IP）或数组（多 IP）
 
-    if (ENABLE_HOSTS_TRICK) {
+    if (ENABLE_HOSTS_OVERRIDE) {
         // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
         console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」");
         // console.warn("❗ 前提1：CVR › DNS 覆写 → 必须开启「启用 DNS」（关闭则 dns 块整体失效）");
@@ -1904,7 +1904,7 @@ function main(config) {
  *     ⚡ 代价：软件启动时若命中 REJECT-DROP 会有明显卡顿，
  *              如遇启动极慢可将 REJECT-DROP 批量改为 REJECT
  *
- *   ⚠️ Hosts 模块生效前提（ENABLE_HOSTS_TRICK）：
+ *   ⚠️ Hosts 模块生效前提（ENABLE_HOSTS_OVERRIDE）：
  *     - CVR › DNS 覆写，必须同时开启「启用 DNS」和「使用 Hosts」，缺一不可
  *     - 脚本注入 use-hosts: true 会被 CVR UI 层覆盖，必须手动开启，脚本无法替代手动开启设置
  *     - 「使用系统 Hosts」与脚本注入的 Mihomo hosts 是两套完全独立的机制：前者对应 Windows 原生 hosts 文件，后者由 Mihomo 内核管理，无需开启「使用系统 Hosts」
