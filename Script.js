@@ -1,5 +1,5 @@
 /**
- *   Clash-Script 扩展脚本 · 幂等规则注入与 Firefly 精确豁免 v260527
+ *   Clash-Script 扩展脚本 · 幂等规则注入与 Firefly 精确豁免 v260528
  * 
  * ══════════════════════════ ░░ 脚本自述 ░░ ══════════════════════════
  *
@@ -53,7 +53,7 @@ function main(config) {
     //      · ENABLE_BLOCK 与 ENABLE_FIREFLY 相邻声明便于阅读（两者分属 block/allow 层，语义紧密关联）
     //      · ENABLE_GLOBAL_KEYWORD_BLOCK 属 block 层子开关，因说明篇幅较长集中声明于配置区末尾
     //      · ENABLE_SCRIPT、ENABLE_HOSTS_TRICK 独立于此六层结构之外────
-    const ENABLE_BLOCK        = true;            // 拦截模块（优先级高于代理/直连规则；当 isFireflyActive=true 时，allow 层 Firefly 放行规则先于 block 层命中，见 LAYER_ORDER）
+    const ENABLE_BLOCK        = true;            // 拦截模块（优先级高于代理/直连规则；当 isFireflyActive=true 时，allow 层 Firefly 放行规则先于 block 层规则执行，见 LAYER_ORDER）
     const ENABLE_FIREFLY      = true;            // 精确放行 Firefly 推理请求
                                                   // ⚠️ 注意：此开关实际生效由下方 isFireflyActive 派生值决定，见下方声明
                                                   // ⚠️ Firefly 放行使用 proxyGroupName 作为出口，该值由下方智能识别逻辑自动确定；
@@ -141,8 +141,7 @@ function main(config) {
     // 设计逻辑：只有同时开启拦截模块（ENABLE_BLOCK）和 Firefly 开关（ENABLE_FIREFLY），
     //            Firefly 放行规则才真正生效——有拦截层才有"豁免"的意义。
     // 所有 Firefly 相关代码逻辑均使用此变量，而非原始 ENABLE_FIREFLY，
-    // 防止「ENABLE_FIREFLY=true 而 isFireflyActive=false 且放行规则实际未注入」的状态误读
-    // （ENABLE_FIREFLY=true + ENABLE_BLOCK=false 时自动派生为 false）。
+    // 防止「用户看到 ENABLE_FIREFLY=true 便以为 Firefly 已放行」的认知错误，ENABLE_BLOCK=false 时 isFireflyActive 自动为 false，Firefly 放行根本未注入。
     const isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK;
 
     // ══════════════════════ 防御性检查 ══════════════════════
@@ -187,7 +186,7 @@ function main(config) {
     const _sentinelEnd   = "DOMAIN,END-script-sentinel-marker.invalid,REJECT";
     {
         // 栈重建：单次遍历，O(N) 时间，O(N) 空间。
-        // START 压栈时记录 newRules.length 快照；END 匹配时截断至快照，等效删除整段旧注入区块。
+        // START 压栈时记录 newRules.length 快照；END 匹配时回退 length 至快照值，等效删除整段旧注入区块。
         //
         // 崩溃恢复行为（上次执行意外中断导致孤儿哨兵残留时）：
         //   ⚠️ 两种孤儿均不抛出异常、不中断注入——残留规则可接受，中止注入不可接受。
@@ -204,7 +203,7 @@ function main(config) {
             }
             if (rule === _sentinelEnd) {
                 if (stack.length > 0) {
-                    newRules.length = stack.pop(); // O(1) 截断，无数组分配
+                    newRules.length = stack.pop(); // O(1) 回退，等效 splice 但无内存重分配
                 }
                 continue;
             }
@@ -219,7 +218,7 @@ function main(config) {
         //      (1) 清除上次遗留的 debug-script-disabled 标记（防标记重复追加）
         //      (2) 在规则头部插入新的 debug-script-disabled 标记（供外部识别脚本禁用状态）
         //    因此返回的 config 与订阅原始状态有微小差异（多一条标记规则）。
-        //    如需完全不修改 config 地直接返回（Passthrough），将此 if 分支体替换为 return config; 即可。
+        //    如需零修改直接返回（Passthrough 直通模式），将此 if 分支体改为 return config; 即可。
         //    如需保留 Hosts DNS 覆写但关闭规则注入，请保持 ENABLE_SCRIPT=true，
         //    并将 ENABLE_BLOCK / ENABLE_PROXY / ENABLE_DIRECT 等各子模块开关设为 false。
         // 精确等值匹配，与哨兵清理保持一致，避免宽泛子串误删合法规则。
@@ -231,7 +230,7 @@ function main(config) {
     console.log("=".repeat(28));
     const _startTime = Date.now();
     // toTimeString() 格式由平台决定，部分区域设置下 slice(0,8) 截取错误；
-    // 改用本地时间方法手动构造，格式固定为 HH:MM:SS，跨引擎跨区域设置一致。
+    // 改用本地时间方法手动构造，格式固定为 HH:MM:SS（本地时区），跨引擎跨区域设置格式一致（时间值仍为本地时区）。
     const _d  = new Date(_startTime);
     const _ts = [_d.getHours(), _d.getMinutes(), _d.getSeconds()]
         .map(n => String(n).padStart(2, "0"))
@@ -263,7 +262,7 @@ function main(config) {
     const EXCLUDED_NAMES = new Set([
         "DIRECT",
         "REJECT",
-        "COMPATIBLE",  // Clash Premium 兼容模式保留关键字，防御性排除
+        "COMPATIBLE",  // Clash Premium 兼容模式保留关键字，Mihomo 不使用此类型；保留以防订阅包含 Clash Premium 格式策略组导致误选
         "DEFAULT",     // Mihomo 内部保留词，用于 Fallback 策略默认出口表达，防御性排除
         "MATCH",       // Mihomo 内置动作关键字（兜底策略）；正常订阅格式下极不可能出现同名代理组，保留以阻止未来误用
     ]);
@@ -321,7 +320,7 @@ function main(config) {
     //   最终容错阶段的 _UNSUITABLE_TYPES 负责单独排除这三类类型。
     const VALID_PROXY_TYPES = ["select", "url-test", "fallback", "load-balance"];
 
-    // sanitizeName：统一零宽字符清理逻辑，消除 isEligibleGroup/isFallbackGroup 中的重复代码。
+    // sanitizeName：统一不可见字符与 Bidi 控制符清理逻辑，防止视觉欺骗攻击与比较失配。
     // @param {string} name - 原始组名，函数内部负责清洗；调用方无需预先清洗，传入原始字符串即可。
     // @returns {string} 清洗后的组名（已移除不可见控制符并 trim）；非字符串输入返回空字符串。
     // ⚠️ 攻击场景：
@@ -338,8 +337,7 @@ function main(config) {
     //                   \u2028 LINE SEPARATOR / \u2029 PARAGRAPH SEPARATOR：
     //                     不可见，曾用于 JSON 注入攻击，导致字符串比较失配；
     //                   \u202A-\u202E Bidi 方向控制符：
-    //                     LRE 左嵌 / RLE 右嵌 / \u202C PDF（Pop Directional Formatting，弹出方向格式化控制符）
-    //                     / LRO 左覆写 / RLO 右覆写
+    //                     LRE 左向嵌入 / RLE 右向嵌入 / \u202C PDF（Pop Directional Formatting，弹出方向格式化控制符） / LRO 左向覆写 / RLO 右向覆写
     //   \u2060          单词连接符（Word Joiner）
     //   \u2066-\u2069   Bidi 隔离控制符（连续 4 个码点：LRI 左隔离/RLI 右隔离/FSI 强起始隔离/PDI 弹出隔离，Unicode 6.3+）
     //   \uFEFF          BOM（Byte Order Mark，字节顺序标记）/ 零宽不换行空格。
@@ -600,8 +598,7 @@ function main(config) {
     // ❗ 存在性断言：防止配置产生悬空引用（Dangling Reference）导致内核启动崩溃（proxy group [X] not found）
     // 代理组排除断言只验证组名不是排除词，但不验证该组名是否真实存在于 proxy-groups 中。
     // 此断言作为第二道防线，确保注入的组名在当前配置中真实存在。
-    // 空 proxy-groups 情况已在上方 else 分支处理（proxyGroupName 强制设为 DIRECT，
-    //         会被代理组排除断言拦截），此处仅需处理非空时的存在性验证。
+    // 空 proxy-groups 情况已在上方 else 分支通过 return config 提前退出，不会执行到此处；此断言针对非空 proxy-groups 但 proxyGroupName 意外失配的防御场景。
     // 正常执行路径下 proxyGroupName = mainGroup.name，必然存在于数组中；
     // 此断言针对的是选组逻辑被重构或调用方变更后该假设不再成立的情形，属防御纵深而非冗余。
     //
@@ -682,7 +679,7 @@ function main(config) {
                                                    //   scdown 可能指 Substance Cloud Download（Adobe 3D 材质库），与 Firefly 的直接关联尚无公开资料支撑。
                                                    //   若确认 Firefly 功能正常，可尝试将此条移至 adobeSuffix（改为 REJECT）并验证可用性，确认后再决定是否从本数组移除。
         "lcs-cops.adobe.io",                      // 【推断】云端授权策略，推断为 Firefly 订阅鉴权；
-                                                   //   社区有 2024+ PS 版本包含鉴权流量的反馈，但无公开抓包资料支撑，维持待确认。
+                                                   //   社区有 2024+ PS 版本在此域名上产生了鉴权流量的反馈，但无公开抓包资料支撑，维持待确认。
     ];
 
     // 🚫 ─────────────────────── Adobe 激活 / 遥测核心拦截 ───────────────────────
@@ -773,7 +770,7 @@ function main(config) {
     //    收到 ICMP 后应用立即 fallback 至 TCP，TCP 连接再命中 directRules 的 DOMAIN-SUFFIX,DIRECT。
     //    整体路径：UDP→REJECT（立即） → TCP fallback → DIRECT。无延迟，行为符合预期。
     //
-    // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核短路求值时优先淘汰低代价条件）：
+    // AND 条件书写顺序按代价从低到高排列（设计意图：期望低代价条件先求值，一旦为假立即短路，节省后续高代价求值）：
     // NETWORK（读包头）→ DST-PORT（整数比较）→ DOMAIN-*（依赖 SNI 嗅探）
     // 实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
     const adobeUdpBlock = [
@@ -829,7 +826,7 @@ function main(config) {
     //    WSS 走 TCP，而 adobeUdpBlock 仅覆盖 UDP，无法拦截此类流量；
     //    目前仅有此一个已知端点，无多级子域的抓包证据，保守使用精确匹配，等待后续抓包资料支持后再评估是否扩展。
     const adobeWsDomain = [
-        "wss.adobe.io",                           // 疑为 WSS（WebSocket Secure）遥测通道，命名推断，未经抓包确认协议类型（新版 CC 框架）
+        "wss.adobe.io",                           // 前缀 wss 推断为 WebSocket Secure 遥测端点；域名命名无法证明协议类型，待抓包确认（新版 CC 框架）
     ];
 
     // 🔓 ─────────────── Firefly 生成式 AI 专属放行域名（不含 adobeFireflyDeps）───────────────
@@ -1382,10 +1379,8 @@ function main(config) {
         "DOMAIN-SUFFIX,corel.com,DIRECT",                  // 父域放行（主域即官网，精确子域拦截见 corelSuffix）
         // 常用工具直连。
         // NTP（Network Time Protocol，网络时间协议）时间同步强制直连（仅 TUN 模式有效）
-        // ⚠️ DST-PORT,123 同时匹配 TCP/UDP；NTP 仅使用 UDP 123，如需精确匹配可改为：
-        //    AND,((DST-PORT,123),(NETWORK,UDP)),DIRECT
-        //    但当前写法更兼容旧版 Mihomo（AND 规则支持程度因版本而异），保守使用 DST-PORT
-        "DST-PORT,123,DIRECT",
+        // ⚠️ 旧版 Mihomo 兼容写法：DST-PORT,123 同时匹配 TCP/UDP；NTP 仅使用 UDP 123
+        "AND,((DST-PORT,123),(NETWORK,UDP)),DIRECT", // 精确匹配端口 & UDP 协议
         "DOMAIN-SUFFIX,steampowered.com,DIRECT",  // Steam 根域直连（含 content1~9 下载 CDN 子域，保证满速）
         "DOMAIN-SUFFIX,steamcontent.com,DIRECT",  // Steam 游戏内容分发 CDN（满速下载）
         "DOMAIN-SUFFIX,steamserver.net,DIRECT",   // Steam 联机对战后端
@@ -1473,9 +1468,7 @@ function main(config) {
                 pushSuffix(adobeFireflyOnly, proxyGroupName, layerPools.allow);
             } else {
                 // 本分支仅在 ENABLE_BLOCK=true && ENABLE_FIREFLY=false（即 isFireflyActive=false）时执行。
-                // 注意：ENABLE_BLOCK=false 时外层 if (ENABLE_BLOCK) 整体不进入，
-                //       adobeFireflyDeps / adobeFireflyOnly 既不走 allow 层也不走 block 层，
-                //       本分支（及上方 if 分支）均不执行。
+                // 注意：ENABLE_BLOCK=false 时，最外层 if (ENABLE_BLOCK) 整体跳过，isFireflyActive 分支和当前 else 分支均不执行。
                 // ⚠️ adobeFireflyOnly 须在此处同步拦截（不可省略）：
                 //    isFireflyActive=false 时 adobeFireflyOnly 未被 allow 层放行，
                 //    且其域名不在 adobeSuffix / adobeRegex 的覆盖范围内：
