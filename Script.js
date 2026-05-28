@@ -10,10 +10,10 @@
  *   基于哨兵标记的幂等性规则写入（栈重建算法：O(N) 时间 / O(N) 空间）
  *   默认模式：拦截优先 + Firefly 精确例外放行
  *     - ENABLE_FIREFLY = true：精确放行 Firefly 推理请求，其余拦截保持不变
- *     - Firefly 依赖端点必要副效应：auth / cc-api / lcs 等端点因 Firefly 功能依赖而一并放行；
+ *     - Firefly 依赖端点必要副作用：auth / cc-api / lcs 等端点因 Firefly 功能依赖而一并放行；
  *       最终防线为 AdobeGCClient.exe → REJECT-DROP（静默丢包，需 ENABLE_PROCESS_RULE=true + TUN 模式，见风险边界），另还需配置文件的 find-process-mode 参数启用获取进程信息。
  *       注意：Creative Cloud.exe / CCXProcess.exe / CoreSync.exe 等进程同样访问这些端点，
- *       进程规则仅覆盖 AdobeGCClient.exe，其余进程因依赖链考量予以必要豁免（原因见正文 §Firefly 必要副效应、详见 adobeFireflyDeps 注释及设计取舍）。
+ *       进程规则仅覆盖 AdobeGCClient.exe，其余进程因依赖链考量予以必要豁免（原因见正文 §Firefly 必要副作用、详见 adobeFireflyDeps 注释及设计取舍）。
  *     - 适用场景：需要使用 PS 生成式填充、Firefly 等 Adobe AI 功能
  *
  * ══════════════════════════ ░░ 功能概览 ░░ ══════════════════════════
@@ -58,7 +58,7 @@ function main(config) {
                                                   // ⚠️ 注意：此开关实际生效由下方 isFireflyActive 派生值决定，见下方声明
                                                   // ⚠️ Firefly 放行使用 proxyGroupName 作为出口，该值由下方智能识别逻辑自动确定；
                                                   //    若识别失败（全部策略均告失败），脚本直接 return config 中止注入，Firefly 请求将无法放行。
-                                                  // 必要副效应：auth/cc-api 等鉴权端点同时放行。
+                                                  // 必要副作用：auth/cc-api 等鉴权端点同时放行。
                                                   // 最终防线为 AdobeGCClient.exe → REJECT-DROP（仅 ENABLE_PROCESS_RULE=true + TUN 模式下有效）
     const ENABLE_PROCESS_RULE = true;            // 进程规则模块（需 TUN 模式或 Service 模式 + 管理员权限；另还需配置文件的 find-process-mode 参数启用获取进程信息。）
                                                   // TUN：Mihomo 创建虚拟网卡接管全部流量；Service 模式效果等同，区别仅在启动方式；两种模式均透明代理全流量，系统代理模式下无效。
@@ -91,7 +91,6 @@ function main(config) {
     //    注意：「使用系统 Hosts」与脚本注入的 Mihomo hosts 是两套完全独立的机制——
     //          「使用系统 Hosts」控制的是 Windows 原生 hosts 文件（C:\Windows\System32\drivers\etc\hosts），
     //          与脚本向 Mihomo 注入的 hosts 条目完全无关，保持关闭即可。
-    // ❗ 脚本注入 use-hosts:true 会被 CVR UI 层覆盖，必须在设置页手动开启，脚本无法替代手动操作。
     // ℹ️ 依赖约束：ENABLE_SCRIPT=false 时此模块被跳过（脚本提前返回，Hosts 注入不执行）；
     //    如需关闭规则注入同时保留 Hosts 覆写，应保持 ENABLE_SCRIPT=true 并关闭各子模块开关。
 
@@ -105,7 +104,7 @@ function main(config) {
     //            blackhole 为黑洞拦截（DNS 返回不可路由地址，OS 地址校验即失败）。四个名称完全对称。
     //
     // 各模式连接失败类型（来源：Mihomo wiki + OS 网络栈行为）：
-    //   ipv4-loopback  → 127.0.0.1          → ECONNREFUSED（本地无监听端口时，本地 TCP 栈返回 RST），欺骗拦截，更温和
+    //   ipv4-loopback  → 127.0.0.1          → 本地 TCP 栈返回 RST（无监听端口），应用层收到 ECONNREFUSED，欺骗拦截，更温和
     //   ipv4-blackhole → 0.0.0.0            → ENETUNREACH（Linux/Android）/ WSAEINVAL（10022，Windows 10+ 最常见，connect() 目标地址校验即失败）
     //                                          或 WSAENETUNREACH（10051，部分旧版 Windows 及特定配置下可能出现）：
     //                                          ⚠️ 勿与 WSAEADDRNOTAVAIL（10049）混淆——后者为 bind() 绑定非本地地址时的错误，不出现在 connect() 场景；
@@ -158,6 +157,9 @@ function main(config) {
         console.warn("   原因：Firefly 放行规则须在拦截规则之前注入方能生效；");
         console.warn("         ENABLE_BLOCK=false 时拦截层不注入，放行规则也无需注入（放行规则无对应拦截层可供豁免，注入无意义）。");
     }
+    if (ENABLE_PROCESS_RULE && config["find-process-mode"] !== "strict" && config["find-process-mode"] !== "always") {
+        console.warn(`⚠️ 进程规则要求 find-process-mode 为 strict 或 always，当前为 [${config["find-process-mode"] ?? "（未设置）"}]，进程规则将静默失效`);
+    }
 
     // ══════════════════════ ENABLE_SCRIPT 分支 ══════════════════════
     // 先清理上次遗留标记，再插入新标记，防止多次切换后堆叠。
@@ -189,9 +191,9 @@ function main(config) {
         //
         // 崩溃恢复行为（上次执行意外中断导致孤儿哨兵残留时）：
         //   ⚠️ 两种孤儿均不抛出异常、不中断注入——残留规则可接受，中止注入不可接受。
-        //   孤儿 START（无配对 END）：START 本身不写入 newRules；其后续规则因缺少 END 触发截断，
-        //     原样推入 newRules，旧注入规则与本次新注入共存一个周期。
-        //     first-match 语义下新注入先命中，残留规则被遮蔽，路由结果正确；下次执行后自动清除。
+        //   孤儿 START（无配对 END）：START 本身不写入 newRules，但其 length 快照被压栈（永不弹出）；
+        //     其后续规则正常推入 newRules（无对应 END，不发生截断），旧注入规则与本次新注入共存一个周期。
+        //     旧注入与新注入并存一个周期，若两者覆盖域名相同则新注入先命中（结果正确）；若不同则双重生效直至下次正常清理。
         //   孤儿 END（无配对 START）：静默跳过，不截断任何内容。
         const newRules = [];
         const stack    = [];
@@ -230,7 +232,7 @@ function main(config) {
     const _startTime = Date.now();
     // toTimeString() 格式由平台决定，部分区域设置下 slice(0,8) 截取错误；
     // 改用本地时间方法手动构造，格式固定为 HH:MM:SS（本地时区），跨引擎跨区域设置格式一致（时间值仍为本地时区）。
-    const _d  = new Date(_startTime);
+    const _d  = new Date();
     const _ts = [_d.getHours(), _d.getMinutes(), _d.getSeconds()]
         .map(n => String(n).padStart(2, "0"))
         .join(":");
@@ -244,8 +246,7 @@ function main(config) {
 
     let proxyGroupName = null; // 初始为 null，强制要求下游所有赋值路径全覆盖；
                                // 任何未赋值路径均会触发代理组排除断言安全拦截。
-    // 注意：在当前实现路径中，null 不会进入代理组排除断言——
-    //   所有真实执行路径均会在策略链结束前显式赋值（成功时为 mainGroup.name）；
+    // 注意：在当前实现路径中，null 不会触发代理组排除断言（因在上方识别失败路径中已提前 return）所有真实执行路径均会在策略链结束前显式赋值（成功时为 mainGroup.name）；
     //   识别失败时直接 return config，不依赖 "DIRECT" 哨兵值触发断言。
     // 若将来新增分支遗漏赋值，sanitizeName(null) 返回 ""，断言 !_sanitizedProxy 为 true 并安全拦截。
     // 💡 当前实现中识别成功时 proxyGroupName 必定被赋值为组名；
@@ -264,8 +265,9 @@ function main(config) {
         "COMPATIBLE",  // Clash Premium 兼容模式保留关键字，Mihomo 不使用此类型；保留以防订阅包含 Clash Premium 格式策略组导致误选
         "DEFAULT",     // Mihomo 内部保留词，用于 Fallback 策略默认出口表达，防御性排除
         "MATCH",       // Mihomo 内置动作关键字（兜底策略）；正常订阅格式下极不可能出现同名代理组，保留以阻止未来误用
+        "PASS",        // 防止将 Mihomo 的 PASS（透传）策略错误选为代理出口
     ]);
-    const FALLBACK_NAMES = new Set(["GLOBAL"]);                                               // 兜底组：降级才选
+    const FALLBACK_NAMES = new Set(["GLOBAL"]);  // 兜底组：降级才选
     // ❗ 运行时配置断言：FALLBACK_NAMES ∩ EXCLUDED_NAMES 必须为空集。
     //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroupCore 中的提前 return true
     //    会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
@@ -282,15 +284,13 @@ function main(config) {
     //         保留的代价极低（精确词 $ 锚定，不会误伤含「全用」的复合组名如「全用节点」）
     //   后半段：无位置锚定，子串匹配，覆盖「直连国内」「全局直连」「拒绝广告」等任意位置变体。
     //      → 「拒绝垃圾流量」含「拒绝」，被排除是有意为之——
-    //        根据命名惯例，含「拒绝」之名的代理组通常指向 REJECT 出口；
+    //        根据命名惯例，名称中含「拒绝」的代理组通常指向 REJECT 出口；
     //        将其用作代理路由出口将导致所有流量被拒绝，此处保守排除以防路由失效。
-    //   ⚠️ "全局"已从此正则移出，由独立的 FALLBACK_CN_RE 负责识别（原因见下方 FALLBACK_CN_RE 及 isEligibleGroup 防回归说明）
-    //   ⚠️ 已知盲区：「默认节点」等含「默认」的复合词组名不触发（精确词加 $ 锚定为设计取舍）
-    //      此类指向 DIRECT 的订阅极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。
-    //   ⚠️ 已知限制：组名恰为「全球」（仅两字，无修饰词）时被精确匹配排除（^全球$），
-    //      无警告日志，注入将进入容错路径或触发代理组排除断言中止。
-    //      含「全球」的复合词（如「全球节点」）因含「节点」关键词，可进入优选策略正常被选中。
-    //      纯「全球」命名极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。
+    //   ⚠️ "全局"已从此正则移出，由独立的 FALLBACK_CN_RE 负责识别（原因见下方 FALLBACK_CN_RE 及 isEligibleGroup 防回归说明）。
+    //   ⚠️ 已知局限：后半段无位置锚点，采用子串匹配。若代理组命名为「非直连节点」、「不拒绝广告」等包含否定前缀的复合词，会因包含「直连」或「拒绝」子串而被错误排除。
+    //   ⚠️ 「默认节点」等含「默认」的复合词组名不触发（精确词加 $ 锚定为设计取舍）此类指向 DIRECT 的订阅极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。
+    //   ⚠️ 已知限制：组名恰为「全球」（仅两字，无修饰词）时被精确匹配排除（^全球$），无警告日志，注入将进入容错路径或触发代理组排除断言中止。
+    //      含「全球」的复合词（如「全球节点」）因含「节点」关键词，可进入优选策略正常被选中。纯「全球」命名极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。 
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|用|球)|所有|默认)$|(?:直连|拒绝)/;
 
     // 中文兜底组：「全局」对应 FALLBACK_NAMES 中的 GLOBAL，语义与行为均对称。
@@ -349,7 +349,7 @@ function main(config) {
     //      Token 断言（注入出口）已独立覆盖（见 Token 断言 \u0085 条目）。
     //      sanitizeName 遵循「宽进」策略，刻意不剥离此字符；识别阶段宽容（防止遗漏合法组名），
     //      注入阶段严格（防止破坏 YAML/Clash 语法）——两层严格度有意梯度化，属纵深防御设计。
-    // 💡【两层字符覆盖范围权威差异——集中说明于此，Token 断言处为互补引用】
+    // 💡【两层字符集覆盖范围对比——完整说明集中于此，Token 断言处引用本处为权威来源】
     //    · 识别层（_SANITIZE_RE，即此正则）：覆盖软连字符 \u00AD / ALM \u061C / 零宽系列
     //      \u200B-\u200F / 行段终止+Bidi 控制符 \u2028-\u202E / 词连接 \u2060 / Bidi 隔离
     //      \u2066-\u2069 / BOM \uFEFF / C0 \u0000-\u0008 \u000B-\u000C \u000E-\u001F / DEL \u007F；
@@ -439,8 +439,8 @@ function main(config) {
             // length > 3（即 ≥ 4）：排除 proxies 数组近乎为空的极简占位组
             // （如 proxies 仅含 ["节点选择","自动选择"] 等极少条目），优先选入条目数量充足的组。
             // ⚠️ 注意：proxies 数组可包含三类条目：底层节点名称、其他策略组名称、内置代理名称（DIRECT / REJECT）；
-            //   length > 3 衡量的是三类条目的总数，不等于底层节点计数（已知盲区见下方）。
-            //   已知盲区：全部条目均为策略组引用（无底层节点）时，阈值仍可成立，但被选中的
+            //   length > 3 衡量的是三类条目的总数，不等于底层节点计数（已知局限见下方）。
+            //   已知局限：全部条目均为策略组引用（无底层节点）时，阈值仍可成立，但被选中的
             //   组仍能正常委托子组路由，实际影响极小；后续多轮兜底进一步覆盖此场景。
             const includeAll = g?.["include-all"] === true || g?.["include-all"] === "true";
             // includeAll 仅接受 boolean true 或字符串 "true"（严格等值）；
@@ -530,7 +530,9 @@ function main(config) {
             console.log(`   已扫描的代理组:`);
             // groupsPrepped 已预计算 cleanName，错误路径同样零额外 sanitizeName 调用
             _groupsPrepped.forEach(({ g, cleanName }, idx) => {
-                const status = !_isEligibleGroupCore(cleanName) ? "❌" : (_isFallbackGroupCore(cleanName) ? "⚠️" : "✅");
+                const eligible = _isEligibleGroupCore(cleanName);
+                const fallback = eligible && _isFallbackGroupCore(cleanName);
+                const status   = !eligible ? "❌" : (fallback ? "⚠️" : "✅");
                 const count = g?.proxies?.length || 0;
                 console.log(`   ${idx + 1}. ${status} [${g?.name}] (${g?.type ?? "未知"}, ${count} 节点)`);
             });
@@ -642,7 +644,7 @@ function main(config) {
     //   isFireflyActive=false → pushSuffix(adobeFireflyDeps, "REJECT",       layerPools.block) → 走拦截
     //   两条分支覆盖相同域名集合，行为对称，单一维护点，修改只需改此数组。
     //
-    // ⚠️【Firefly 必要副效应】auth.services.adobe.com / cc-api-cp.adobe.io 同时承载 CC 正版验证心跳。
+    // ⚠️【Firefly 必要副作用】auth.services.adobe.com / cc-api-cp.adobe.io 同时承载 CC 正版验证心跳。
     //   isFireflyActive=true 时放行后，以下进程的鉴权请求均走代理，而进程规则仅覆盖 AdobeGCClient.exe：
     //     AdobeGCClient.exe  ← 由 processBlockRules REJECT-DROP（静默丢包，见下方说明）兜底（已覆盖）
     //     Creative Cloud.exe ← CC 桌面客户端含授权心跳（基于依赖链考量的必要豁免：心跳放行不触发重验证，TUN 进程规则本身不可靠）
@@ -723,6 +725,7 @@ function main(config) {
         "sstats.adobe.com",                       // 实时统计上报（新版 CC 框架）
         "entitlementauthz.adobe.com",             // 授权（Authorization）验证服务（authz 为 authorization 缩写，2025 年新增）
         "assets.entitlement.adobe.com",           // 授权资产校验（2025 年新增）
+        "telemetry.adobe.com",                    // Adobe 遥测的另一入口，在部分 CC 版本抓包中出现
     ];
 
     // ──── 随机子域正则（统一引用源）—— adobeRegex 与 adobeUdpBlock 均引用此变量，禁止各自硬编码，修改只需改此处 ────
@@ -746,7 +749,7 @@ function main(config) {
         //      用户表现为 PS Neural Filters / Select Subject 等依赖 Sensei 的 AI 功能立即报错，
         //      而非卡死 15–30s——改 REJECT 后用户可快速判断为网络拦截而非软件 bug。
         //      ❗【待抓包确认】若确认 senseicore/senseimds 同时服务非 Firefly 的 PS AI 功能，
-        //      建议将其显式加入 adobeFireflyOnly（精确放行）或 adobeSuffix（改为 REJECT）。
+        //      建议将其显式加入 adobeFireflyOnly（精确放行走代理）或 adobeSuffix（以精确 DOMAIN-SUFFIX 替代当前 REGEX 覆盖，动作不变仍为 REJECT）
         `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE_STR},REJECT`,
     ];
 
@@ -770,7 +773,7 @@ function main(config) {
     //    收到 ICMP 后应用立即 fallback 至 TCP，TCP 连接再命中 directRules 的 DOMAIN-SUFFIX,DIRECT。
     //    整体路径：UDP→REJECT（立即） → TCP fallback → DIRECT。无延迟，行为符合预期。
     //
-    // AND 条件书写顺序按代价从低到高排列（设计意图：期望低代价条件先求值，一旦为假立即短路，节省后续高代价求值）：
+    // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核能够尽早排除低代价条件后跳过高代价求值）：
     // NETWORK（读包头）→ DST-PORT（整数比较）→ DOMAIN-*（依赖 SNI 嗅探）
     // 实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
     const adobeUdpBlock = [
@@ -825,7 +828,7 @@ function main(config) {
     // ⚠️ 使用 DOMAIN 精确匹配（而非 DOMAIN-SUFFIX）：
     //    WSS 走 TCP，而 adobeUdpBlock 仅覆盖 UDP，无法拦截此类流量；
     //    目前仅有此一个已知端点，无多级子域的抓包证据，保守使用精确匹配，等待后续抓包资料支持后再评估是否扩展。
-    const adobeWsDomain = [
+    const adobeWsDomain = [                       // 如后续抓包发现更多 WSS 端点，在此数组补充
         "wss.adobe.io",                           // 前缀 wss 推断为 WebSocket Secure 遥测端点；域名命名无法证明协议类型，待抓包确认（新版 CC 框架）
     ];
 
@@ -839,9 +842,9 @@ function main(config) {
     //   firefly-cliov2.adobe.com / clio.adobe.io / clio-prober.adobe.io /
     //   clio-assets.adobe.com / senseicore.adobe.io / senseimds.adobe.io
     //
-    // ⚠️【必要副效应】adobeFireflyDeps 同时承载 CC 正版验证心跳，
+    // ⚠️【必要副作用】adobeFireflyDeps 同时承载 CC 正版验证心跳，
     //           放行后激活拦截的最终防线为 PROCESS-NAME,AdobeGCClient.exe → REJECT-DROP（需 ENABLE_PROCESS_RULE=true + TUN 模式 + 管理员权限，进程规则本身不可靠）。
-    //           其余未覆盖进程详见 adobeFireflyDeps 注释中的 §Firefly 必要副效应。
+    //           其余未覆盖进程详见 adobeFireflyDeps 注释中的 §Firefly 必要副作用。
     // 关于 adobeUdpBlock 与 Firefly .adobe.io 域名的 QUIC 豁免机制：
     //   最终规则池展开顺序（由 LAYER_ORDER 决定，allow < block，与 push 调用书写顺序无关）：
     //   adobeFireflyDeps+adobeFireflyOnly（allow 层）→ adobeSuffix → adobeRegex → adobeUdpBlock（block 层）
@@ -1121,9 +1124,8 @@ function main(config) {
         "toptips.qq.com",                        // QQ 弹窗提示推送
         "minibrowser.qq.com",                    // QQ 内置迷你浏览器广告
         // 阿里 / 友盟。
-        // ⚠️【副作用】umeng.com 为大量国内正规 App 集成的友盟 SDK（统计分析）主域，
-        //    拦截后这些 App 首次启动可能因初始化统计失败而出现功能异常或卡顿。
-        //    若发现特定软件启动异常，可考虑临时豁免此条（注释掉该行并重载订阅）。
+        // ⚠️【副作用】umeng.com 为大量国内正规 App 集成的友盟 SDK（统计分析）和友盟推送共用此主域，
+        //    拦截后可能导致大量国产 App 的推送通知和统计初始化同时失效，影响面较宽。若发现特定软件启动异常，可考虑临时豁免此条（注释掉该行并重载订阅）。
         "umeng.com",                             // 友盟统计 SDK 主域（⚠️ 副作用：部分正规 App 依赖此域初始化，见上方说明）
         "umengcloud.com",                        // 友盟云端统计
         "alimama.com",                           // 阿里妈妈广告联盟
@@ -1281,20 +1283,18 @@ function main(config) {
     //    是唯一有效的域名无关进程级拦截手段（路径A 下 DOMAIN 规则仍生效，此为附加纵深）。
     const processBlockRules = [ // 进程拦截
         // ──── 正版验证类：保留 REJECT-DROP（让软件超时等待，不快速切换备用链路）────
-        // ──── 功能上可归并为单条全流量 REJECT-DROP，但出于日志可观测性保留三条────
-        //      （QUIC 443 / 普通 UDP / TCP 分别命中不同规则，便于按流量类型排查；
-        //       若追求极简可安全移除前两条，仅保留全流量规则，但会损失流量类型的日志区分度）
-        // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核短路求值时优先淘汰低代价条件）：
+        // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核能够尽早排除低代价条件后跳过高代价求值）：
         // NETWORK（读包头）→ DST-PORT（整数比较）→ PROCESS-NAME（查系统进程表）
         // 实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
         // first-match 语义下：
         //   QUIC 443 规则是全 UDP 规则的子集，是全流量规则的子集；三条动作完全相同（全部 REJECT-DROP），
-        //   功能上等价于只保留全流量规则。
+        //   功能上等价于只保留全流量规则。QUIC 443 / 普通 UDP / TCP 分别命中不同规则，便于按流量类型排查；
         //   保留 QUIC 443 / 全 UDP 两条仅为明确表达流量类型覆盖意图，非功能必要。
-        //   若追求极简，可安全移除前两条，仅保留全流量 REJECT-DROP。
+        //   若追求极简，可安全移除前两条，仅保留全流量规则，但会损失流量类型的日志区分度
         "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 端口条件可能加快匹配（内核短路求值）
         "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP",
         "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证（最重要）
+        "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",       // 进程间通信代理，CC 各组件通过此进程转发激活验证请求，在新版 CC（2023+）中承担部分鉴权通信，基于架构推断而非抓包
         "PROCESS-NAME,AdskLicensingService.exe,REJECT-DROP", // Autodesk 许可验证
         "PROCESS-NAME,AdskAccess.exe,REJECT-DROP",           // Autodesk 访问控制服务
         "PROCESS-NAME,AdskIdentityManager.exe,REJECT-DROP",  // Autodesk 身份认证管理器
@@ -1329,16 +1329,17 @@ function main(config) {
     // ────────────────────────────── 代理规则 ──────────────────────────────
     // ⚠️ Google 风控：Gemini 检测出口 IP 漂移，google.com 与 gemini.google.com 必须命中同一策略组，否则可能触发 403 或账号异常
     const proxySuffixList = [
-        "copilot.microsoft.com",                 // Copilot AI 助手（注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct）
-        "linkedin.com",                          // 领英职场社交网络
-        // "openai.com",           // 按需取消注释。
-        // "gemini.google.com",    // 按需取消注释（⚠️ 见上方 Google 风控警告：google.com 必须与 gemini.google.com 命中同一策略组）
+        "github.com",                           // 代码托管平台，防御性规则：当外部覆写配置引用的代理规则集下载失败（规则集条目为空）时，让该域走代理确保连通性
+        "copilot.microsoft.com",                // Copilot AI 助手（注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct）
+        "linkedin.com",                         // 领英职场社交网络
+        // "openai.com",                        // 按需取消注释
+        // "gemini.google.com",                 // 按需取消注释（⚠️ 见上方 Google 风控警告：google.com 必须与 gemini.google.com 命中同一策略组）
         // ────────── Steam 分流：商店走代理，下载走直连 ──────────
         // store / community / static 是国内受阻的前端域，走代理提升访问体验。
         // steampowered.com 根域含 content1~9 下载 CDN（内容分发网络）子域，保留直连保证下载速度。
-        "store.steampowered.com",                // Steam 商店页面
-        "steamcommunity.com",                    // Steam 社区 / 创意工坊 / 市场
-        "steamstatic.com",                       // Steam 商店静态资源（封面/截图）
+        "store.steampowered.com",               // Steam 商店页面
+        "steamcommunity.com",                   // Steam 社区 / 创意工坊 / 市场
+        "steamstatic.com",                      // Steam 商店静态资源（封面/截图）
     ];
 
     // ────────────────────────────── 直连规则 ──────────────────────────────
@@ -1477,7 +1478,7 @@ function main(config) {
                 //      · firefly-api.adobe.io / clio-prober.adobe.io（含连字符，不满足 [A-Za-z0-9]{8,12}）
                 //    若不显式注入，上述 Firefly 推理端点将落入 MATCH 兜底策略（可能走直连），
                 //    背离「关闭 ENABLE_FIREFLY = 禁用 Firefly 功能」的设计意图。
-                //    （senseicore / senseimds 恰好满足 adobeRegex 的 10/9 位条件，已被兜底覆盖；
+                //    （senseicore / senseimds 恰好满足 adobeRegex 的 10/9 位条件 [A-Za-z0-9]{8,12} 约束），已被兜底覆盖；
                 //     但其余七条需此处显式处理，不可依赖正则侥幸命中。）
                 pushSuffix(adobeFireflyDeps,   "REJECT", layerPools.block);
                 pushSuffix(adobeFireflyOnly, "REJECT", layerPools.block);
@@ -1525,7 +1526,7 @@ function main(config) {
             // length > 0 守卫：防范将来有人直接修改三元表达式导致数组意外为空时
             // 调用 pushKeyword 传入空数组产生无意义调用（仅对 ENABLE_GLOBAL_KEYWORD_BLOCK=true 场景有意义）；
             // 当前代码路径下 ENABLE_GLOBAL_KEYWORD_BLOCK=true 时 globalKeyword 恒为四元素数组，永远非空。
-            if (ENABLE_GLOBAL_KEYWORD_BLOCK && globalKeyword.length > 0) {
+            if (globalKeyword.length > 0) {
                 pushKeyword(globalKeyword, "REJECT", layerPools.block);
             }
         }
@@ -1676,7 +1677,7 @@ function main(config) {
     //    hosts 命中后，DNS 已在解析阶段返回拦截地址，TCP 连接不会发出，
     //    rules 层（DOMAIN-SUFFIX REJECT-DROP 等）不会执行。
     //    rules 层是 hosts 未生效时（用户未开启「使用 Hosts」或应用使用硬编码 IP 绕过 DNS）的兜底。
-    //    两者不冲突，是分层防御的设计意图。
+    //    两者存在有意的依赖关系：Hosts 层优先，rules 层兜底；Hosts 命中时 rules 不参与，形成有序纵深防御而非并行双保险。
     //
     //   各 HOSTS_MODE 的连接失败类型：
     //     0.0.0.0 / :: → ENETUNREACH（Linux/Android）/
@@ -1705,8 +1706,7 @@ function main(config) {
         console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」");
         // console.warn("❗ 前提1：CVR › DNS 覆写 → 必须开启「启用 DNS」（关闭则 dns 块整体失效）");
         // console.warn("❗ 前提2：CVR › DNS 覆写 → 必须开启「使用 Hosts」");
-        // console.warn("❗ 脚本注入的 use-hosts:true 会被 CVR UI 层覆盖，必须手动开启，脚本无法替代手动操作");
-        console.warn("💡 两个开关缺一不可，脚本无法检测 UI 层开关状态；未开启时仍打印成功日志，但 Hosts 覆写不生效");
+        console.warn("💡 两个开关缺一不可，脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
         try {
 
             // modeMap 值格式：
@@ -1777,22 +1777,12 @@ function main(config) {
             if (typeof config.dns !== "object" || config.dns === null || Array.isArray(config.dns)) {
                 config.dns = {};
             }
-            // ⚠️ 重要限制：此处写入 use-hosts: true 会被 Clash Verge Rev UI 设置覆盖。
-            //
             //    Clash Verge Rev 的配置生效顺序：
             //      订阅 yaml → 脚本注入 → UI 设置覆盖 → 写入 clash-verge.yaml → Mihomo 加载
             //
-            //    脚本在"脚本注入"阶段写入 use-hosts: true，但随后"UI 设置覆盖"
-            //    阶段会将「使用 Hosts」开关的值（默认 false）写入合并配置，
-            //    将脚本注入的值覆盖。脚本无法绕过此 UI 层覆盖。
+            //    → 必须在 Clash Verge Rev 设置 › DNS 覆写 › 手动开启「使用 Hosts」，Hosts DNS 覆写才能真正生效。
             //
-            //    → 必须在 Clash Verge Rev 设置 › DNS 覆写 › 手动开启「使用 Hosts」，
-            //      Hosts DNS 覆写才能真正生效。
-            //
-            //    注意：同页面还有「使用系统 Hosts」开关，该开关控制的是 Windows 原生 hosts 文件
-            //          （C:\Windows\System32\drivers\etc\hosts），与本脚本向 Mihomo 注入的 hosts 条目
-            //          完全独立，保持关闭即可。
-            config.dns["use-hosts"] = true;
+            //    注意：同页面还有「使用系统 Hosts」开关，该开关控制的是系统原生 hosts 文件，与本脚本向 Mihomo 注入的 hosts 条目完全独立，保持关闭即可。
 
             // dns.hosts 同样使用 safeHostsObj 校验。
             config.dns.hosts = { ...safeHostsObj(config.dns.hosts), ...customHosts };
@@ -1825,8 +1815,8 @@ function main(config) {
             // 先 trim 归一化（消除首尾空白），过滤非法条目，再用 existingSet 去重并写入 cleanExisting。
             const existingSet   = new Set();
             const cleanExisting = [];
-            for (const i of config.dns["fake-ip-filter"]) {
-                const s = typeof i === "string" ? i.trim() : "";
+            for (const entry of config.dns["fake-ip-filter"]) {
+                const s = typeof entry === "string" ? entry.trim() : "";
                 if (s && !existingSet.has(s.toLowerCase())) {
                     existingSet.add(s.toLowerCase());
                     cleanExisting.push(s);
@@ -1905,10 +1895,10 @@ function main(config) {
  *              如遇启动极慢可将 REJECT-DROP 批量改为 REJECT
  *
  *   ⚠️ Hosts 模块生效前提（ENABLE_HOSTS_OVERRIDE）：
- *     - CVR › DNS 覆写，必须同时开启「启用 DNS」和「使用 Hosts」，缺一不可
- *     - 脚本注入 use-hosts: true 会被 CVR UI 层覆盖，必须手动开启，脚本无法替代手动开启设置
- *     - 「使用系统 Hosts」与脚本注入的 Mihomo hosts 是两套完全独立的机制：前者对应 Windows 原生 hosts 文件，后者由 Mihomo 内核管理，无需开启「使用系统 Hosts」
- *     - 未开启时本模块静默失效（脚本仍打印成功日志，但拦截实际不生效）
+ *     - CVR › DNS 覆写，必须同时开启「启用 DNS」和「使用 Hosts」，缺一不可。
+ *     - 脚本不写入 use-hosts，此字段由 CVR 的开关管理，写入后仍会被 CVR UI 设置覆盖，必须在 CVR › DNS 覆写 手动开启「使用 Hosts」，脚本无法替代手动操作。
+ *     - 「使用系统 Hosts」与脚本注入的 Mihomo hosts 是两套完全独立的机制：前者对应系统原生 hosts 文件，后者由 Mihomo 内核管理，无需开启「使用系统 Hosts」。
+ *     - 未开启时本模块静默失效（脚本仍打印成功日志，但拦截实际不生效）。
  *
  * ══════════════════════════ ░░ 设计取舍 ░░ ══════════════════════════
  *
@@ -1922,7 +1912,7 @@ function main(config) {
  *      独立块注释区分「已确认 / 待抓包确认」，优先保证 Firefly 功能正常可用，而非严格遵循最小权限原则；
  *      待抓包确认后可视情况将推测项移至 adobeSuffix（改为 REJECT）。
  *
- *   💡 Firefly 必要副效应（基于依赖链考量的必要豁免，原因见下）：
+ *   💡 Firefly 必要副作用（基于依赖链考量的必要豁免，原因见下）：
  *      isFireflyActive=true 时，以下进程的鉴权请求均走代理，进程规则仅覆盖 AdobeGCClient.exe：
  *        AdobeGCClient.exe  ← 由 processBlockRules REJECT-DROP 兜底（已覆盖）
  *        Creative Cloud.exe ← 含授权心跳（必要豁免）
@@ -2013,6 +2003,9 @@ function main(config) {
  *                  （如「关键词优选策略」、「最终容错选取」）
  *     - 【禁止标记】严禁在逻辑行添加动态标记（如 // Fix by XXX），保持代码无状态
  *
+ * 变量和常量的命名准则：
+ * _camelCase 对应运行时临时变量，_UPPER_CASE 对应"私有编译期常量"（正则 / 冻结集合）。两段命名语义上是对称的，类似于"私有变量"与"私有常量"的区分惯例。
+ * 
  *   🛠️ 编程防御：
  *     - 严禁直接访问 config[n]，必须使用 ?. 或 Array.isArray() 级联校验
  *     - 数据层（域名 / 组名）必须在配置区声明，逻辑层只负责读取，严禁硬编码
