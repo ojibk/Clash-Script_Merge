@@ -1573,10 +1573,10 @@ function main(config) {
 
     if (ENABLE_HOSTS_OVERRIDE) {
         // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
-        console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」");
+        console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可！");
         // console.warn("❗ 前提1：CVR › DNS 覆写 → 必须开启「启用 DNS」（关闭则 dns 块整体失效）");
         // console.warn("❗ 前提2：CVR › DNS 覆写 → 必须开启「使用 Hosts」");
-        console.warn("💡 两个开关缺一不可，脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
+        console.warn("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
         try {
 
             // modeMap 值格式：
