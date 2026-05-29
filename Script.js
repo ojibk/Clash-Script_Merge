@@ -1480,7 +1480,7 @@ function main(config) {
             console.log(`   Firefly放行: ❌`);
         }
 
-        console.log(`   进程规则:   ${ENABLE_PROCESS_RULE  ? "✅（需管理员权限+TUN/Service 模式，条件不满足则静默失效）" : "❌"}`);
+        console.log(`   进程规则:   ${ENABLE_PROCESS_RULE  ? "✅（需管理员权限+TUN/Service 模式，另还须 config 开启获取进程信息，条件不满足则静默失效）" : "❌"}`);
         console.log(`   代理规则:   ${ENABLE_PROXY         ? "✅" : "❌"}`);
         // ENABLE_AGGRESSIVE 激进模式日志增加警告行，列出已知受影响域。
         if (ENABLE_AGGRESSIVE) {
