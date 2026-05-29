@@ -151,13 +151,15 @@ proxy-groups:
 # #  · 支持的 behavior：仅 domain / ipcidr，classical 模式不支持 MRS，本配置无 classical 条目。
 # #  · MRS 来源：MetaCubeX、peiyingyao、DustinWin（每日自动构建），原 Loyalsoldier yaml 与 Blackmatrix7 text 的格式区分约束在 MRS 下不再存在。
 # #
-# # 【behavior 性能原理】
+# # 【behavior 行为模式性能原理】
 # #  全线选用 domain / ipcidr 模式，内核加载时分别构建：
 # #  · 后缀匹配树（Domain Trie）：域名按标签从右至左（TLD 先入树，子域后入）倒序存入前缀树，
-# #    共享相同前缀的域名标签共用相同树路径，支持高效后缀命中，单次树查询即可完成匹配，时间复杂度仅与目标字符串长度相关，不受规则集总条目数影响。
+# #    共享相同前缀的域名标签共用相同树路径，支持高效后缀命中，
+# #    单次树查询即可完成匹配，时间复杂度仅与目标字符串长度相关，不受规则集总条目数影响。
 # #  · 前缀匹配树（CIDR Trie）：IP 地址按二进制前缀存入前缀树，高效处理 IP 段范围命中。
 # #  相比 classical（逐行线性扫描）模式，在规则集条目数量庞大时可显著降低 CPU 与内存开销，匹配速度更快。
-# #  classical 模式要求文件内每行为完整规则指令（如 DOMAIN,example.com 或 IP-CIDR,192.168.0.0/16），本配置所选源文件均为纯列表，不使用此模式。
+# #  classical 模式要求文件内每行为完整规则指令（如 DOMAIN,example.com 或 IP-CIDR,192.168.0.0/16），
+# #  本配置所选源文件均为纯列表，不使用此模式。
 # #  MRS 在此基础上进一步优化：以二进制序列化形式存储已构建的 Trie 树，加载时直接内存映射，跳过文本词法/语法分析及 Trie 构建，启动开销接近于零。
 # #  yaml/text 格式需经"磁盘 IO → 反序列化 → Trie 构建"三阶段；MRS 仅需"磁盘 IO → 映射"。
 # #
