@@ -21,7 +21,7 @@
  *   - 智能识别代理策略组（多级降级策略：优选组 → 兜底组 → 容错选取 → 排除并中止）
  *   - 注入拦截规则（Adobe / Corel / Autodesk 等激活 / 遥测域名）
  *   - 注入代理 / 直连规则
- *   - 进程级规则（需管理员权限 + TUN 模式，即 Mihomo 创建虚拟网卡接管全部流量）
+ *   - 进程规则（需管理员权限 + TUN 模式，即 Mihomo 创建虚拟网卡接管全部流量）
  *   - 激进阻断模块（默认关闭，需谨慎开启）
  *   - Hosts 级 DNS 覆写（四种映射子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
  *   - 基于哨兵标记的幂等性规则清理与注入（栈重建算法，O(N) 单次遍历，防止用户多次重新加载订阅导致本脚本注入的规则块重复追加）
@@ -593,7 +593,7 @@ function main(config) {
     //                TCP 侧：软件 Socket 陷入 SYN_SENT 直至系统 TCP 超时；
     //                UDP 侧：数据包被无声丢弃，软件等待响应直至应用层超时；
     //      超时时长为估算值（非固定值），应用层 Socket 阻塞约 15–30s（含 TCP 重传轮次），实际取决于操作系统 TCP 重传配置（Windows 10 默认 TcpMaxSynRetransmissions=2，
-    //      SYN 重传总时长约 21s；Windows 11 默认值已调整，实际超时可能有所不同）。仅用于非官方修改补丁后门（backdoorSuffix/backdoorKeyword）和进程级规则，
+    //      SYN 重传总时长约 21s；Windows 11 默认值已调整，实际超时可能有所不同）。仅用于非官方修改补丁后门（backdoorSuffix/backdoorKeyword）和进程规则，
     //      以此拖延被拦截进程感知失败的时间（Socket 等待超时而非立即失败），阻碍恶意程序发现阻断并切换备用域名的速度。
     //
     // adobeFireflyDeps 条目已移出（路由动作由 isFireflyActive 决定），此处为非 Firefly 依赖的拦截域名。
@@ -1140,19 +1140,16 @@ function main(config) {
     ];
 
     // ─────── 关键词兜底（⚠️ 默认关闭：误伤面较大，2025-2026 年特征已严重泛化）───────
-    // telemetry/analytics/stats/metrics 已出现在大量合法 CDN 和第三方服务域名中。
-    // 例：video-stats.video.google.com / metrics.cloudflare.com / cdn.telemetry-static.com
-    // 如需启用，建议仅保留最精确的词并放到所有具体规则之后。
-    // 启用：将顶部配置区 ENABLE_GLOBAL_KEYWORD_BLOCK 改为 true；
+    // telemetry/analytics/stats/metrics 已出现在大量合法 CDN 和第三方服务域名中。例：video-stats.video.google.com / metrics.cloudflare.com / cdn.telemetry-static.com
+    // 如需启用，建议仅保留最精确的词并放到所有具体规则之后。启用：将顶部配置区 ENABLE_GLOBAL_KEYWORD_BLOCK 改为 true；
     // 关闭时：三元表达式直接赋值空数组 []，后续 if (globalKeyword.length > 0)判断为 false，pushKeyword 不会被调用——这是一次完整的求值，而非短路。  
     // length > 0 守卫的实际意义：仅防御「ENABLE_GLOBAL_KEYWORD_BLOCK=true 但三元表达式被意外改写导致数组为空」的极端情形；
-    //   当前实现下此守卫永远不触发（开关为 true 时数组恒为四元素，永远非空）。
-    //   pushKeyword 对空数组本身也是零次迭代（no-op），故守卫在技术上是冗余的，保留仅为防御未来改动意外清空数组。
+    //   当前实现下此守卫永远不触发（开关为 true 时数组恒为四元素，永远非空）。pushKeyword 对空数组本身也是零次迭代（no-op），故守卫是冗余的，保留仅为防御未来改动意外清空数组。
     const globalKeyword = ENABLE_GLOBAL_KEYWORD_BLOCK
         ? ["telemetry", "analytics", "stats", "metrics"]
         : [];
 
-    // ───────────────────────────── 进程级规则 ─────────────────────────────
+    // ───────────────────────────── 进程规则 ─────────────────────────────
     // ⚠️ Windows 需要管理员权限 + TUN 模式（Mihomo 创建虚拟网卡接管全部流量）或 Service 模式，系统代理模式无效
     //    TUN 模式：Mihomo 创建虚拟网卡，所有流量经虚拟网卡路由后由 Mihomo 处理；
     //    Service 模式：Mihomo 以系统服务身份运行，效果等同于 TUN 模式，无需每次手动启动。
@@ -1166,17 +1163,14 @@ function main(config) {
     const processBlockRules = [ // 进程拦截
         // ──── 正版验证类：保留 REJECT-DROP（让软件超时等待，不快速切换备用链路）────
         // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核能够尽早排除低代价条件后跳过高代价求值）：
-        // NETWORK（读包头）→ DST-PORT（整数比较）→ PROCESS-NAME（查系统进程表）
-        // 实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
+        // NETWORK（读包头）→ DST-PORT（整数比较）→ PROCESS-NAME（查系统进程表）。实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
         // first-match 语义下：
-        //   QUIC 443 规则是全 UDP 规则的子集，是全流量规则的子集；三条动作完全相同（全部 REJECT-DROP），
-        //   功能上等价于只保留全流量规则。QUIC 443 / 普通 UDP / TCP 分别命中不同规则，便于按流量类型排查；
-        //   保留 QUIC 443 / 全 UDP 两条仅为明确表达流量类型覆盖意图，非功能必要。
-        //   若追求极简，可安全移除前两条，仅保留全流量规则，但会损失流量类型的日志区分度
+        //   QUIC 443 规则是全 UDP 和全流量规则的子集；三条动作完全相同（全部 REJECT-DROP），功能上等价于只保留全流量规则。QUIC 443 / 普通 UDP / TCP 分别命中不同规则，
+        //   便于按流量类型排查；保留 QUIC 443 / 全 UDP 两条仅为明确表达流量类型覆盖意图，非功能必要。若追求极简，可移除前两条，仅保留全流量规则，但会损失流量类型的日志区分度。
         "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 端口条件可能加快匹配（内核短路求值）
         "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP",
         "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证（最重要）
-        "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",       // 进程间通信代理，CC 各组件通过此进程转发激活验证请求，在新版 CC（2023+）中承担部分鉴权通信，基于架构推断而非抓包
+        "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",       // 进程间通信代理，CC 各组件通过此进程转发激活验证请求，在 CC 2023+ 版本中承担部分鉴权通信，基于架构推断而非抓包
         "PROCESS-NAME,AdskLicensingService.exe,REJECT-DROP", // Autodesk 许可验证
         "PROCESS-NAME,AdskAccess.exe,REJECT-DROP",           // Autodesk 访问控制服务
         "PROCESS-NAME,AdskIdentityManager.exe,REJECT-DROP",  // Autodesk 身份认证管理器
@@ -1211,17 +1205,17 @@ function main(config) {
     // ────────────────────────────── 代理规则 ──────────────────────────────
     // ⚠️ Google 风控：Gemini 检测出口 IP 漂移，google.com 与 gemini.google.com 必须命中同一策略组，否则可能触发 403 或账号异常
     const proxySuffixList = [
-        "github.com",                           // 代码托管平台，防御性规则：当外部覆写配置引用的代理规则集下载失败（规则集条目为空）时，让该域走代理确保连通性
-        "copilot.microsoft.com",                // Copilot AI 助手（注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct）
-        "linkedin.com",                         // 领英职场社交网络
-        // "openai.com",                        // 按需取消注释
-        // "gemini.google.com",                 // 按需取消注释（⚠️ 见上方 Google 风控警告：google.com 必须与 gemini.google.com 命中同一策略组）
+        "github.com",                         // 代码托管平台，防御性规则：当外部覆写配置引用的代理规则集下载失败（规则集条目为空）时，让该域走代理确保连通性
+        "copilot.microsoft.com",              // Copilot AI 助手（注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct）
+        "linkedin.com",                       // 领英职场社交网络
+        // "openai.com",                      // 按需取消注释
+        // "gemini.google.com",               // 按需取消注释（⚠️ 见上方 Google 风控警告：google.com 必须与 gemini.google.com 命中同一策略组）
         // ────────── Steam 分流：商店走代理，下载走直连 ──────────
         // store / community / static 是国内受阻的前端域，走代理提升访问体验。
         // steampowered.com 根域含 content1~9 下载 CDN（内容分发网络）子域，保留直连保证下载速度。
-        "store.steampowered.com",               // Steam 商店页面
-        "steamcommunity.com",                   // Steam 社区 / 创意工坊 / 市场
-        "steamstatic.com",                      // Steam 商店静态资源（封面/截图）
+        "store.steampowered.com",             // Steam 商店页面
+        "steamcommunity.com",                 // Steam 社区 / 创意工坊 / 市场
+        "steamstatic.com",                    // Steam 商店静态资源（封面/截图）
     ];
 
     // ────────────────────────────── 直连规则 ──────────────────────────────
@@ -1466,7 +1460,7 @@ function main(config) {
         }
 
         // 插入到规则列表最前面（最高优先级）
-        config.rules = [...finalPool, ...config.rules];
+        config.rules = finalPool.concat(config.rules);
 
         console.log("=".repeat(28));
         // 🔍 运行诊断日志（规则注入成功后输出各开关状态及统计信息）
@@ -1510,7 +1504,7 @@ function main(config) {
         //    Hosts DNS 覆写（尤其是后门域名黑洞化）在规则注入失败时仍有独立防护价值，应尽力执行。
         // ⚠️ 降级场景的哨兵边界说明：
         //   _sentinelEnd 在 finalPool 构建阶段（LAYER_ORDER for 循环结束后）即已压入，
-        //   config.rules 赋值 [...finalPool, ...config.rules]（展开运算符写法）是单条同步语句，在 JS 单线程模型中不会被中断：
+        //   config.rules 赋值（finalPool.concat）是单条同步语句，在 JS 单线程模型中不会被中断：
         //     · 若错误发生在赋值之前（for 循环中），config.rules 尚未被写入，返回干净状态；
         //     · 若错误发生在赋值之后（console.log 阶段），全量注入规则已完整写入（不存在半写入状态），
         //       且两端哨兵均已完整写入，不产生孤儿哨兵。
@@ -1758,17 +1752,11 @@ function main(config) {
  *     REJECT      → TCP 侧：立即返回 TCP RST（重置报文），软件立刻感知失败，进入离线模式，启动无卡顿；
  *                   UDP 侧：返回 ICMP Port Unreachable，软件同样立即感知失败；
  *                   推荐用于遥测 / 授权域名
- *     REJECT-DROP → TCP/UDP 均适用：静默丢包，不回应任何报文；
- *                   TCP 侧：软件 Socket 陷入 SYN_SENT 直至系统 TCP 超时，
- *                   应用层 Socket 阻塞约 15–30s（含 TCP 重传轮次），
- *                   实际取决于 OS TCP 重传配置（Windows 10 默认 TcpMaxSynRetransmissions=2，
- *                   SYN 重传总时长约 21s；Windows 11 默认值已调整，实际超时可能有所不同）；
- *                   UDP 侧：数据包被无声丢弃，软件等待响应直至应用层超时；
- *                   → 仅用于非官方修改补丁后门（backdoorSuffix / backdoorKeyword）
- *                     和进程级规则，以此拖延被拦截进程感知失败的时间（Socket 等待超时而非立即失败），
- *                     阻碍恶意程序快速识别阻断并切换备用通信方式/域名，降低其自适应速度
- *     ⚡ 代价：软件启动时若命中 REJECT-DROP 会有明显卡顿，
- *              如遇启动极慢可将 REJECT-DROP 批量改为 REJECT
+ *     REJECT-DROP → TCP/UDP 均适用：静默丢包，不回应任何报文；TCP 侧：软件 Socket 陷入 SYN_SENT 直至系统 TCP 超时，应用层 Socket 阻塞约 15–30s（含 TCP 重传轮次），
+ *                   实际取决于 OS TCP 重传配置（Windows 10 默认 TcpMaxSynRetransmissions=2，SYN 重传总时长约 21s；Windows 11 默认值已调整，
+ *                   实际超时可能有所不同）；UDP 侧：数据包被无声丢弃，软件等待响应直至应用层超时；仅用于非官方修改补丁后门（backdoorSuffix / backdoorKeyword）和进程规则，
+ *                   以此拖延被拦截进程感知失败的时间（Socket 等待超时而非立即失败），阻碍恶意程序快速识别阻断并切换备用通信方式/域名，降低其自适应速度
+ *     ⚡ 代价：软件启动时若命中 REJECT-DROP 会有明显卡顿，如遇启动极慢可将 REJECT-DROP 批量改为 REJECT
  *
  *   ⚠️ Hosts 模块生效前提（ENABLE_HOSTS_OVERRIDE）：
  *     - CVR › DNS 覆写，必须同时开启「启用 DNS」和「使用 Hosts」，缺一不可。
@@ -1867,8 +1855,8 @@ function main(config) {
  *  // ⚠️ 攻击场景：
     //   · 不可见字符（如 \u200B、\u2060、\u00AD）：视觉上与合法组名无法区分，但字符串比较失配。
     //      典型形如 "D\u2060IRECT"、"\u200B默认"、"DIR\u00ADECT"
-    //   · Bidi 覆盖控制符（如 \u202E RLO）：使组名在渲染时以 RTL（从右向左）方向排列，字符序列本身不变，仅渲染方向被反转，造成视觉欺骗（如 "DIRECT" 显示为 "TCERID"），也绕过比较。
-    //      典型形如 "\u202EDIRECT"，支持 Bidi 渲染时显示为 TCERID
+    //   · Bidi 覆盖控制符（如 \u202E RLO）：使组名在渲染时以 RTL（从右向左）方向排列，字符序列本身不变，仅渲染方向被反转，
+    //      造成视觉欺骗（如 "DIRECT" 显示为 "TCERID"），也绕过比较。典型形如 "\u202EDIRECT"，支持 Bidi 渲染时显示为 TCERID
     // 清理范围（覆盖已知 Unicode Bidi（双向文本）控制符及不可见干扰字符，按码点升序排列）：
     //   \u00AD          软连字符（Soft Hyphen）
     //   \u061C          ARABIC LETTER MARK（ALM，阿拉伯字母方向标记，Unicode 6.3+ Bidi 格式字符）
