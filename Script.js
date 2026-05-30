@@ -1,5 +1,5 @@
 /**
- *   Clash-Script 全局扩展脚本 · 幂等性规则清理与注入（Firefly 精确豁免版）v260530
+ *   Clash-Script 全局扩展脚本 · 幂等性规则清理与注入（Firefly 精确豁免版）v260531
  * 
  * ══════════════════════════ ░░ 脚本自述 ░░ ══════════════════════════
  *
@@ -52,6 +52,8 @@ function main(config) {
     //      · ENABLE_GLOBAL_KEYWORD_BLOCK 属 block 层子开关，因说明篇幅较长集中声明于配置区末尾
     //      · ENABLE_SCRIPT、ENABLE_HOSTS_OVERRIDE 独立于此六层结构之外
     const ENABLE_BLOCK        = true;            // 拦截模块（规则优先级高，仅次于 allow 层，isFireflyActive=true 时 Firefly 放行先于拦截执行，见 LAYER_ORDER）
+                                                 // 关闭拦截模块同时意味着 Firefly 放行规则也不注入。没有任何规则覆盖（既无 REJECT，也无 proxyGroupName），
+                                                 // 部分 Adobe 流量最终落入 MATCH 兜底策略。部分拦截规则视 Adobe 的进程规则在 LAYER_ORDER 中的层级决定去向。
     const ENABLE_FIREFLY      = true;            // 精确放行 Adobe Firefly AI 生成式请求。启用放行规则需（ENABLE_BLOCK=true）对应拦截层以供豁免。
                                                   // ⚠️ 注意：此开关实际生效由下方 isFireflyActive 派生值决定，见下方声明
                                                   // ⚠️ Firefly 放行出口为 proxyGroupName，该值由下方智能识别逻辑自动确定；若识别失败（全部策略均告失败），
@@ -283,7 +285,11 @@ function main(config) {
     //   relay：固定节点链路转发，强制指定出口，无用户可切换的节点选择语义。
     //   url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。
     //   smart：实验性自适应选择类型（≠测速工具），出口语义依赖 Mihomo 版本，行为尚不稳定，保守排除。
+    //   load-balance 已纳入 VALID_PROXY_TYPES（动态路由，具备合法出口语义），不再排除。
+    //   注意：此处保留最低限度的类型语义过滤，而非彻底放开，彻底放开会导致 relay 等固定链路被选中，流量走预设链路而非用户期望的可切换代理，行为与预期不符。
     const VALID_PROXY_TYPES = new Set(["select", "url-test", "fallback", "load-balance"]);
+    // ⚠️ 互补视图：与 VALID_PROXY_TYPES 正反两面描述同一批被排除类型，修改任一处须同步检查另一处。
+    const _UNSUITABLE_TYPES = new Set(["relay", "url-latency-benchmark", "smart"]);
 
     // sanitizeName：统一不可见字符与 Bidi 控制符清理逻辑（完整列表见附录特殊字符集说明），防止视觉欺骗攻击与比较失配。
     // @param {string} name - 原始组名，函数内部负责清洗；调用方无需预先清洗，传入原始字符串即可。
@@ -410,12 +416,7 @@ function main(config) {
         if (!_mainEntry) {
             // [最终容错选取] 排除语义不适合做代理出口的类型（而非全部放开）
             // relay：固定节点链路转发，无节点选择语义，用户无法在其界面切换节点。
-            // url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。
-            // smart：实验性自适应选择类型（≠测速工具），出口语义依赖 Mihomo 版本，行为尚不稳定，保守排除。
-            //        （与上方 VALID_PROXY_TYPES 定义区 smart 描述同步；如需更新，两处须同步修改）
-            // load-balance 已纳入 VALID_PROXY_TYPES（动态路由，具备合法出口语义），不再排除。
-            // 注意：此处保留最低限度的类型语义过滤，而非彻底放开，彻底放开会导致 relay 等固定链路被选中，流量走预设链路而非用户期望的可切换代理，行为与预期不符。   
-            const _UNSUITABLE_TYPES = new Set(["relay", "url-latency-benchmark", "smart"]);
+            // url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。   
             _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
                 _isEligibleGroupCore(cleanName) &&
                 !_UNSUITABLE_TYPES.has(g?.type) &&
@@ -463,8 +464,7 @@ function main(config) {
         return config;
     }
 
-    // 💡 Mihomo 规则语法中策略组名直接使用原始名称，空格 / emoji 均无需引号。
-    // 引号包裹反而会让内核把引号字符视为组名的一部分，导致 proxy not found 报错。
+    // 💡 Mihomo 规则语法中策略组名直接使用原始名称，空格 / emoji 均无需引号。引号包裹反而会让内核把引号字符视为组名的一部分，导致 proxy not found 报错。
 
     // ❗ 代理组排除断言：防止 proxyGroupName 解析为排除出口导致拦截规则静默失效。
     // 覆盖全部排除名：DIRECT / REJECT / COMPATIBLE / DEFAULT / MATCH 及中文等价排除词。
@@ -736,12 +736,7 @@ function main(config) {
     //   adobeUdpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)) 不再执行。
     //   → 豁免效果由注入顺序自动保证（allow 层先于 adobeUdpBlock 入 pool，先命中即生效），无需额外处理。
     //   ⚠️ 前提：此豁免仅在 Mihomo 能识别 SNI 或存在 Fake-IP 映射时成立。
-    //      ECH（Encrypted Client Hello，将 SNI 加密）的实际影响取决于寻址路径：
-    //      · 路径A（Fake-IP + TUN，CVR 默认配置路径）：域名已由 DNS 映射阶段记录，ECH 不影响豁免效果，
-    //        allow 层 DOMAIN-SUFFIX 正常命中，Firefly QUIC 流量正常走代理。
-    //      · 路径B（应用绕过 Mihomo DNS，使用 DoH / DoT 或硬编码 IP）：无 Fake-IP 映射，
-    //        Sniffer 又被 ECH 阻断，allow 层与 adobeUdpBlock 的域名规则同时失效，
-    //        规则层无法干预 QUIC 流量（详见 adobeUdpBlock 末尾 ECH 架构级边界说明）。
+    //   ⚠️ ECH 路径分析同上，详见 adobeFireflyDeps 注释。
     const adobeFireflyOnly = [
         // Firefly 推理核心。
         "firefly.adobe.com",                      // Firefly 主服务入口
@@ -1120,9 +1115,7 @@ function main(config) {
     // ─────── 关键词兜底（⚠️ 默认关闭：误伤面较大，2025-2026 年特征已严重泛化）───────
     // telemetry/analytics/stats/metrics 已出现在大量合法 CDN 和第三方服务域名中。例：video-stats.video.google.com / metrics.cloudflare.com / cdn.telemetry-static.com
     // 如需启用，建议仅保留最精确的词并放到所有具体规则之后。启用：将顶部配置区 ENABLE_GLOBAL_KEYWORD_BLOCK 改为 true；
-    // 关闭时：三元表达式直接赋值空数组 []，后续 if (globalKeyword.length > 0) 判断为 false，pushKeyword 不会被调用——这是一次完整的求值，而非短路。
-    // length > 0 守卫的实际意义：仅防御「ENABLE_GLOBAL_KEYWORD_BLOCK=true 但三元表达式被意外改写导致数组为空」的极端情形；
-    //   当前实现下此守卫永远不触发（开关为 true 时数组恒为四元素，永远非空）。pushKeyword 对空数组本身也是零次迭代（no-op），故守卫是冗余的，保留仅为防御未来改动意外清空数组。
+    // 关闭时：三元表达式直接赋值空数组 []，pushKeyword([], ...) 为零次迭代（no-op），不向 layerPools 写入任何条目，行为等同于未调用。
     const globalKeyword = ENABLE_GLOBAL_KEYWORD_BLOCK
         ? ["telemetry", "analytics", "stats", "metrics"]
         : [];
@@ -1304,18 +1297,18 @@ function main(config) {
         };
 
         if (ENABLE_BLOCK) {
-               // ──── Firefly 路由：isFireflyActive 决定 adobeFireflyDeps / adobeFireflyOnly 的注入层与动作 ────
-               // isFireflyActive=true  → allow 层走代理（first-match 保证先于 adobeSuffix REJECT 命中）
-               // isFireflyActive=false → block 层走拦截（ENABLE_BLOCK=true && ENABLE_FIREFLY=false 时此路径生效；
-               //   ENABLE_BLOCK=false 时最外层 if 整体跳过，此代码段不执行）
-               //
-               // ⚠️ isFireflyActive=false 时 adobeFireflyOnly 须显式拦截（不可省略）：
-               //    其域名不在 adobeSuffix / adobeRegex 覆盖范围内：
-               //      · clio.adobe.io / firefly.adobe.io（位数过短，不满足 {8,12}）
-               //      · firefly.adobe.com / clio-assets.adobe.com 等（TLD 为 .com，adobeRegex 仅覆盖 .io）
-               //      · firefly-api.adobe.io / clio-prober.adobe.io（含连字符，不满足 [A-Za-z0-9]{8,12}）
-               //    若不显式注入，上述端点将落入 MATCH 兜底策略（可能走直连），背离「关闭 ENABLE_FIREFLY = 禁用 Firefly 功能」的设计意图。
-               //    （senseicore / senseimds 满足 adobeRegex {8,12} 约束，已被正则兜底；其余条目须此处显式处理。）
+            // ──── Firefly 路由：isFireflyActive 决定 adobeFireflyDeps / adobeFireflyOnly 的注入层与动作 ────
+            // isFireflyActive=true  → allow 层走代理（first-match 保证先于 adobeSuffix REJECT 命中）
+            // isFireflyActive=false → block 层走拦截（ENABLE_BLOCK=true && ENABLE_FIREFLY=false 时此路径生效；
+            //   ENABLE_BLOCK=false 时最外层 if 整体跳过，此代码段不执行）
+            //
+            // ⚠️ isFireflyActive=false 时 adobeFireflyOnly 须显式拦截（不可省略）：
+            //    其域名不在 adobeSuffix / adobeRegex 覆盖范围内：
+            //      · clio.adobe.io / firefly.adobe.io（位数过短，不满足 {8,12}）
+            //      · firefly.adobe.com / clio-assets.adobe.com 等（TLD 为 .com，adobeRegex 仅覆盖 .io）
+            //      · firefly-api.adobe.io / clio-prober.adobe.io（含连字符，不满足 [A-Za-z0-9]{8,12}）
+            //    若不显式注入，上述端点将落入 MATCH 兜底策略（可能走直连），背离「关闭 ENABLE_FIREFLY = 禁用 Firefly 功能」的设计意图。
+            //    （senseicore / senseimds 满足 adobeRegex {8,12} 约束，已被正则兜底；其余条目须此处显式处理。）
             const [_fireflyAction, _fireflyPool] = isFireflyActive
                ? [proxyGroupName, layerPools.allow]
                : ["REJECT",       layerPools.block];
@@ -1404,14 +1397,14 @@ function main(config) {
         // Object.freeze：const 仅防止重新赋值，不防止 push/splice 等原地变异；
         //   freeze 确保 LAYER_ORDER 内容在整个注入过程中绝对不变，防止未来扩展时意外静默失效。
         // ⚠️ 键名一致性约束：LAYER_ORDER 的字符串元素必须与 layerPools 的键名完全一致；
-        //   添加新层时须同步在两处修改，仅改其一会导致新层被 pushLayer 写入但不被 LAYER_ORDER 展开，规则静默丢失（无任何报错）。
+        //   添加新层时须同步在两处修改；仅改其一会触发 LAYER_ORDER 双向一致性断言，中止注入并输出明确错误信息（规则不会静默丢失）。
         // ⚠️ LAYER_ORDER 顺序 = first-match 策略优先级，禁止随意调整，两类典型错误：
         //    危险示例1：将 "aggressive" 移至 "allow" 之前，adobe.io 通配 REJECT-DROP 先于 Firefly 精确放行命中，推理请求被错误拦截。
         //    危险示例2：将 "direct" 移至 "aggressive" 之前，父域 autodesk.com,DIRECT 先命中，子域 accounts.autodesk.com,REJECT-DROP 等激进规则将永久被父域规则遮蔽。
         //    插入/删除层级时，需在 LAYER_ORDER 和 layerPools 两处同步修改（见上方约束说明）；finalPool 的 for 循环本身无需改动。
         const LAYER_ORDER = Object.freeze(["allow", "block", "process", "proxy", "aggressive", "direct"]);
 
-        // 启动断言：双向一致性检查，验证 LAYER_ORDER 与 layerPools 键名一致性
+        // 规则池完整性断言：双向一致性检查，验证 LAYER_ORDER 与 layerPools 键名一致性
         const _orderSet = new Set(LAYER_ORDER);
         // 原向检查：LAYER_ORDER → layerPools（防止 LAYER_ORDER 有键但 layerPools 无对应键）
         for (const k of LAYER_ORDER) {
@@ -1423,7 +1416,6 @@ function main(config) {
             if (!_orderSet.has(k))
                 throw new Error(`[Script] layerPools 键 '${k}' 不在 LAYER_ORDER 中，该层规则将被静默丢弃`);
         }
-
 
         const finalPool = [_sentinelStart];
         // 按 LAYER_ORDER 顺序展开各层，单次迭代用 push(r) 规避大型数组 push(...arr) 的 RangeError。
@@ -1445,7 +1437,8 @@ function main(config) {
         // Firefly 放行状态需结合 isFireflyActive 综合判断后显示。
         if (ENABLE_FIREFLY) {
             if (isFireflyActive) {
-                console.log(`   Firefly放行: ✅（isFireflyActive=true，Firefly 依赖端点集已从统一引用源注入）⚠️ Firefly 端点已放行`);
+                console.log(`   Firefly放行: ✅（adobeFireflyDeps + adobeFireflyOnly 均已注入 allow 层，走 ${proxyGroupName}）`);
+                console.warn(`   ⚠️ Firefly 端点已放行：auth/cc-api 等鉴权端点同时放行，最终防线为 AdobeGCClient.exe REJECT-DROP`);
             } else {
                 console.log(`   Firefly放行: ❌ ENABLE_BLOCK=false，isFireflyActive 已自动降级（不生效）`);
             }
@@ -1790,43 +1783,43 @@ function main(config) {
  *   ──────────────────────────────────────────────────────────────
  * 
  * 特殊字符集说明：
- *  // ⚠️ 攻击场景：
-    //   · 不可见字符（如 \u200B、\u2060、\u00AD）：视觉上与合法组名无法区分，但字符串比较失配。
-    //      典型形如 "D\u2060IRECT"、"\u200B默认"、"DIR\u00ADECT"
-    //   · Bidi 覆盖控制符（如 \u202E RLO）：使组名在渲染时以 RTL（从右向左）方向排列，字符序列本身不变，仅渲染方向被反转，
-    //      造成视觉欺骗（如 "DIRECT" 显示为 "TCERID"），也绕过比较。典型形如 "\u202EDIRECT"，支持 Bidi 渲染时显示为 TCERID
-    // 清理范围（覆盖已知 Unicode Bidi（双向文本）控制符及不可见干扰字符，按码点升序排列）：
-    //   \u00AD          软连字符（Soft Hyphen）
-    //   \u061C          ARABIC LETTER MARK（ALM，阿拉伯字母方向标记，Unicode 6.3+ Bidi 格式字符）
-    //   \u200B-\u200F   零宽空格 / 零宽不连接符 / 零宽连接符 / LRM（LEFT-TO-RIGHT MARK，左到右方向标记）/ RLM（RIGHT-TO-LEFT MARK，右到左方向标记）
-    //                   
-    //   \u2028-\u202E   行/段终止符 + Bidi 方向控制符（连续 7 个码点，两大类语义；Bidi 部分细分为嵌入/弹出/覆盖三种子类型，已合并为单一范围）：
-    //                   \u2028 LINE SEPARATOR / \u2029 PARAGRAPH SEPARATOR：不可见，曾用于 JSON 注入攻击，导致字符串比较失配；
-    //                   \u202A-\u202E Bidi 方向控制符：LRE 左向嵌入 / RLE 右向嵌入 / \u202C PDF（弹出方向格式化控制符） / LRO 左向覆写 / RLO 右向覆写
-    //   \u2060          单词连接符（Word Joiner）
-    //   \u2066-\u2069   Bidi 隔离控制符（连续 4 个码点：LRI 左隔离/RLI 右隔离/FSI 强起始隔离/PDI 弹出隔离，Unicode 6.3+）
-    //   \uFEFF          BOM（Byte Order Mark，字节顺序标记）/ 零宽不换行空格。
-    //   \u0000-\u001F   C0 控制字符（NUL 至 US，含通讯控制与格式控制符）：YAML 规范明文禁止（\t/\n/\r 除外），不可打印，无合法组名用途。
-    //                   · \u0000-\u0008  NUL 至 BS（含通讯控制 SOH/STX/ETX/EOT/ENQ/ACK/BEL）\u000B-\u000C  VT（垂直制表符）/ FF（换页符）
-    //                   · \u000E-\u001F  SO 至 US（共 18 个格式/通讯控制符）
-    //   \u007F          DEL（删除符）：C0 集末位，无合法用途。
-    //   ⚠️ \u0085（NEL，Next Line）未列入：C1 控制字符，YAML 1.2 规范认定的换行符，
-    //      Token 断言（注入出口）已独立覆盖（见 Token 断言 \u0085 条目）。sanitizeName 遵循「宽进」策略，刻意不剥离此字符；
-    //      识别阶段宽容（防止遗漏合法组名），注入阶段严格（防止破坏 YAML/Clash 语法），两层严格度有意分级，属纵深防御设计。
-    // 💡【两层字符集覆盖范围对比，完整说明集中于此，Token 断言处引用本处为权威来源】
-    //    · 识别层（_SANITIZE_RE，即此正则）：覆盖软连字符 \u00AD / ALM \u061C / 零宽系列
-    //      \u200B-\u200F / 行段终止+Bidi 控制符 \u2028-\u202E / 词连接 \u2060 / Bidi 隔离
-    //      \u2066-\u2069 / BOM \uFEFF / C0 \u0000-\u0008 \u000B-\u000C \u000E-\u001F / DEL \u007F；
-    //      刻意不覆盖 \t \n \r（YAML 结构字符，识别宽容）和 \u0085（注入层单独处理）。
-    //    · 注入层（Token 断言）：仅覆盖能破坏 Clash/YAML 语法的字符，逗号 / C0 全集含 \t \n \r /
-    //      \u0085（NEL）/ \u2028 / \u2029；不覆盖 Bidi 控制符（视觉欺骗问题由识别层负责）。
-    //    将来修改任一层的覆盖范围时，须对照此处同步更新说明，避免两层独立演化后文档失真。
-    //   ⚠️ \u0009(\t) / \u000A(\n) / \u000D(\r) 不在此清理：
-    //      它们是 YAML 结构字符（行终止符 / 缩进控制符）。若在此清理，含这三个字符的原始组名在识别阶段会被净化匹配，
-    //      但 proxyGroupName 存储的仍是原始值；注入时 Token 断言检测原始值，仍会拦截，识别通过、注入被拒，
-    //      这不是纵深防御而是极端情形下的可接受失效路径。Token 断言负责在注入前对原始值实施一票否决，两层职责不重叠。
-    // 定义于 main() 作用域而非 sanitizeName 函数体内部，避免每次调用 sanitizeName() 时
-    // 重新求值正则字面量（字符类约 60+ 字符，每次创建新 RegExp 对象的代价在高频调用下累积不可忽略）。
+ *   ⚠️ 攻击场景：
+ *       · 不可见字符（如 \u200B、\u2060、\u00AD）：视觉上与合法组名无法区分，但字符串比较失配。
+ *         典型形如 "D\u2060IRECT"、"\u200B默认"、"DIR\u00ADECT"
+ *      · Bidi 覆盖控制符（如 \u202E RLO）：使组名在渲染时以 RTL（从右向左）方向排列，字符序列本身不变，仅渲染方向被反转，
+ *         造成视觉欺骗（如 "DIRECT" 显示为 "TCERID"），也绕过比较。典型形如 "\u202EDIRECT"，支持 Bidi 渲染时显示为 TCERID
+ *    清理范围（覆盖已知 Unicode Bidi（双向文本）控制符及不可见干扰字符，按码点升序排列）：
+ *      \u00AD          软连字符（Soft Hyphen）
+ *      \u061C          ARABIC LETTER MARK（ALM，阿拉伯字母方向标记，Unicode 6.3+ Bidi 格式字符）
+ *      \u200B-\u200F   零宽空格 / 零宽不连接符 / 零宽连接符 / LRM（LEFT-TO-RIGHT MARK，左到右方向标记）/ RLM（RIGHT-TO-LEFT MARK，右到左方向标记）
+ *                      
+ *      \u2028-\u202E   行/段终止符 + Bidi 方向控制符（连续 7 个码点，两大类语义；Bidi 部分细分为嵌入/弹出/覆盖三种子类型，已合并为单一范围）：
+ *                      \u2028 LINE SEPARATOR / \u2029 PARAGRAPH SEPARATOR：不可见，曾用于 JSON 注入攻击，导致字符串比较失配；
+ *                      \u202A-\u202E Bidi 方向控制符：LRE 左向嵌入 / RLE 右向嵌入 / \u202C PDF（弹出方向格式化控制符） / LRO 左向覆写 / RLO 右向覆写
+ *      \u2060          单词连接符（Word Joiner）
+ *      \u2066-\u2069   Bidi 隔离控制符（连续 4 个码点：LRI 左隔离/RLI 右隔离/FSI 强起始隔离/PDI 弹出隔离，Unicode 6.3+）
+ *      \uFEFF          BOM（Byte Order Mark，字节顺序标记）/ 零宽不换行空格。
+ *      \u0000-\u001F   C0 控制字符（NUL 至 US，含通讯控制与格式控制符）：YAML 规范明文禁止（\t/\n/\r 除外），不可打印，无合法组名用途。
+ *                      · \u0000-\u0008  NUL 至 BS（含通讯控制 SOH/STX/ETX/EOT/ENQ/ACK/BEL）\u000B-\u000C  VT（垂直制表符）/ FF（换页符）
+ *                      · \u000E-\u001F  SO 至 US（共 18 个格式/通讯控制符）
+ *      \u007F          DEL（删除符）：C0 集末位，无合法用途。
+ *      ⚠️ \u0085（NEL，Next Line）未列入：C1 控制字符，YAML 1.2 规范认定的换行符，
+ *         Token 断言（注入出口）已独立覆盖（见 Token 断言 \u0085 条目）。sanitizeName 遵循「宽进」策略，刻意不剥离此字符；
+ *         识别阶段宽容（防止遗漏合法组名），注入阶段严格（防止破坏 YAML/Clash 语法），两层严格度有意分级，属纵深防御设计。
+ *    💡【两层字符集覆盖范围对比，完整说明集中于此，Token 断言处引用本处为权威来源】
+ *       · 识别层（_SANITIZE_RE，即此正则）：覆盖软连字符 \u00AD / ALM \u061C / 零宽系列
+ *         \u200B-\u200F / 行段终止+Bidi 控制符 \u2028-\u202E / 词连接 \u2060 / Bidi 隔离
+ *         \u2066-\u2069 / BOM \uFEFF / C0 \u0000-\u0008 \u000B-\u000C \u000E-\u001F / DEL \u007F；
+ *         刻意不覆盖 \t \n \r（YAML 结构字符，识别宽容）和 \u0085（注入层单独处理）。
+ *       · 注入层（Token 断言）：仅覆盖能破坏 Clash/YAML 语法的字符，逗号 / C0 全集含 \t \n \r /
+ *         \u0085（NEL）/ \u2028 / \u2029；不覆盖 Bidi 控制符（视觉欺骗问题由识别层负责）。
+ *       将来修改任一层的覆盖范围时，须对照此处同步更新说明，避免两层独立演化后文档失真。
+ *      ⚠️ \u0009(\t) / \u000A(\n) / \u000D(\r) 不在此清理：
+ *         它们是 YAML 结构字符（行终止符 / 缩进控制符）。若在此清理，含这三个字符的原始组名在识别阶段会被净化匹配，
+ *         但 proxyGroupName 存储的仍是原始值；注入时 Token 断言检测原始值，仍会拦截，识别通过、注入被拒，
+ *         这不是纵深防御而是极端情形下的可接受失效路径。Token 断言负责在注入前对原始值实施一票否决，两层职责不重叠。
+ *    定义于 main() 作用域而非 sanitizeName 函数体内部，避免每次调用 sanitizeName() 时
+ *    重新求值正则字面量（字符类约 60+ 字符，每次创建新 RegExp 对象的代价在高频调用下累积不可忽略）。
  *
  * ══════════════════════════ ░░ 维护规范 ░░ ══════════════════════════
  *
@@ -1836,8 +1829,8 @@ function main(config) {
  *                  禁止引用策略编号（如「阶段 1」、「步骤 3」）；必须使用逻辑描述或变量名作为锚点（如「关键词优选策略」、「最终容错选取」）
  *     - 【禁止标记】严禁在逻辑行添加动态标记（如 // Fix by XXX），保持代码无状态
  *
- * 变量和常量的命名准则：
- * _camelCase 对应运行时临时变量，_UPPER_CASE 对应运行时常量（冻结集合/正则），不应被修改。两段命名语义上是对称的，类似于"私有变量"与"私有常量"的区分惯例。
+ *   变量和常量的命名准则：
+ *    _camelCase 对应运行时临时变量，_UPPER_CASE 对应运行时常量（冻结集合/正则），不应被修改。两段命名语义上是对称的，类似于"私有变量"与"私有常量"的区分惯例。
  * 
  *   🛠️ 编程防御：
  *     - 严禁直接访问 config[n]，必须使用 ?. 或 Array.isArray() 级联校验

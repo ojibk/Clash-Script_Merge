@@ -1,4 +1,4 @@
-# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链 v260530
+# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链 v260531
 # # --------------------------------------------------------------------------------------
 # # 存储路径参考：
 # #   Windows : %APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles
@@ -10,7 +10,7 @@
 # #  本配置支持独立运行；若同时启用扩展脚本，由动态注入层在覆写配置合并完成后、内核执行规则前注入规则覆盖修改，注入的规则在流量匹配上优先于本文件的静态规则链，最终合并入生效配置。
 # #  配置处理流：订阅 → Merge Config → Script 修改 → 最终配置 → Mihomo rules 执行
 # #  职责分工：
-# #    rule-providers → Map 类型（键值映射表，rule-providers）：键值对合并——同名键以本文件为准覆写，其余键保留订阅原值
+# #    rule-providers → Map 类型（键值映射表）：键值对合并——同名键以本文件为准覆写，其余键保留订阅原值
 # #    proxy-groups   → 必须声明固定锚点组，rules 出口的确定性保障
 # #    rules          → 自完备规则链，硬编码指向锚点组名
 # #
@@ -29,8 +29,8 @@ find-process-mode: strict       # ⚙️ 字段语义：控制进程信息获取
 #                               # ⚠️ 客户端行为差异：部分客户端（如 Stash）仅支持 strict/always，off 可能被视为 strict。
 
 geodata-mode: true              # ⚙️ GeoIP 数据库格式：true = dat 格式（数据文件由 MetaCubeX 自维护），false 或缺省（未声明）= mmdb 格式（Mihomo 默认）。
-                                # ℹ️ 本配置规则集来源多元化，不构成全线统一。
-                                #    切换 dat 格式的目的：使内置 GEOIP 命令（GEOIP,PRIVATE / GEOIP,CN）所查询的数据库与 MetaCubeX 来源的规则集在归类标准上对齐，
+                                # ℹ️ 本配置规则集来源多元化，切换 dat 格式的目的：
+                                #    使内置 GEOIP 命令（GEOIP,PRIVATE / GEOIP,CN）所查询的数据库与 MetaCubeX 来源的规则集在归类标准上对齐，
                                 #    缩小两者"规则集归类为国内、内置 GeoIP 库认定为境外"的归类不一致风险。切换理由仅为统一归属判定基准（无更新频率收益）。
 geo-auto-update: true           # ⚙️ 启用 geodata 自动更新。不开启时 dat 文件停留在内核捆绑的出厂版本（不会按 geo-update-interval 自动拉取 geox-url 指定的 GEO 数据文件），
                                 #    geox-url 的下载地址声明会被静默忽略；geodata-mode: true 的统一归属判定基准目的无法在运行中兑现。
@@ -40,12 +40,12 @@ geox-url:                       # ⚙️ geodata 下载地址。未声明时 Mih
                                 #    注意：MetaCubeX MRS 规则集来自 @meta 分支；dat/mmdb 发布于 @release 分支，两者不同。
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
-# # ℹ️ mmdb 字段说明：geodata-mode: true 下主用 geoip.dat / geosite.dat；当 geodata-mode: false 时才使用 mmdb 字段。为 true 时维持声明无副作用，仅为保持配置完整性。
+# # ℹ️ mmdb 字段说明：geodata-mode: true 下主用 geoip.dat / geosite.dat；当 geodata-mode: false 时才使用 mmdb 字段。为 true 时维持声明无影响，仅为保持配置完整性。
   mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
 
 # # ⚠️ sniffer 配置是扩展脚本（Script.js）注入的 UDP/QUIC 域名类规则正常生效的前提，
 # # 禁用 sniffer 将导致这些规则在纯 IP 直连路径（应用绕过 DNS、直接以 IP 建立 UDP/QUIC 连接）下失效。
-# # force-dns-mapping: true：使 Script.js 注入的 DOMAIN 类 AND 规则能通过 DNS 映射缓存识别域名；
+# # force-dns-mapping: true：使 Script.js 注入的 DOMAIN 类 AND 多条件组合规则能通过 DNS 映射缓存识别域名；
 # # parse-pure-ip: true：使绕过 DNS 的纯 IP 流量也能触发嗅探，提升 Script.js 规则集的命中率。
 sniffer:
   enable: true                  # ⚙️ 启用流量嗅探：在协议握手或请求阶段提取目标域名，使内核在无 DNS 解析的情况下也能获取域名，用于域名规则匹配。
@@ -157,8 +157,7 @@ proxy-groups:
 # #    支持高效后缀命中，单次树查询即可完成匹配，时间复杂度仅与目标字符串长度相关，不受规则集总条目数影响。
 # #  · 前缀匹配树（CIDR Trie）：IP 地址按二进制前缀存入前缀树，高效处理 IP 段范围命中。
 # #  相比 classical（逐行线性扫描）模式，在规则集条目数量庞大时可显著降低 CPU 与内存开销，匹配速度更快。
-# #  classical 模式要求文件内每行为完整规则指令（如 DOMAIN,example.com 或 IP-CIDR,192.168.0.0/16），
-# #  本配置所选源文件均为纯列表，不使用此模式。
+# #  classical 模式要求文件内每行为完整规则指令（如 DOMAIN,example.com 或 IP-CIDR,192.168.0.0/16），本配置所选源文件均为纯列表，不使用此模式。
 # #  MRS 在此基础上进一步优化：以二进制序列化形式存储已构建的 Trie 树，加载时直接内存映射，跳过文本词法/语法分析及 Trie 构建，启动开销接近于零。
 # #  yaml/text 格式需经"磁盘 IO → 反序列化 → Trie 构建"三阶段；MRS 仅需"磁盘 IO → 映射"。
 # #
@@ -194,7 +193,6 @@ rule-providers:
   private: # 🔓 私有/保留域名直连集
     # 💡 收录范围：localhost / .local / .localdomain / .internal 等系统保留域名，以及 router.asus.com 等常见厂商的设备管理域名，不限于局域网范畴。
     #    源采用 v2fly/domain-list-community/private 和 blackmatrix7/ios_rule_script/Lan（仅域名）组合，并添加主流 Dashboard 在线面板域名，由 DustinWin 构建并以 MRS 格式分发。
-    #    由 DustinWin 每日自动构建并以 MRS 格式分发。
     type: http        # ℹ️ 类型：远程 HTTP 资源，按 interval 定期拉取并缓存至本地 path 路径。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie），解析开销降至接近零。
                       #     策略不内置于文件，由引用此集合的 rules 行末指令统一决定。
@@ -215,7 +213,7 @@ rule-providers:
                       #    私有/保留域名（如 localhost）列表，内容基于 IETF 标准，属极低频变动项，设 7 天以减少不必要的远程拉取请求。
 
   # lan_cidr: # 🔓 局域网私有 IP 段直连集
-  #   # 💡 设计说明：private 仅收录私有/保留域名（基于 RFC 1918），不覆盖 192.168.x.x、10.x.x.x、172.16.x.x 等私有 IP 段。
+  #   # 💡 设计说明：private 仅收录私有/保留域名（依据 RFC 2606 / RFC 6761 等定义的特殊用途域名），不覆盖 192.168.x.x、10.x.x.x、172.16.x.x 等私有 IP 段。
   #   #    本条目以 IP 维度，与 private（域名维度） 互为补充，共同构成完整的局域网直连防线。
   #   #    缺失时，内网 IP 直连规则层失效，内网请求将穿透至代理出口；但 GEOIP,PRIVATE 仍可在 IP 维度兜底覆盖 RFC 1918 段，并非绝对失效。
   #   #    数据源与 Loyalsoldier lancidr.txt 语义接近，由 MetaCubeX 每日自动构建并以 MRS 格式分发。
@@ -236,7 +234,7 @@ rule-providers:
 
   Advertising: # 🚫 应用广告拦截集
     # 💡 数据源说明：基于 blackmatrix7/Advertising 完整广告域名集（非精简版），由 peiyingyao 每日自动构建并以 MRS 格式分发。
-    #    原选用精简版时，主线程同步阻塞（I/O + Trie 构建）会导致内核无法响应前端 RPC 查询，存在的超时风险在 MRS 格式下已不存在，故直接使用完整版。
+    #    原选用精简版时，主线程同步阻塞（I/O + Trie 构建）会导致内核无法响应前端 RPC 查询，这一超时风险在改用 MRS 格式后已消除，故直接使用完整版。
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
@@ -252,7 +250,7 @@ rule-providers:
     #   threat：        恶意特征（恶意软件 / 追踪器 / C2 命令与控制域名） → 安全防护
     #   Advertising：   广告域名 → 体验优化
     #
-    #   threat 数据来源分别由 DustinWin、peiyingyao 基于 privacy-protection-tools/anti-AD、blackmatrix7/EasyPrivacy 每日自动构建并以 MRS 格式分发。
+    #   threat 数据来源分别由 DustinWin 基于 privacy-protection-tools/anti-AD、peiyingyao 基于 blackmatrix7/EasyPrivacy 每日自动构建并以 MRS 格式分发。
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
@@ -299,8 +297,8 @@ rule-providers:
   amazon_shopping: # 🔓 亚马逊购物常用域名集 (ojibk/rules amazon_shopping.mrs)
     # 💡 收录亚马逊全球零售站点 + 静态图片资产 + 广告与前端组件库 + 卖家及物流体系规则集（不含 AWS 基础云，防止 AWS 流量被误送入代理出口）
     #    规则集中收录的广告与前端组件域名，可能已被前置的威胁阻断集以 REJECT 动作优先命中，属于预期行为。
-    # ⚡ 若发现购物车/结账流程异常，检查连接日志中 Amazon 域名是否被 REJECT；可在 skip-domain 或 rules 前添加精确放行规则。
-    #    该文件已由上游仓库预转换；若需本地生成，可将原文件拖入内核同目录下用命令行执行转换命令：mihomo convert-ruleset domain text amazon_shopping.list amazon_shopping.mrs
+    # 🔍 若发现购物车/结账流程异常，检查连接日志中 Amazon 域名是否被 REJECT；可在 skip-domain 或 rules 前添加精确放行规则。
+    #    该文件已由上游仓库预转换；若需本地生成，可将原文件置于内核目录下，命令行执行转换命令：mihomo convert-ruleset domain text amazon_shopping.list amazon_shopping.mrs
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式（已转换自 amazon_shopping.list）。
@@ -405,7 +403,7 @@ rules:
 # #    兜底是常态路径的终点，回退是异常路径的救生艇。本配置只有兜底，没有回退。
 # #
 # # 【覆写机制总览】
-# #  ● Map 类型（键值映射表，rule-providers）：键值对合并——同名键以本文件为准覆写，其余键保留订阅原值
+# #  ● Map 类型（键值映射表）：键值对合并——同名键以本文件为准覆写，其余键保留订阅原值
 # #  ● Array 类型（有序列表，proxy-groups / rules）：全量替换，本文件内容为唯一来源，须自完备
 # # ======================================================================================
 
@@ -525,7 +523,7 @@ rules:
 # #   加载失败时条目数为 0，匹配失败，流量滑落，不报错。
 # #
 # # GEOIP（IP 地理归属匹配）
-# #   ⚠️ GeoIP ≠ 真实地理位置。是基于 IP 区块注册数据推断地理归属，而非检测流量实际经过的物理节点位置；，在 CDN / Anycast（任播）调度下存在不可避免的归属地误差。
+# #   ⚠️ GeoIP ≠ 真实地理位置。是基于 IP 区块注册数据推断地理归属，而非检测流量实际经过的物理节点位置，在 CDN / Anycast（任播）调度下存在不可避免的归属地误差。
 # #   在 CDN / Anycast 跨区调度场景下可能出现"境外服务命中 CN"或反之。
 # #   GeoIP 为不可直接读写的数据库格式，与 RULE-SET 可见文件性质不同。出现误判只能通过行为观测定位，无法直接审查数据库内容。
 # #   当前配置启用 geodata-mode: true，数据库来源为 MetaCubeX dat 格式，由 geo-auto-update 自动更新。默认 mmdb 模式下来源通常为 MaxMind 或社区分发版。
@@ -588,8 +586,7 @@ rules:
 # #
 # # DNS（域名解析系统，Domain Name System）
 # #   将域名解析为 IP 地址的分布式系统。
-# #   传统 DNS（Do53）明文无加密，在污染环境下解析结果不可信；使用 DoH/DoT 的订阅配置不受此影响。
-# #   在污染环境下解析响应可能被篡改，结果不可信。
+# #   传统 DNS（Do53）明文无加密，在污染环境下解析响应可能被篡改（MITM 或运营商注入伪造 IP），结果不可信；使用 DoH/DoT 的订阅配置因加密通道不受此影响。
 # #
 # # DNS 污染（DNS Poisoning）
 # #   攻击者或运营商向 DNS 响应中注入伪造 IP，导致域名解析至错误地址。
