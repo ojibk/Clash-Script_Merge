@@ -43,7 +43,7 @@ function main(config) {
 
     // true  = 完全启用脚本功能。
     // false = 禁用规则注入，但仍返回含调试标记的修改版配置（向规则头部写入一条使用 .invalid 保留域的调试标记规则，非原样返回），详见下方 ENABLE_SCRIPT 分支说明。
-    //         即不注入功能性规则，实际网络路由等同于未加载脚本；只是规则列表中保留一条可见的调试标记供外部识别脚本禁用状态。     
+    //         即不注入功能性规则，实际网络路由等同于未加载脚本；只是规则列表中保留一条可见的调试标记供外部识别脚本禁用状态。
     const ENABLE_SCRIPT       = true;
 
     // ──── 以下开关与运行时注入层级（allow > block > process > proxy > aggressive > direct）大致对应，
@@ -258,7 +258,7 @@ function main(config) {
     //   ⚠️ 已知局限：后半段无位置锚点，采用子串匹配。若代理组命名为「非直连节点」、「不拒绝广告」等包含否定前缀的复合词，会因包含「直连」或「拒绝」子串而被错误排除。
     //   ⚠️ 「默认节点」等含「默认」的复合词组名不触发（精确词加 $ 锚定为设计取舍）此类指向 DIRECT 的订阅极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。
     //   ⚠️ 已知限制：组名恰为「全球」（仅两字，无修饰词）时被精确匹配排除（^全球$），无警告日志，注入将进入容错路径或触发代理组排除断言中止。
-    //      含「全球」的复合词（如「全球节点」）因含「节点」关键词，可进入优选策略正常被选中。纯「全球」命名极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。 
+    //      含「全球」的复合词（如「全球节点」）因含「节点」关键词，可进入优选策略正常被选中。纯「全球」命名极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|用|球)|所有|默认)$|(?:直连|拒绝)/;
 
     // 中文兜底组：「全局」对应 FALLBACK_NAMES 中的 GLOBAL，语义与行为均对称。
@@ -416,7 +416,8 @@ function main(config) {
         if (!_mainEntry) {
             // [最终容错选取] 排除语义不适合做代理出口的类型（而非全部放开）
             // relay：固定节点链路转发，无节点选择语义，用户无法在其界面切换节点。
-            // url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。   
+            // url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。
+            // smart：实验性自适应选择类型，出口语义依赖 Mihomo 版本，行为尚不稳定，保守排除。
             _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
                 _isEligibleGroupCore(cleanName) &&
                 !_UNSUITABLE_TYPES.has(g?.type) &&
@@ -810,8 +811,8 @@ function main(config) {
     //     → "entitlement.autodesk" 是 entitlement.autodesk.com 的唯一覆盖，必须保留
     //   ENABLE_BLOCK=true, ENABLE_AGGRESSIVE=true：
     //     → autodeskKeyword REJECT（KEYWORD 规则）先于 aggressiveRules SUFFIX（SUFFIX 规则）命中（pool 注入顺序决定）
-    //     → aggressiveRules 中的 entitlement.autodesk.com SUFFIX 规则被遮蔽，实质冗余但无害 ENABLE_BLOCK=false, 
-    //   ENABLE_AGGRESSIVE=true（极少使用）：autodeskKeyword 不注入，aggressiveRules SUFFIX 独立生效，此时两者各司其职，无冲突
+    //     → aggressiveRules 中的 entitlement.autodesk.com SUFFIX 规则被遮蔽，实质冗余但无害
+    //   ENABLE_BLOCK=false, ENABLE_AGGRESSIVE=true（极少使用）：autodeskKeyword 不注入，aggressiveRules SUFFIX 独立生效，此时两者各司其职，无冲突
     //
     // 结论：重叠为纵深覆盖，在所有开关组合下均无副作用，无需合并或删除任一条目。删除单条（如认为 SUFFIX 已覆盖可删 KEYWORD）在 ENABLE_BLOCK=true,
     //       ENABLE_AGGRESSIVE=false（默认配置）下会产生漏拦截 Bug，此时 KEYWORD 是唯一覆盖，SUFFIX 在 AGGRESSIVE 层未注入。
@@ -1505,7 +1506,7 @@ function main(config) {
     //   各 HOSTS_MODE 的连接失败类型：
     //     0.0.0.0 / :: → ENETUNREACH（Linux/Android）/ WSAEINVAL（Windows，10022，通常返回，因 Windows 版本而异：0.0.0.0 为非法连接目标）
     //                    或 WSAENETUNREACH（10051，断网状态下可能出现）；OS 直接拒绝，TCP SYN（握手第一包）不会发出。
-    //     127.0.0.1 / ::1 → ECONNREFUSED（本地无监听端口时，本地 OS TCP 栈返回 RST 重置包）应用层收到连接拒绝错误（而非路由不可达），欺骗性拦截效果更温和。    
+    //     127.0.0.1 / ::1 → ECONNREFUSED（本地无监听端口时，本地 OS TCP 栈返回 RST 重置包）应用层收到连接拒绝错误（而非路由不可达），欺骗性拦截效果更温和。
     //
     // 模式说明（与顶部 HOSTS_MODE 对应）：
     //   ipv4-loopback  → 127.0.0.1          欺骗拦截（ECONNREFUSED），更温和
@@ -1748,7 +1749,7 @@ function main(config) {
  *   ──────────────────────────────────────────────────────────────
  *
  *   ── 哨兵清理算法（栈重建，O(N) 单次遍历，处理任意数量堆叠）──
- *     原理：单次遍历原数组，重建新数组 newRules，用栈记录每个 START 被压入时newRules 的长度（注入区间在 newRules 中的起始快照）；
+ *     原理：单次遍历原数组，重建新数组 newRules，用栈记录每个 START 被压入时 newRules 的长度（注入区间在 newRules 中的起始快照）；
  *           遇 END 时弹出栈顶快照，将 newRules.length 设为快照值（O(1) 截断，length= 无 splice 的数组拷贝开销）；孤儿 END（栈为空）静默跳过（不 break，继续处理后续规则）；
  *           孤儿 START 本身不写入 newRules（continue 跳过），但其长度快照压栈；其后的规则正常推入 newRules，最终保留在输出中（旧注入规则与新注入共存一周期）。
  *           循环结束后自然保留，无需额外处理；最坏情形：孤儿 START 是上次注入区间开头（崩溃导致 END 未写入），其后旧注入规则不被截断，
