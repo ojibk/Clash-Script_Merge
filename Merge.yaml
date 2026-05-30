@@ -70,7 +70,7 @@ sniffer:
       ports: [443, 8443]        # ℹ️ QUIC（HTTP/3）嗅探端口，与 TLS 端口保持一致。
   # override-destination 未启用（默认 false）：该字段会将连接目标强制替换为嗅探域名，行为激进，部分绑定 IP 的 HTTPS 服务会因目标被替换而异常，故保守不启用。
   # 但是，当应用程序使用 IP 直连但 SNI 泄露了域名时，启用此字段可让规则匹配基于嗅探到的域名而非原始 IP，从而让域名规则集命中该流量；
-  # 在 parse-pure-ip: true 的配合下，是一个有价值的精度提升选项。
+  # 在 parse-pure-ip: true 的配合下，规则命中率提升。
   # skip-domain 未配置：如发现特定设备管理域名（如米家云等 IoT 平台）因嗅探错误匹配，可在此添加 skip-domain 排除列表。
 
 profile:
