@@ -294,17 +294,17 @@ rule-providers:
     lazy: false       # ⚙️ 启动即加载，代理核心分流规则必须启动即就绪。MRS 格式加载开销极小，无性能顾虑。
     interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。境外域名列表变动较频繁，设较短缓存周期以跟进更新。
 
-  amazon_shopping: # 🔓 亚马逊购物常用域名集 (ojibk/rules amazon_shopping.mrs)
+  amazon: # 🔓 亚马逊购物常用域名集 (ojibk/rules amazon.mrs)
     # 💡 收录亚马逊全球零售站点 + 静态图片资产 + 广告与前端组件库 + 卖家及物流体系规则集（不含 AWS 基础云，防止 AWS 流量被误送入代理出口）
     #    规则集中收录的广告与前端组件域名，可能已被前置的威胁阻断集以 REJECT 动作优先命中，属于预期行为。
     # 🔍 若发现购物车/结账流程异常，检查连接日志中 Amazon 域名是否被 REJECT；可在 skip-domain 或 rules 前添加精确放行规则。
-    #    该文件已由上游仓库预转换；若需本地生成，可将原文件置于内核目录下，命令行执行转换命令：mihomo convert-ruleset domain text amazon_shopping.list amazon_shopping.mrs
+    #    该文件已由上游仓库预转换；若需本地生成，可将原文件置于内核目录下，在终端中执行转换命令：.\verge-mihomo convert-ruleset domain text amazon.txt amazon.mrs
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
-    format: mrs       # ℹ️ 格式：MRS 二进制格式（已转换自 amazon_shopping.list）。
-    url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon_shopping.mrs"
-                      #    备用直链：https://raw.githubusercontent.com/ojibk/rules/main/amazon_shopping.mrs
-    path: "./rules/providers/amazon_shopping.mrs"
+    format: mrs       # ℹ️ 格式：MRS 二进制格式
+    url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
+                      #    备用直链：https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs
+    path: "./rules/providers/amazon.mrs"
     lazy: true        # ⚙️ 专用规则集，使用率低。故采用懒加载作为权衡。无缓存时会有穿透至后续规则的风险，属已知取舍。
     interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
 
@@ -373,7 +373,7 @@ rules:
   - RULE-SET,cn,DIRECT                  # 🔓 国内主流域名 → 直连，基于 Domain Trie 极速命中。
                                         #    精确域名匹配直接放行，无需经过 GeoIP 推断，自然规避 CDN 多归属场景下的归属误判；
                                         #    小众域名盲区由归属地映射层（GEOIP,CN）补盲覆盖。
-  - RULE-SET,amazon_shopping,DIRECT     # 🔓 个人扩展：亚马逊购物常用域名集 → 直连，基于 Domain Trie 极速命中。
+  - RULE-SET,amazon,DIRECT     # 🔓 个人扩展：亚马逊购物常用域名集 → 直连，基于 Domain Trie 极速命中。
   - RULE-SET,non-cn,节点选择             # 🛡️ 境外代理域名 → 送入锚点组 [节点选择]，经用户所选代理节点出站。
 
   # ▌归属地映射 — GeoIP 库基于静态 IP 注册数据进行归属地查询推断，不代表实际物理位置，在 CDN / Anycast（任播）调度下存在不可避免的归属地误差。
