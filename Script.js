@@ -1447,17 +1447,19 @@ function main(config) {
         //    危险示例2：将 "direct" 移至 "aggressive" 之前，父域 autodesk.com,DIRECT 先命中，子域 accounts.autodesk.com,REJECT-DROP 等激进规则将永久被父域规则遮蔽。
         //    插入/删除层级时只需修改 LAYER_ORDER，finalPool 构建逻辑无需改动。
         const LAYER_ORDER = Object.freeze(["allow", "block", "process", "proxy", "aggressive", "direct"]);
-        const finalPool = [_sentinelStart];
+
+        // 启动断言：验证 LAYER_ORDER 与 layerPools 键名一致性
+        for (const k of LAYER_ORDER) {
+        if (!(k in layerPools))
+            throw new Error(`[Script] LAYER_ORDER 键 '${k}' 在 layerPools 中不存在`);
+        }
+
+        const finalPool = [_sentinelStart];        
         // 按 LAYER_ORDER 顺序展开各层，单次迭代用 push(r) 规避大型数组 push(...arr) 的 RangeError。
         for (const key of LAYER_ORDER) {
             for (const r of layerPools[key]) finalPool.push(r);
         }
         finalPool.push(_sentinelEnd);
-
-    for (const k of LAYER_ORDER) {
-        if (!(k in layerPools))
-            throw new Error(`[Script] LAYER_ORDER 键 '${k}' 在 layerPools 中不存在`);
-        }
 
         // 插入到规则列表最前面（最高优先级）
         config.rules = finalPool.concat(config.rules);
