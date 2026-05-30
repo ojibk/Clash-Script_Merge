@@ -300,8 +300,8 @@ function main(config) {
     // 公开接口 isFallbackGroup / isEligibleGroup 负责清洗，再委托此二函数；
     // _Core 变体仅供已预计算 cleanName 的内部路径使用。
     //
-    // ⚠️ 调用顺序约束：_isEligibleGroupCore 中 _isFallbackGroupCore 必须先于EXCLUDED_NAMES / EXCLUDED_CN_RE 检查执行，
-    //    兜底组（GLOBAL/全局）须通过isEligibleGroup 初步关卡才能在第四轮降级路径中被选中；顺序颠倒则兜底路径失效。
+    // ⚠️ 调用顺序约束：_isEligibleGroupCore 中 _isFallbackGroupCore 必须先于 EXCLUDED_NAMES / EXCLUDED_CN_RE 检查执行，
+    //    兜底组（GLOBAL/全局）须通过 isEligibleGroup 初步关卡才能在第四轮降级路径中被选中；顺序颠倒则兜底路径失效。
     // ⚠️ 集合互斥约束：FALLBACK_NAMES 中的值不应与 EXCLUDED_NAMES 重叠，若将 "REJECT" 等误加入 FALLBACK_NAMES，提前 return true 将旁路 EXCLUDED_NAMES 检查。
     //    上方运行时断言（FALLBACK_NAMES ∩ EXCLUDED_NAMES）从启动时保证此约束。
     function _isFallbackGroupCore(trimmed) {
@@ -1450,11 +1450,11 @@ function main(config) {
 
         // 启动断言：验证 LAYER_ORDER 与 layerPools 键名一致性
         for (const k of LAYER_ORDER) {
-        if (!(k in layerPools))
-            throw new Error(`[Script] LAYER_ORDER 键 '${k}' 在 layerPools 中不存在`);
+            if (!(k in layerPools))
+                throw new Error(`[Script] LAYER_ORDER 键 '${k}' 在 layerPools 中不存在`);
         }
 
-        const finalPool = [_sentinelStart];        
+        const finalPool = [_sentinelStart];
         // 按 LAYER_ORDER 顺序展开各层，单次迭代用 push(r) 规避大型数组 push(...arr) 的 RangeError。
         for (const key of LAYER_ORDER) {
             for (const r of layerPools[key]) finalPool.push(r);
