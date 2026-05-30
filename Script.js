@@ -1218,9 +1218,8 @@ function main(config) {
         "DOMAIN-SUFFIX,msftconnecttest.com,DIRECT",        // NCSI 连通性探测（拦截后 Windows 右下角显示「无网络」）
         "DOMAIN-SUFFIX,msftncsi.com,DIRECT",               // NCSI 旧版探测域
         // Adobe 常用业务放行（字体/图库/作品展示）
-        // ⚠️【UDP 路径说明】以下 adobe.com 子域的 QUIC/UDP 流量先命中 adobeUdpBlock 的
-        //    AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT，收到 ICMP 后立即 fallback 至 TCP；
-        //    TCP 连接再命中此处 DIRECT 规则，整体无延迟，行为符合预期。
+        // ⚠️【UDP 路径说明】以下 adobe.com 子域的 QUIC/UDP 流量先命中 adobeUdpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT，
+        //    收到 ICMP 后立即 fallback 至 TCP；TCP 连接再命中此处 DIRECT 规则，整体无延迟，行为符合预期。
         "DOMAIN-SUFFIX,fonts.adobe.com,DIRECT",            // Adobe Fonts 字体同步服务
         "DOMAIN-SUFFIX,stock.adobe.com,DIRECT",            // Adobe Stock 图库
         "DOMAIN-SUFFIX,behance.net,DIRECT",                // Behance 设计作品展示平台
@@ -1251,13 +1250,13 @@ function main(config) {
         "DOMAIN-SUFFIX,apphot.cc,DIRECT",         // App热（原心海e站）
         "DOMAIN-SUFFIX,25xianbao.com,DIRECT",     // 卡圈线报
         "DOMAIN-SUFFIX,dir28.com,DIRECT",         // 羊毛活动
-        // "DOMAIN-KEYWORD,amazon,DIRECT",           // 亚马逊直连（⚠️ 覆盖所有含 amazon 的域名，含 AWS；若 AWS 服务需代理，改用精确 DOMAIN-SUFFIX 规则或外部规则集合）
-                                                   // ⚠️ 冲突依赖 LAYER_ORDER：block 层先于 direct 层命中，否则 amazon-adsystem.com 广告域会被此条规则泛匹配误放行。
-        // "DOMAIN-SUFFIX,tmall.hk,DIRECT",          // 淘宝 .hk 域，如被代理可能影响商品价格加载
+        // "DOMAIN-KEYWORD,amazon,DIRECT",        // 亚马逊直连（⚠️ 覆盖所有含 amazon 的域名，含 AWS；若 AWS 服务需代理，改用精确 DOMAIN-SUFFIX 规则或外部规则集合）
+                                                  // ⚠️ 冲突依赖 LAYER_ORDER：block 层先于 direct 层命中，否则 amazon-adsystem.com 广告域会被此条规则泛匹配误放行。
+        // "DOMAIN-SUFFIX,tmall.hk,DIRECT",       // 淘宝 .hk 域，如被代理可能影响商品价格加载
         // 个人扩展区
-        // "DOMAIN-SUFFIX,行业 ERP,DIRECT",       // 行业 ERP
-        // "DOMAIN-SUFFIX,行业 SCRM,DIRECT",      // 行业 SCRM
-        // "DOMAIN-SUFFIX,小众独立站,DIRECT",     // 小众独立站，直连以确保访问
+        // "DOMAIN-SUFFIX,ERP,DIRECT",       // 行业 ERP
+        // "DOMAIN-SUFFIX,SCRM,DIRECT",      // 行业 SCRM
+        // "DOMAIN-SUFFIX,独立站,DIRECT",     // 小众独立站，直连以确保访问
     ];
 
     // ────────────── 激进阻断规则（默认关闭，开启前请仔细阅读注释）──────────────
@@ -1280,8 +1279,8 @@ function main(config) {
         "DOMAIN,geo2.adobe.com,REJECT-DROP",                 // ⚠️ 激进：地理区域识别备用
         "DOMAIN-SUFFIX,accounts.autodesk.com,REJECT-DROP",   // ⚠️ 激进：拦截后无法登录 Autodesk 账户
         // ⚠️ 激进：Autodesk 授权端点。
-        //    ENABLE_BLOCK=true 时，autodeskKeyword 中的 KEYWORD 规则（"entitlement.autodesk"）
-        //    因注入顺序更早而先命中，本 SUFFIX 规则被遮蔽（实质冗余但无害）。ENABLE_BLOCK=false 时本条独立生效，为纵深防御保留，禁止删除。
+        //    ENABLE_BLOCK=true 时，autodeskKeyword 中的 KEYWORD 规则（"entitlement.autodesk"）因注入顺序更早而先命中，
+        //    本 SUFFIX 规则被遮蔽（实质冗余但无害）。ENABLE_BLOCK=false 时本条独立生效，为纵深防御保留，禁止删除。
         //    注意：api.entitlements.autodesk.com 不被上述 KEYWORD 覆盖，已在 autodeskSuffix 独立列出，与本条无重叠（见 autodeskKeyword 注释块）。
         "DOMAIN-SUFFIX,entitlement.autodesk.com,REJECT-DROP",
         // IE 遗留检测（拦截后影响 ActiveX 控件 / 旧版 OA 系统，不影响 NCSI）
