@@ -1394,9 +1394,7 @@ function main(config) {
             // pushKeyword(youtubeKeyword, "REJECT", layerPools.block); //该注入逻辑区块的注释状态必须与被调用的数据层变量行一致（两处必须同步）
             // 通用广告联盟。
             pushSuffix(genericAdSuffix, "REJECT", layerPools.block);
-            if (globalKeyword.length > 0) {  // length > 0 守卫：空数组时 pushKeyword 无操作，守卫仅避免无意义的函数调用
-                pushKeyword(globalKeyword, "REJECT", layerPools.block);
-            }
+            pushKeyword(globalKeyword, "REJECT", layerPools.block);
         }
 
         if (ENABLE_PROCESS_RULE) {
@@ -1448,11 +1446,19 @@ function main(config) {
         //    插入/删除层级时，需在 LAYER_ORDER 和 layerPools 两处同步修改（见上方约束说明）；finalPool 的 for 循环本身无需改动。
         const LAYER_ORDER = Object.freeze(["allow", "block", "process", "proxy", "aggressive", "direct"]);
 
-        // 启动断言：验证 LAYER_ORDER 与 layerPools 键名一致性
+        // 启动断言：双向一致性检查，验证 LAYER_ORDER 与 layerPools 键名一致性
+        const _orderSet = new Set(LAYER_ORDER);
+        // 原向检查：LAYER_ORDER → layerPools（防止 LAYER_ORDER 有键但 layerPools 无对应键）
         for (const k of LAYER_ORDER) {
             if (!(k in layerPools))
                 throw new Error(`[Script] LAYER_ORDER 键 '${k}' 在 layerPools 中不存在`);
         }
+        // 反向检查：layerPools → LAYER_ORDER（防止 layerPools 有键但未列入 LAYER_ORDER 导致规则静默丢弃）
+        for (const k of Object.keys(layerPools)) {
+            if (!_orderSet.has(k))
+                throw new Error(`[Script] layerPools 键 '${k}' 不在 LAYER_ORDER 中，该层规则将被静默丢弃`);
+        }
+
 
         const finalPool = [_sentinelStart];
         // 按 LAYER_ORDER 顺序展开各层，单次迭代用 push(r) 规避大型数组 push(...arr) 的 RangeError。
@@ -1512,7 +1518,7 @@ function main(config) {
         //       且两端哨兵均已完整写入，不产生孤儿哨兵。
         //   结论：catch 块捕获的异常不会产生孤儿 START，返回的 config.rules 始终处于一致状态
         //   （赋值前为干净状态，赋值后为完整注入状态，不存在半截注入的中间状态）。
-        console.error("❌ 规则注入阶段异常，视异常发生点规则可能已注入或未注入（详见 catch 块注释），继续执行 Hosts 覆写:", err);
+        console.error("❌ 规则注入阶段异常（config.rules 处于一致状态：赋值前=未写入，赋值后=已完整写入，无半写入），继续执行 Hosts 覆写:", err);
         console.log(`   失败耗时:   ${Date.now() - _startTime} ms`);
         // 不再 return config，继续执行到 Hosts 注入 try 块。
     }
