@@ -336,22 +336,19 @@ function main(config) {
         //    现覆盖 ASCII 大小写所有变体，为正确行为；含 auto 的组名（如 auto-select）是合法的代理出口。
         // ⚠️ g 标志：_KW_RE 不含 g 标志，RegExp.test() 无 g 时不修改 lastIndex，完全无状态，
         //    在 _groupsPrepped.find() 中多次调用 .test() 行为一致，无需担心状态污染。
-        //    🚀（U+1F680）为 BMP 外字符，无 u 标志时作代理对匹配，现代 V8 引擎行为正确；
-        //    若需严格 Unicode 语义可加 u 标志（/…/iu），当前不加亦无实际问题。
+        //    🚀（U+1F680）为 BMP 外字符，无 u 标志时作代理对匹配，现代 V8 引擎行为正确；若需严格 Unicode 语义可加 u 标志（/…/iu），当前不加亦无实际问题。
         // 不含 "global"（GLOBAL 由 FALLBACK_NAMES 单独处理），不含 "默认"（已被 EXCLUDED_CN_RE 覆盖，关键词层无需重复）。
         const _KW_RE = /节点(?:选择)?|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅/i;
 
         // 预计算所有组的 cleanName，避免三轮 find 各自对同一组名重复调用 sanitizeName。
-        // 对含 100+ 代理组的大型订阅，最坏情况下三轮各遍历一次，sanitizeName（_SANITIZE_RE.replace）
-        // 被执行 3×N 次；预计算降为 1×N，后续各轮直接引用 cleanName。
+        // 对含 100+ 代理组的大型订阅，最坏情况下三轮各遍历一次，sanitizeName（_SANITIZE_RE.replace）被执行 3×N 次；预计算降为 1×N，后续各轮直接引用 cleanName。
         const _groupsPrepped = config["proxy-groups"].map(g => ({
             g,
             cleanName: sanitizeName(g?.name)
         }));
 
         // [优选·关键词] 关键词 / include-all / 多节点三路并联匹配（最优先，覆盖最广）
-        // 各轮 find 统一返回完整条目 { g, cleanName }，由 _mainEntry 持有；
-        //   不再拆解出 .g 后回头再次线性搜索 cleanName（双重 find 模式已消除）。
+        // 各轮 find 统一返回完整条目 { g, cleanName }，由 _mainEntry 持有；不再拆解出 .g 后回头再次线性搜索 cleanName（双重 find 模式已消除）。
         let _mainEntry = _groupsPrepped.find(({ g, cleanName }) => {
             if (!_isEligibleGroupCore(cleanName)) return false;
             if (_isFallbackGroupCore(cleanName))  return false;
@@ -364,8 +361,7 @@ function main(config) {
             //   length > 3 衡量的是三类条目的总数，不等于底层节点计数（已知局限见下方）。
             //   已知局限：全部条目均为策略组引用（无底层节点）时，阈值仍可成立，但被选中的组仍能正常委托子组路由，实际影响极小；后续多轮兜底进一步覆盖此场景。
             const includeAll = g?.["include-all"] === true || g?.["include-all"] === "true";
-            // includeAll 仅接受 boolean true 或字符串 "true"（严格等值）；
-            // 数字 1 / 其他 truthy 值不触发（有意严格，避免意外匹配）。
+            // includeAll 仅接受 boolean true 或字符串 "true"（严格等值）；数字 1 / 其他 truthy 值不触发（有意严格，避免意外匹配）。
             return typeOk && (nameMatch || includeAll || hasMany);
         });
 
@@ -418,8 +414,7 @@ function main(config) {
             // smart：实验性自适应选择类型（≠测速工具），出口语义依赖 Mihomo 版本，行为尚不稳定，保守排除。
             //        （与上方 VALID_PROXY_TYPES 定义区 smart 描述同步；如需更新，两处须同步修改）
             // load-balance 已纳入 VALID_PROXY_TYPES（动态路由，具备合法出口语义），不再排除。
-            // 注意：此处保留最低限度的类型语义过滤，而非彻底放开，彻底放开会导致 relay 等
-            //        固定链路被选中，流量走预设链路而非用户期望的可切换代理，行为与预期不符。
+            // 注意：此处保留最低限度的类型语义过滤，而非彻底放开，彻底放开会导致 relay 等固定链路被选中，流量走预设链路而非用户期望的可切换代理，行为与预期不符。   
             const _UNSUITABLE_TYPES = new Set(["relay", "url-latency-benchmark", "smart"]);
             _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
                 _isEligibleGroupCore(cleanName) &&
@@ -473,8 +468,7 @@ function main(config) {
 
     // ❗ 代理组排除断言：防止 proxyGroupName 解析为排除出口导致拦截规则静默失效。
     // 覆盖全部排除名：DIRECT / REJECT / COMPATIBLE / DEFAULT / MATCH 及中文等价排除词。
-    // 注：失败路径（全部策略失败 / proxy-groups 为空）均已在上方显式 return config，
-    //     正常执行到此处时 proxyGroupName 必然是识别成功的合法组名；
+    // 注：失败路径（全部策略失败 / proxy-groups 为空）均已在上方显式 return config，正常执行到此处时 proxyGroupName 必然是识别成功的合法组名；
     //     此断言作为防御纵深，防止将来新增代码路径绕过显式返回，或选组逻辑被重构后假设不再成立。
     // 注：兜底组已被剥离出排除正则，确保在优选降级触发时，它能顺利通过代理组排除断言而不被误杀。
     {
@@ -531,10 +525,9 @@ function main(config) {
     // ════════════ 2. 数据层（域名列表 + 注入辅助工具，在此维护） ════════════
     //
     // 规则构造辅助函数：逐项将域名 / 关键词转换为 Clash 规则字符串并追加到目标数组。
-    // ⚠️ 调用方须确保数组元素均为字符串；非字符串元素（null / undefined / 数字）
-    //    会被模板字符串静默转换，生成格式合法但语义非法的规则（如 DOMAIN-SUFFIX,null,REJECT），
-    //    Mihomo 不报错但该规则永远不会命中。当前所有调用方均使用字符串字面量数组，无此风险；
-    //    若将来从外部数据源动态填充，须在调用前校验元素类型。
+    // ⚠️ 调用方须确保数组元素均为字符串；非字符串元素（null / undefined / 数字）会被模板字符串静默转换，
+    //    生成格式合法但语义非法的规则（如 DOMAIN-SUFFIX,null,REJECT），Mihomo 不报错但该规则永远不会命中。
+    //    当前所有调用方均使用字符串字面量数组，无此风险；若将来从外部数据源动态填充，须在调用前校验元素类型。
 
     const pushSuffix  = (domains, action, pool) => domains.forEach(d => pool.push(`DOMAIN-SUFFIX,${d},${action}`));
     const pushDomain  = (domains, action, pool) => domains.forEach(d => pool.push(`DOMAIN,${d},${action}`));
@@ -542,8 +535,7 @@ function main(config) {
 
     // ──── Adobe Firefly 依赖端点集（统一引用源：所有用到该集合的地方均引用此数组，修改时无需同步多处）────
     // adobeFireflyOnly 独立成数组（而非并入 adobeSuffix），是因为两者路由动作不同：
-    // adobeFireflyOnly 在 isFireflyActive=true 时走代理（allow 层），
-    // adobeSuffix 始终走 REJECT（block 层）；合并会丢失路由区分能力。
+    // adobeFireflyOnly 在 isFireflyActive=true 时走代理（allow 层），adobeSuffix 始终走 REJECT（block 层）；合并会丢失路由区分能力。
     //
     // 路由动作由 isFireflyActive 决定：
     //   isFireflyActive=true  → pushSuffix(adobeFireflyDeps, proxyGroupName, layerPools.allow) → 走代理
@@ -587,8 +579,7 @@ function main(config) {
 
     // 🚫 ─────────────────────── Adobe 激活 / 遥测核心拦截 ───────────────────────
     // 📌 关于 REJECT vs REJECT-DROP（Mihomo 的两种拒绝策略）：
-    //    REJECT      发送 TCP RST（TCP 侧）/ ICMP Port Unreachable（UDP 侧），
-    //                软件立即收到连接拒绝，放弃重试并进入离线模式，启动无卡顿，推荐用于遥测/授权域名。
+    //    REJECT      发送 TCP RST（TCP 侧）/ ICMP Port Unreachable（UDP 侧），软件立即收到连接拒绝，放弃重试并进入离线模式，启动无卡顿，推荐用于遥测/授权域名。
     //    REJECT-DROP 静默丢包，不回应任何数据包（TCP 和 UDP 均适用），
     //                TCP 侧：软件 Socket 陷入 SYN_SENT 直至系统 TCP 超时；
     //                UDP 侧：数据包被无声丢弃，软件等待响应直至应用层超时；
@@ -634,8 +625,8 @@ function main(config) {
     const _ADOBE_RAND_RE_STR      = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$";       // adobe.io 随机子域（8-12位）
     const _ADOBESTATS_RAND_RE_STR = "^[A-Za-z0-9]{10}\\.adobestats\\.io$";   // adobestats.io 随机子域（社区记录为固定10位，若实测发现其他长度，请调整此正则）
 
-    // 正则：拦截随机子域（遥测特征：8-12 位随机字符）
-    // 改用 REJECT（非 REJECT-DROP）：遥测随机子域无"拖延感知"的必要，此类域名不存在切换备用域名的自适应逻辑，
+    // 正则：拦截随机子域（遥测特征：8-12 位随机字符）改用 REJECT（非 REJECT-DROP）：
+    // 遥测随机子域无"拖延感知"的必要，此类域名不存在切换备用域名的自适应逻辑，
     // REJECT 让软件立即感知失败并进入离线模式，避免 15–30s 超时卡顿影响 PS 启动体验。
     const adobeRegex = [
         `DOMAIN-REGEX,${_ADOBE_RAND_RE_STR},REJECT`,
@@ -658,8 +649,7 @@ function main(config) {
     //    是唯一有效的域名无关进程级拦截手段；路径A（Fake-IP 正常）下 DOMAIN 规则已生效，PROCESS-NAME 为附加纵深而非唯一防线。
     //
     // 改用 REJECT（非 REJECT-DROP）：UDP 阻断目的仅是强制 TCP fallback，无需"拖延感知"效果。
-    // REJECT 发送 ICMP Port Unreachable，应用立即感知 QUIC 不可达并 fallback 至 TCP，
-    // 比 REJECT-DROP 的 15–30s 超时 fallback 快得多，用户体验更好。
+    // REJECT 发送 ICMP Port Unreachable，应用立即感知 QUIC 不可达并 fallback 至 TCP，比 REJECT-DROP 的 15–30s 超时 fallback 快得多，用户体验更好。
     //
     // ⚠️【directRules 中 adobe.com 子域的 UDP 路径说明】
     //    fonts.adobe.com / stock.adobe.com / behance.adobe.com 等在 directRules 中配置为 DIRECT。
@@ -668,8 +658,7 @@ function main(config) {
     //    整体路径：UDP→REJECT（立即） → TCP fallback → DIRECT。无延迟，行为符合预期。
     //
     // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核能够尽早排除低代价条件后跳过高代价求值）：
-    // NETWORK（读包头）→ DST-PORT（整数比较）→ DOMAIN-*（依赖 SNI 嗅探）
-    // 实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
+    // NETWORK（读包头）→ DST-PORT（整数比较）→ DOMAIN-*（依赖 SNI 嗅探）实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
     const adobeUdpBlock = [
         // ⚠️ 以下各条均依赖 Mihomo DNS 映射或 Sniffer SNI 嗅探才能识别域名；
         //    纯 IP 形式 QUIC 流量或路径B（绕过 Mihomo DNS 且开启 ECH）下，DOMAIN 类规则对此无效（见末尾说明）
@@ -825,17 +814,12 @@ function main(config) {
     //     → autodeskKeyword REJECT 先命中，aggressiveRules 不注入，无冲突
     //     → "entitlement.autodesk" 是 entitlement.autodesk.com 的唯一覆盖，必须保留
     //   ENABLE_BLOCK=true, ENABLE_AGGRESSIVE=true：
-    //     → autodeskKeyword REJECT（KEYWORD 规则）先于
-    //       aggressiveRules SUFFIX（SUFFIX 规则）命中（pool 注入顺序决定）
-    //     → aggressiveRules 中的 entitlement.autodesk.com SUFFIX 规则被遮蔽，实质冗余但无害
-    //   ENABLE_BLOCK=false, ENABLE_AGGRESSIVE=true（极少使用）：
-    //     → autodeskKeyword 不注入，aggressiveRules SUFFIX 独立生效
-    //     → 此时两者各司其职，无冲突
+    //     → autodeskKeyword REJECT（KEYWORD 规则）先于 aggressiveRules SUFFIX（SUFFIX 规则）命中（pool 注入顺序决定）
+    //     → aggressiveRules 中的 entitlement.autodesk.com SUFFIX 规则被遮蔽，实质冗余但无害 ENABLE_BLOCK=false, 
+    //   ENABLE_AGGRESSIVE=true（极少使用）：autodeskKeyword 不注入，aggressiveRules SUFFIX 独立生效，此时两者各司其职，无冲突
     //
-    // 结论：重叠为纵深覆盖，在所有开关组合下均无副作用，无需合并或删除任一条目。
-    //       删除单条（如认为 SUFFIX 已覆盖可删 KEYWORD）在 ENABLE_BLOCK=true,
-    //       ENABLE_AGGRESSIVE=false（默认配置）下会产生漏拦截 Bug——
-    //       此时 KEYWORD 是唯一覆盖，SUFFIX 在 AGGRESSIVE 层未注入。
+    // 结论：重叠为纵深覆盖，在所有开关组合下均无副作用，无需合并或删除任一条目。删除单条（如认为 SUFFIX 已覆盖可删 KEYWORD）在 ENABLE_BLOCK=true,
+    //       ENABLE_AGGRESSIVE=false（默认配置）下会产生漏拦截 Bug，此时 KEYWORD 是唯一覆盖，SUFFIX 在 AGGRESSIVE 层未注入。
     // ─────────────────────────────────────────────────────────────
     const autodeskKeyword = [
         "adlm",                                  // Autodesk Desktop Licensing Module（桌面许可证模块）
@@ -854,8 +838,7 @@ function main(config) {
         "api.pzz.cn",                            // 国内非官方修改补丁回传接口
         "cc-cdn.com",                            // 【推断】命名形似 Adobe CC CDN，无抓包证据，保守纳入；可信度低于前三条
     ];
-    // 关键词兜底：覆盖 966v26.net / cdn.966v26.org 等非 .com TLD（顶级域名，Top-Level Domain）变种，
-    // REJECT-DROP 策略与 backdoorSuffix 一致。
+    // 关键词兜底：覆盖 966v26.net / cdn.966v26.org 等非 .com TLD（顶级域名，Top-Level Domain）变种，REJECT-DROP 策略与 backdoorSuffix 一致。
     // ⚠️ 误命中风险评估："966v26" 为 9 字符无语义随机字符组合，特异性极高；在当前已知合法域名生态中，无任何域名含此子串，实际误命中概率为零。
     //    若将来发现误命中（如某 CDN 域名恰好含此子串），可将 REJECT-DROP 改为 REJECT 降低影响面；但鉴于字符串高度随机性，此情形极不可能发生，当前策略可接受。
     const backdoorKeyword = ["966v26"];
@@ -880,8 +863,7 @@ function main(config) {
         "license.wondershare.com",                // 许可证验证服务
         "wondershare.cc",                         // Wondershare 海外追踪/统计域
         "wondershare.cn",                         // Wondershare 国内遥测/统计域
-        // "iskysoft.com",  // ⚠️ 已注释：主域即官网，无已知专用验证子域，
-        //                  //   拦截主域将导致官网无法访问。如有抓包确认的验证子域，请替换为精确条目。
+        // "iskysoft.com",  // ⚠️ 已注释：主域即官网，无已知专用验证子域，拦截主域将导致官网无法访问。如有抓包确认的验证子域，请替换为精确条目。
         // "imyfone.com",   // ⚠️ 已注释：同上，主域即官网，无已知专用验证子域。
     ];
 
@@ -907,19 +889,15 @@ function main(config) {
         "www.xmind.net",        // XMind 8 授权验证接口（Java 版）/ 国际更新检查
         "www.xmind.cn",         // XMind 中文站授权验证 / 国内更新检查
         "dl2.xmind.cn",         // XMind 8 更新安装包下载服务器（弹出更新提示的来源）
-        // ⚠️ 注意：XMind 2020+ 的 api.xmind.net / api.xmind.app 等 API 子域名
-        // 无公开抓包资料确认，未贸然添加。如将来有抓包证据请补充于此。
+        // ⚠️ 注意：XMind 2020+ 的 api.xmind.net / api.xmind.app 等 API 子域名，拦截主域将导致官网无法访问。如有抓包确认的验证子域，请替换为精确条目。
 
         // ──────────────────────────── Listary ────────────────────────────
-        // 来源：社区抓包记录（非官方文档），support 子域为目前唯一有记录的联网端点。
-        // 其他子域名（api.listary.com 等）无公开资料，不添加以免误判。
+        // 来源：社区抓包记录（非官方文档），support 子域为目前唯一有记录的联网端点。其他子域名（api.listary.com 等）无公开资料，不添加以免误判。
         "support.listary.com",  // 激活/授权验证接口（精确匹配，防误伤主站）
 
         // ──────────────────────── WinRAR (RARLAB) ────────────────────────
         // 来源：CVE-2021-35052 安全报告；Wireshark/Burp 抓包记录；rarlab.com 官网。
-        "notifier.rarlab.com",  // 广告弹窗 / 试用到期通知页面（主要骚扰来源）
-                                // CVE-2021-35052：该域名曾被中间人攻击利用执行任意代码。
-                                // 屏蔽此域名同时消除安全风险 + 关闭广告弹窗。
+        "notifier.rarlab.com",  // 广告弹窗 / 试用到期通知页面。CVE-2021-35052：该域曾被中间人攻击利用执行任意代码。屏蔽同时消除安全风险 + 关闭广告弹窗。
 
         // ──────────────────────────── Typora ────────────────────────────
         "license.typora.io",    // Typora 授权验证接口
@@ -1153,8 +1131,7 @@ function main(config) {
     // ⚠️ Windows 需要管理员权限 + TUN 模式（Mihomo 创建虚拟网卡接管全部流量）或 Service 模式，系统代理模式无效
     //    TUN 模式：Mihomo 创建虚拟网卡，所有流量经虚拟网卡路由后由 Mihomo 处理；
     //    Service 模式：Mihomo 以系统服务身份运行，效果等同于 TUN 模式，无需每次手动启动。
-    //    进程规则在两种模式下均有效，二者区别在于启动方式而非流量捕获机制。
-    //    进程名必须与任务管理器「详细信息」完全一致，含 .exe 后缀。
+    //    进程规则在两种模式下均有效，二者区别在于启动方式而非流量捕获机制。进程名必须与任务管理器「详细信息」完全一致，含 .exe 后缀。
     //    ⚠️ Windows 进程名大小写不敏感；macOS / Linux 严格区分大小写，务必核对精确名称。
     // ⚠️ macOS / Linux：以下规则全部失效——进程名不含 .exe 后缀且严格区分大小写；
     //    如需在 macOS / Linux 上使用进程规则，须通过 ps 命令核对实际进程名（如 AdobeGCClient），并自行在此处添加对应条目。
@@ -1206,10 +1183,10 @@ function main(config) {
     // ⚠️ Google 风控：Gemini 检测出口 IP 漂移，google.com 与 gemini.google.com 必须命中同一策略组，否则可能触发 403 或账号异常
     const proxySuffixList = [
         "github.com",                         // 代码托管平台，防御性规则：当外部覆写配置引用的代理规则集下载失败（规则集条目为空）时，让该域走代理确保连通性
-        "copilot.microsoft.com",              // Copilot AI 助手（注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct）
+        "copilot.microsoft.com",              // Copilot AI 助手，注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct
         "linkedin.com",                       // 领英职场社交网络
-        // "openai.com",                      // 按需取消注释
-        // "gemini.google.com",               // 按需取消注释（⚠️ 见上方 Google 风控警告：google.com 必须与 gemini.google.com 命中同一策略组）
+        // "openai.com",                      // OpenAI，按需取消注释
+        // "gemini.google.com",               // Gemini，按需取消注释（⚠️ 见上方 Google 风控警告：google.com 必须与 gemini.google.com 命中同一策略组）
         // ────────── Steam 分流：商店走代理，下载走直连 ──────────
         // store / community / static 是国内受阻的前端域，走代理提升访问体验。
         // steampowered.com 根域含 content1~9 下载 CDN（内容分发网络）子域，保留直连保证下载速度。
@@ -1221,8 +1198,7 @@ function main(config) {
     // ────────────────────────────── 直连规则 ──────────────────────────────
     const directRules = [
         // Microsoft 全家桶直连（防止更新/登录/OneDrive 卡死）
-        // DOMAIN-SUFFIX,microsoft.com 已覆盖所有 *.microsoft.com 子域，
-        // 无需额外的 DOMAIN-KEYWORD,microsoft（冗余且存在误判风险）
+        // DOMAIN-SUFFIX,microsoft.com 已覆盖所有 *.microsoft.com 子域，无需额外的 DOMAIN-KEYWORD,microsoft（冗余且存在误判风险）
         "DOMAIN-SUFFIX,microsoft.com,DIRECT",              // 微软主域（含所有 *.microsoft.com 子域）
         "DOMAIN-SUFFIX,live.com,DIRECT",                   // 微软账户 / Hotmail
         "DOMAIN-SUFFIX,outlook.com,DIRECT",                // Outlook 邮件服务
@@ -1251,11 +1227,10 @@ function main(config) {
         "DOMAIN-SUFFIX,behance.adobe.com,DIRECT",          // Behance Adobe 子域
         "DOMAIN-SUFFIX,color.adobe.com,DIRECT",            // Adobe Color 配色工具
         "DOMAIN,assets.adobe.com,DIRECT",                  // Adobe 静态资源 CDN（内容分发网络）
-        // 官网放行。
+        // 官网放行
         "DOMAIN-SUFFIX,autodesk.com,DIRECT",               // Autodesk 官网放行（下载/账户/论坛）
         "DOMAIN-SUFFIX,corel.com,DIRECT",                  // 父域放行（主域即官网，精确子域拦截见 corelSuffix）
-        // 常用工具直连。
-        // 
+        // 常用直连
         // "DST-PORT,123,DIRECT",                 // ⚠️ 旧版 Mihomo 兼容写法，同时匹配 TCP/UDP；NTP（Network Time Protocol，网络时间协议）仅使用 UDP 123
         "AND,((NETWORK,UDP),(DST-PORT,123)),DIRECT",  // 精确匹配端口 & UDP 协议。NTP 时间同步强制直连（仅 TUN 模式有效）
         "DOMAIN-SUFFIX,steampowered.com,DIRECT",  // Steam 根域直连（含 content1~9 下载 CDN 子域，保证满速）
@@ -1278,11 +1253,11 @@ function main(config) {
         "DOMAIN-SUFFIX,dir28.com,DIRECT",         // 羊毛活动
         // "DOMAIN-KEYWORD,amazon,DIRECT",           // 亚马逊直连（⚠️ 覆盖所有含 amazon 的域名，含 AWS；若 AWS 服务需代理，改用精确 DOMAIN-SUFFIX 规则或外部规则集合）
                                                    // ⚠️ 冲突依赖 LAYER_ORDER：block 层先于 direct 层命中，否则 amazon-adsystem.com 广告域会被此条规则泛匹配误放行。
-        // "DOMAIN-SUFFIX,tmall.hk,DIRECT",          // 淘宝 .hk 域被兜底走代理影响商品价格加载
+        // "DOMAIN-SUFFIX,tmall.hk,DIRECT",          // 淘宝 .hk 域，如被代理可能影响商品价格加载
         // 个人扩展区
-        "DOMAIN-SUFFIX,aserweb.com,DIRECT",       // 行业 ERP
-        "DOMAIN-SUFFIX,zlkj.com,DIRECT",          // 行业 SCRM
-        "DOMAIN-SUFFIX,threadify.com,DIRECT",     // 小众独立站，直连以确保访问
+        // "DOMAIN-SUFFIX,行业 ERP,DIRECT",       // 行业 ERP
+        // "DOMAIN-SUFFIX,行业 SCRM,DIRECT",      // 行业 SCRM
+        // "DOMAIN-SUFFIX,小众独立站,DIRECT",     // 小众独立站，直连以确保访问
     ];
 
     // ────────────── 激进阻断规则（默认关闭，开启前请仔细阅读注释）──────────────
@@ -1298,8 +1273,7 @@ function main(config) {
         // 多平台共用域（Zapier/Notion/GitHub Actions 也在用，慎用）
         "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP",
         // ⚠️ 激进：多服务共用内容托管域（Google Cloud Workflows / Colab / AppSheet / Adobe / Zapier / Notion / GitHub Actions 等）；
-        //    拦截后所有依赖此域的服务均受影响——Colab 输出渲染、AppSheet 内容、Adobe 工作流等可能同时中断，影响面超出 Adobe 范畴。
-        //    建议查阅实际流量再决定是否启用。
+        //    拦截后所有依赖此域的服务均受影响——Colab 输出渲染、AppSheet 内容、Adobe 工作流等可能同时中断，影响面超出 Adobe 范畴。建议查阅实际流量再决定是否启用。
         "DOMAIN-SUFFIX,adsk.com,REJECT-DROP",                // ⚠️ 激进：Autodesk 旧版遥测（影响官网/插件商店访问）
         "DOMAIN-KEYWORD,officecdn,REJECT-DROP",              // ⚠️ 激进：Office CDN（内容分发网络）关键词规则（影响 Office 更新/模板下载）
         "DOMAIN,geo.adobe.com,REJECT-DROP",                  // ⚠️ 激进：地理区域识别（影响 CC 登录）
@@ -1307,10 +1281,8 @@ function main(config) {
         "DOMAIN-SUFFIX,accounts.autodesk.com,REJECT-DROP",   // ⚠️ 激进：拦截后无法登录 Autodesk 账户
         // ⚠️ 激进：Autodesk 授权端点。
         //    ENABLE_BLOCK=true 时，autodeskKeyword 中的 KEYWORD 规则（"entitlement.autodesk"）
-        //    因注入顺序更早而先命中，本 SUFFIX 规则被遮蔽（实质冗余但无害）。
-        //    ENABLE_BLOCK=false 时本条独立生效，为纵深防御保留，禁止删除。
-        //    注意：api.entitlements.autodesk.com 不被上述 KEYWORD 覆盖，
-        //    已在 autodeskSuffix 独立列出，与本条无重叠（见 autodeskKeyword 注释块）。
+        //    因注入顺序更早而先命中，本 SUFFIX 规则被遮蔽（实质冗余但无害）。ENABLE_BLOCK=false 时本条独立生效，为纵深防御保留，禁止删除。
+        //    注意：api.entitlements.autodesk.com 不被上述 KEYWORD 覆盖，已在 autodeskSuffix 独立列出，与本条无重叠（见 autodeskKeyword 注释块）。
         "DOMAIN-SUFFIX,entitlement.autodesk.com,REJECT-DROP",
         // IE 遗留检测（拦截后影响 ActiveX 控件 / 旧版 OA 系统，不影响 NCSI）
         "DOMAIN,ieonline.microsoft.com,REJECT-DROP",         // ⚠️ 激进：IE 内核在线检测（影响 ActiveX 控件 / 旧版 OA 系统，不影响 NCSI）
@@ -1320,14 +1292,11 @@ function main(config) {
 
     try {
         // ──── 分层规则容器（优先级由 LAYER_ORDER 数组唯一决定）────
-        // 层级固定顺序：allow（放行）> block（拦截）> process（进程）
-        //              > proxy（代理）> aggressive（激进）> direct（直连）
+        // 层级固定顺序：allow（放行）> block（拦截）> process（进程）> proxy（代理）> aggressive（激进）> direct（直连）
         // layerPools 对象仅用作具名容器，方便分类追加规则；各数组在运行期间持续被 pushLayer 写入（可变）。
-        // ⚠️ 命名说明：使用 const layerPools（小写）而非 LAYERS，明确其为"可变规则池"而非不可变常量，
-        //    避免与 LAYER_ORDER（真正冻结的顺序数组）在命名语义上混淆。
-        // 优先级完全由 LAYER_ORDER 数组的元素顺序决定
-        // （有意不依赖 layerPools 对象键迭代顺序——ES2015+ 已明确规范字符串键按插入顺序迭代，
-        //   但显式 LAYER_ORDER 数组使优先级意图一目了然，且防止未来新增层时因键位置隐性改变注入顺序）。
+        // ⚠️ 命名说明：使用 const layerPools（小写）而非 LAYERS，明确其为"可变规则池"而非不可变常量，避免与 LAYER_ORDER（真正冻结的顺序数组）在命名语义上混淆。
+        // 优先级完全由 LAYER_ORDER 数组的元素顺序决定（有意不依赖 layerPools 对象键迭代顺序——ES2015+ 已明确规范字符串键按插入顺序迭代，
+        // 但显式 LAYER_ORDER 数组使优先级意图一目了然，且防止未来新增层时因键位置隐性改变注入顺序）。
         const layerPools = { allow: [], block: [], process: [], proxy: [], aggressive: [], direct: [] };
         // pushLayer：逐项追加，避免 push(...rules) 在规则量超过 V8 参数栈上限（~65536）时抛出 RangeError
         const pushLayer = (layer, rules) => {
@@ -1346,9 +1315,8 @@ function main(config) {
                //      · clio.adobe.io / firefly.adobe.io（位数过短，不满足 {8,12}）
                //      · firefly.adobe.com / clio-assets.adobe.com 等（TLD 为 .com，adobeRegex 仅覆盖 .io）
                //      · firefly-api.adobe.io / clio-prober.adobe.io（含连字符，不满足 [A-Za-z0-9]{8,12}）
-               //    若不显式注入，上述端点将落入 MATCH 兜底策略（可能走直连），
-               //    背离「关闭 ENABLE_FIREFLY = 禁用 Firefly 功能」的设计意图。
-               //    （senseicore / senseimds 满足 adobeRegex {8,12} 约束，已被正则兜底；其余七条须此处显式处理。）
+               //    若不显式注入，上述端点将落入 MATCH 兜底策略（可能走直连），背离「关闭 ENABLE_FIREFLY = 禁用 Firefly 功能」的设计意图。
+               //    （senseicore / senseimds 满足 adobeRegex {8,12} 约束，已被正则兜底；其余条目须此处显式处理。）
             const [_fireflyAction, _fireflyPool] = isFireflyActive
                ? [proxyGroupName, layerPools.allow]
                : ["REJECT",       layerPools.block];
@@ -1400,8 +1368,7 @@ function main(config) {
         if (ENABLE_PROCESS_RULE) {
             // processBlockRules / processProxyRules / processDirectRules 均为同作用域 const 字面量数组，
             // 类型在声明时确定，Array.isArray 对这三个变量必为 true，添加类型检查是冗余代码；
-            // pushLayer 内部为 for...of 迭代，对空数组零次迭代（no-op），无需 length 守卫，
-            // 与 pushSuffix/pushDomain 处理原则一致。
+            // pushLayer 内部为 for...of 迭代，对空数组零次迭代（no-op），无需 length 守卫，与 pushSuffix/pushDomain 处理原则一致。
             // ⚠️ process 层内三个子数组的注入顺序（block > proxy > direct）构成 first-match 子优先级：
             //    同一进程名若同时出现在 processBlockRules 和 processProxyRules 中，REJECT/REJECT-DROP 先命中，代理规则被遮蔽。
             pushLayer("process", processBlockRules);
@@ -1438,8 +1405,7 @@ function main(config) {
         // Object.freeze：const 仅防止重新赋值，不防止 push/splice 等原地变异；
         //   freeze 确保 LAYER_ORDER 内容在整个注入过程中绝对不变，防止未来扩展时意外静默失效。
         // ⚠️ 键名一致性约束：LAYER_ORDER 的字符串元素必须与 layerPools 的键名完全一致；
-        //   添加新层时须同步在两处修改，仅改其一会导致新层被 pushLayer 写入但不被 LAYER_ORDER 展开，
-        //   规则静默丢失（无任何报错）。
+        //   添加新层时须同步在两处修改，仅改其一会导致新层被 pushLayer 写入但不被 LAYER_ORDER 展开，规则静默丢失（无任何报错）。
         // ⚠️ LAYER_ORDER 顺序 = first-match 策略优先级，禁止随意调整，两类典型错误：
         //    危险示例1：将 "aggressive" 移至 "allow" 之前，adobe.io 通配 REJECT-DROP 先于 Firefly 精确放行命中，推理请求被错误拦截。
         //    危险示例2：将 "direct" 移至 "aggressive" 之前，父域 autodesk.com,DIRECT 先命中，子域 accounts.autodesk.com,REJECT-DROP 等激进规则将永久被父域规则遮蔽。
@@ -1514,10 +1480,8 @@ function main(config) {
         //   _sentinelEnd 在 finalPool 构建阶段（LAYER_ORDER for 循环结束后）即已压入，
         //   config.rules 赋值（finalPool.concat）是单条同步语句，在 JS 单线程模型中不会被中断：
         //     · 若错误发生在赋值之前（for 循环中），config.rules 尚未被写入，返回干净状态；
-        //     · 若错误发生在赋值之后（console.log 阶段），全量注入规则已完整写入（不存在半写入状态），
-        //       且两端哨兵均已完整写入，不产生孤儿哨兵。
-        //   结论：catch 块捕获的异常不会产生孤儿 START，返回的 config.rules 始终处于一致状态
-        //   （赋值前为干净状态，赋值后为完整注入状态，不存在半截注入的中间状态）。
+        //     · 若错误发生在赋值之后（console.log 阶段），全量注入规则已完整写入（不存在半写入状态），且两端哨兵均已完整写入，不产生孤儿哨兵。
+        //   结论：catch 块捕获的异常不会产生孤儿 START，返回的 config.rules 始终处于一致状态（赋值前为干净状态，赋值后为完整注入状态，不存在半截注入的中间状态）。
         console.error("❌ 规则注入阶段异常（config.rules 处于一致状态：赋值前=未写入，赋值后=已完整写入，无半写入），继续执行 Hosts 覆写:", err);
         console.log(`   失败耗时:   ${Date.now() - _startTime} ms`);
         // 不再 return config，继续执行到 Hosts 注入 try 块。
@@ -1525,45 +1489,31 @@ function main(config) {
 
     // ═══════════════ 4. Hosts 级 DNS 拦截 ═══════════════
     //  （四种劫持子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
-    //
-    // 【DNS 内部处理流（来源：wiki.metacubex.one/en/config/dns/diagram）】
-    //
+    //  【DNS 内部处理流（来源：wiki.metacubex.one/en/config/dns/diagram）】
     //   DNS 解析阶段（按优先级）：
     //     1. Hosts 匹配  → 命中则立即返回映射地址，不再向下执行
     //     2. fake-ip-filter（虚假 IP 过滤表）判断 → 域名在列表中则走真实 DNS 查询
     //     3. Fake-IP（虚假 IP，Mihomo 分配的 198.18.x.x 虚拟地址）生成 → 不在列表则分配虚拟 IP
     //     → 结论：hosts 优先级高于 fake-ip-filter
-    //
     //   Hosts 覆写生效前提：Mihomo 必须拦截到 DNS 查询才能返回拦截地址。
-    //
-    //   系统代理模式：
-    //     app → Mihomo DNS → hosts → 返回拦截地址（黑洞/欺骗，取决于 HOSTS_MODE）→ app 连接立即失败
-    //
+    //   系统代理模式：app → Mihomo DNS → hosts → 返回拦截地址（黑洞/欺骗，取决于 HOSTS_MODE）→ app 连接立即失败
     //   TUN 模式（需满足前提：dns-hijack: any:53）：
     //     app → TUN → DNS 接管 → hosts → 返回拦截地址（黑洞/欺骗，取决于 HOSTS_MODE）→ app 连接立即失败
-    //     ⚠️ 若 TUN 未配置 dns-hijack，app 可绕过 Mihomo DNS 直接查询
-    //        外部 DNS，hosts 将不生效。
+    //     ⚠️ 若 TUN 未配置 dns-hijack，app 可绕过 Mihomo DNS 直接查询外部 DNS，hosts 将不生效。
     //
     //   ⚠️ 两种模式的共同边界——应用使用硬编码 IP（完全绕过 DNS）：
-    //     app → 直接发起 IP 连接 → 路由规则匹配
-    //     → DOMAIN-SUFFIX / DOMAIN 规则不触发（无域名可匹配）
-    //     → PROCESS-NAME / IP-CIDR / NETWORK 规则触发 → REJECT-DROP
-    //     此时 DOMAIN-SUFFIX 类规则（含 backdoorSuffix）同样无效；
-    //     唯一有效防线为 PROCESS-NAME（进程规则）和 IP-CIDR 规则。
+    //     app → 直接发起 IP 连接 → 路由规则匹配 → DOMAIN-SUFFIX / DOMAIN 规则不触发（无域名可匹配） → PROCESS-NAME / IP-CIDR / NETWORK 规则触发 → REJECT-DROP
+    //     此时 DOMAIN-SUFFIX 类规则（含 backdoorSuffix）同样无效；唯一有效防线为 PROCESS-NAME（进程规则）和 IP-CIDR 规则。
     //
     // 💡【Hosts 与 Rules 分层说明】
-    //    hosts 命中后，DNS 已在解析阶段返回拦截地址，TCP 连接不会发出，
-    //    rules 层（DOMAIN-SUFFIX REJECT-DROP 等）不会执行。
+    //    hosts 命中后，DNS 已在解析阶段返回拦截地址，TCP 连接不会发出，rules 层（DOMAIN-SUFFIX REJECT-DROP 等）不会执行。
     //    rules 层是 hosts 未生效时（用户未开启「使用 Hosts」或应用使用硬编码 IP 绕过 DNS）的兜底。
     //    两者存在有意的依赖关系：Hosts 层优先，rules 层兜底；Hosts 命中时 rules 不参与，形成有序的主防线（Hosts）与兜底防线（rules）串联结构，而非两层并行冗余。
     //
     //   各 HOSTS_MODE 的连接失败类型：
-    //     0.0.0.0 / :: → ENETUNREACH（Linux/Android）/
-    //                    WSAEINVAL（Windows，10022，通常返回，因 Windows 版本而异：0.0.0.0 为非法连接目标）
-    //                    或 WSAENETUNREACH（10051，断网状态下可能出现）；
-    //                    OS 直接拒绝，TCP SYN（握手第一包）不会发出。
-    //     127.0.0.1 / ::1 → ECONNREFUSED（本地无监听端口时，本地 OS TCP 栈返回 RST 重置包）
-    //                       应用层收到连接拒绝错误（而非路由不可达），欺骗性拦截效果更温和。
+    //     0.0.0.0 / :: → ENETUNREACH（Linux/Android）/ WSAEINVAL（Windows，10022，通常返回，因 Windows 版本而异：0.0.0.0 为非法连接目标）
+    //                    或 WSAENETUNREACH（10051，断网状态下可能出现）；OS 直接拒绝，TCP SYN（握手第一包）不会发出。
+    //     127.0.0.1 / ::1 → ECONNREFUSED（本地无监听端口时，本地 OS TCP 栈返回 RST 重置包）应用层收到连接拒绝错误（而非路由不可达），欺骗性拦截效果更温和。    
     //
     // 模式说明（与顶部 HOSTS_MODE 对应）：
     //   ipv4-loopback  → 127.0.0.1          欺骗拦截（ECONNREFUSED），更温和
@@ -1574,10 +1524,8 @@ function main(config) {
     // 【hosts 值格式（来源：wiki.metacubex.one/en/config/dns/hosts）】
     //   单 IP：字符串 "0.0.0.0"
     //   多 IP：数组   ["0.0.0.0", "::"]
-    //   域名重定向：字符串（不支持数组）
-    //   → 单元素数组 ["0.0.0.0"] 与字符串 "0.0.0.0" 语义相同，
-    //     但部分版本 Mihomo 对单元素数组解析行为未明确，
-    //     本脚本统一使用字符串（单 IP）或数组（多 IP）
+    //   域名重定向：字符串（不支持数组） → 单元素数组 ["0.0.0.0"] 与字符串 "0.0.0.0" 语义相同，
+    //     但部分版本 Mihomo 对单元素数组解析行为未明确，本脚本统一使用字符串（单 IP）或数组（多 IP）
 
     if (ENABLE_HOSTS_OVERRIDE) {
         // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
@@ -1615,8 +1563,7 @@ function main(config) {
             //   精确项是为兼容旧版内核：旧版不识别 +. 语法时，*.XXX.com 覆盖单级子域，如使用旧版内核请自行取消下方对应规则条目的注释以使之生效。
             //   XXX.com 保障主域本身。代价：内核 hosts 树略有冗余，无功能影响。
             //
-            // hijackDomains 覆盖 backdoorSuffix 全部四个域名，
-            // 与 rules 层的 REJECT-DROP 规则保持覆盖对称，形成 DNS 层 + rules 层双重纵深防御。
+            // hijackDomains 覆盖 backdoorSuffix 全部四个域名，与 rules 层的 REJECT-DROP 规则保持覆盖对称，形成 DNS 层 + rules 层双重纵深防御。
             const hijackDomains = [
                 // ──── 966v26.com（有明确社区记录）────
                 "+.966v26.com",           // 主域 + 所有多级子域
@@ -1640,8 +1587,7 @@ function main(config) {
 
             // 顶层 hosts + DNS 模块双重注入（兼容性策略，而非功能需要）
             // ⚠️ 不同内核/版本对 hosts 段和 dns.hosts 段的支持情况可能不同，双写确保覆盖
-            // ⚠️ config.dns 可能不存在（订阅无 dns 块时为 undefined），
-            //    必须先确保 dns 对象存在再操作子字段。
+            // ⚠️ config.dns 可能不存在（订阅无 dns 块时为 undefined），必须先确保 dns 对象存在再操作子字段。
 
             // safeHostsObj：hosts / dns.hosts 字段类型校验辅助工具，就近声明于首次使用处。
             // 若上游订阅将 hosts 写成数组/字符串，直接展开产生以索引为 key 的非法对象；
@@ -1656,23 +1602,18 @@ function main(config) {
                 config.dns = {};
             }
             //    Clash Verge Rev 的配置生效顺序：
-            //      订阅 yaml → 脚本注入 → UI 设置覆盖 → 写入 clash-verge.yaml → Mihomo 加载
-            //
-            //    → 必须在 Clash Verge Rev 设置 › DNS 覆写 › 手动开启「使用 Hosts」，Hosts DNS 覆写才能真正生效。
-            //
+            //    订阅 yaml → 脚本注入 → UI 设置覆盖 → 写入 clash-verge.yaml → Mihomo 加载
+            //    → 必须在 CVR 设置 › DNS 覆写 › 手动开启「使用 Hosts」，Hosts DNS 覆写才能真正生效。
             //    注意：同页面还有「使用系统 Hosts」开关，该开关控制的是系统原生 hosts 文件，与本脚本向 Mihomo 注入的 hosts 条目完全独立，保持关闭即可。
 
             // dns.hosts 同样使用 safeHostsObj 校验。
             config.dns.hosts = { ...safeHostsObj(config.dns.hosts), ...customHosts };
 
             //    hosts 命中时请求直接返回拦截地址，根本不走到 Fake-IP 分配阶段；
-            //    此处追加的真实意义是：防止 Fake-IP（198.18.x.x）被分配给这些域名，
-            //    导致 IP 类规则产生误命中——不应将其理解为 hosts 失效时的替代防护。
-            //    hosts 未生效时，域名走真实 DNS 返回真实 IP，Mihomo 无 Fake-IP 映射可查，
-            //    DOMAIN 类规则对已解析 IP 的流量无效；此时 fake-ip-filter 条目的防护贡献几乎为零，
-            //    真正的兜底是 rules 层中的 REJECT-DROP 规则。
-            // fake-ip-filter 追加为辅助手段：阻止内核为拦截域名分配 198.18.x.x 虚拟 IP
-            //（防止 Fake-IP 表污染，使域名走真实 DNS 查询）。
+            //    此处追加的真实意义是：防止 Fake-IP（198.18.x.x）被分配给这些域名，导致 IP 类规则产生误命中——不应将其理解为 hosts 失效时的替代防护。
+            //    hosts 未生效时，域名走真实 DNS 返回真实 IP，Mihomo 无 Fake-IP 映射可查，DOMAIN 类规则对已解析 IP 的流量无效；
+            //    此时 fake-ip-filter 条目的防护贡献几乎为零，真正的兜底是 rules 层中的 REJECT-DROP 规则。
+            // fake-ip-filter 追加为辅助手段：阻止内核为拦截域名分配 198.18.x.x 虚拟 IP（防止 Fake-IP 表污染，使域名走真实 DNS 查询）。
             // ⚠️ fake-ip-filter 本身不阻断连接：加入后域名走真实 DNS，返回真实 IP，
             //    连接能否被拦截仍取决于 rules 层（backdoorSuffix REJECT-DROP）；
             //    硬编码 IP 路径（应用绕过 DNS）下 DOMAIN 类规则全部失效，需依赖 PROCESS-NAME / IP-CIDR。
@@ -1680,11 +1621,9 @@ function main(config) {
             // [优化] 仅追加新条目，不对全量 fake-ip-filter 排序，保留订阅原有顺序。
             //        全量重排会触发 Mihomo DNS hash 重建，可能导致连接瞬断，故仅追加。
             //        新增条目本身做 .sort()：hijackDomains 字面量中 "*.966v26.com"（* = ASCII 42）
-            //        排在 "+.966v26.com"（+ = ASCII 43）之前，实际与声明顺序不同；
-            //        保留 .sort() 为防御性设计，确保将来 hijackDomains 改为动态生成时
-            //        每次 reload 追加顺序仍一致，与"不打乱订阅原有顺序"不矛盾（仅对新条目排序）。
-            // ⚠️ 注意：CVR UI 若开启了某些预设模板或覆盖 DNS 配置，可能清空或重置
-            //    fake-ip-filter 列表，导致此处追加的条目丢失。
+            //        排在 "+.966v26.com"（+ = ASCII 43）之前，实际与声明顺序不同；保留 .sort() 为防御性设计，
+            //        确保将来 hijackDomains 改为动态生成时每次 reload 追加顺序仍一致，与"不打乱订阅原有顺序"不矛盾（仅对新条目排序）。
+            // ⚠️ 注意：CVR UI 若开启了某些预设模板或覆盖 DNS 配置，可能清空或重置 fake-ip-filter 列表，导致此处追加的条目丢失。
             //    建议在 CVR 日志中确认最终生效的 fake-ip-filter 条目包含本脚本注入的域名。
             if (!Array.isArray(config.dns["fake-ip-filter"])) {
                 config.dns["fake-ip-filter"] = [];
@@ -1750,16 +1689,13 @@ function main(config) {
  *
  *   ℹ️ no-resolve 修饰符：
  *     - 仅对 IP 类规则（IP-CIDR / GEOIP）有意义，
- *       DOMAIN / DOMAIN-SUFFIX / DOMAIN-KEYWORD / DOMAIN-REGEX 等域名类规则加 no-resolve 无效，
- *       本脚本已全部移除，无需手动处理
- *     - 补充：若流量到达 Mihomo（本脚本所依赖的代理内核）时已携带真实 IP
- *       （应用层自行完成 DNS（域名系统）解析），no-resolve 在此场景下自然无需发挥作用，
- *       规则仍按 IP 直接比对，与有无 no-resolve 无关
+ *       DOMAIN / DOMAIN-SUFFIX / DOMAIN-KEYWORD / DOMAIN-REGEX 等域名类规则加 no-resolve 无效，本脚本已全部移除，无需手动处理
+ *     - 补充：若流量到达 Mihomo（本脚本所依赖的代理内核）时已携带真实 IP（应用层自行完成 DNS（域名系统）解析），
+ *       no-resolve 在此场景下自然无需发挥作用，规则仍按 IP 直接比对，与有无 no-resolve 无关
  *
  *   ⚠️ REJECT-DROP（静默丢包）vs REJECT（立即拒绝）选型原则：
  *     REJECT      → TCP 侧：立即返回 TCP RST（重置报文），软件立刻感知失败，进入离线模式，启动无卡顿；
- *                   UDP 侧：返回 ICMP Port Unreachable，软件同样立即感知失败；
- *                   推荐用于遥测 / 授权域名
+ *                   UDP 侧：返回 ICMP Port Unreachable，软件同样立即感知失败；推荐用于遥测 / 授权域名
  *     REJECT-DROP → TCP/UDP 均适用：静默丢包，不回应任何报文；TCP 侧：软件 Socket 陷入 SYN_SENT 直至系统 TCP 超时，应用层 Socket 阻塞约 15–30s（含 TCP 重传轮次），
  *                   实际取决于 OS TCP 重传配置（Windows 10 默认 TcpMaxSynRetransmissions=2，SYN 重传总时长约 21s；Windows 11 默认值已调整，
  *                   实际超时可能有所不同）；UDP 侧：数据包被无声丢弃，软件等待响应直至应用层超时；仅用于非官方修改补丁后门（backdoorSuffix / backdoorKeyword）和进程规则，
@@ -1775,14 +1711,12 @@ function main(config) {
  * ══════════════════════════ ░░ 设计取舍 ░░ ══════════════════════════
  *
  *   💡 规则去重策略：未采用 Set+filter 去重——真正原因是去重操作可能改变规则顺序，
- *      而 first-match 语义下顺序即策略，顺序改变直接导致规则语义变化（语义风险）。
- *      工程成本（代码复杂度）仅为次要因素。
+ *      而 first-match 语义下顺序即策略，顺序改变直接导致规则语义变化（语义风险）。工程成本（代码复杂度）仅为次要因素。
  *      数据层按厂商拆分后各数组职责单一，跨数组重复概率极低，改由人工维护数据层唯一性。
  *      注：fake-ip-filter（虚假 IP 过滤表）合并使用 Set 仅为去重，顺序无关，与此场景不同。
  *
  *   💡 adobeFireflyDeps 推测项集中于数组末尾：
- *      独立块注释区分「已确认 / 待抓包确认」，优先保证 Firefly 功能正常可用，而非严格遵循最小权限原则；
- *      待抓包确认后可视情况将推测项移至 adobeSuffix（改为 REJECT）。
+ *      独立块注释区分「已确认 / 待抓包确认」，优先保证 Firefly 功能正常可用，而非严格遵循最小权限原则；待抓包确认后可视情况将推测项移至 adobeSuffix（改为 REJECT）。
  *
  *   💡 Firefly 必要副作用（基于依赖链考量的必要豁免，原因见下）：
  *      isFireflyActive=true 时，以下进程的鉴权请求均走代理，进程规则仅覆盖 AdobeGCClient.exe：
@@ -1795,9 +1729,8 @@ function main(config) {
  *
  *   💡 KEYWORD "entitlement.autodesk" 与 "api.entitlements.autodesk.com" 无重叠：
  *      DOMAIN-KEYWORD 为子串匹配，"entitlement.autodesk"（entitlement 后紧跟点）
- *      在 "api.entitlements.autodesk.com"（entitlement 后跟 s 再跟点）中不存在；
- *      简言之：匹配 entitlement.autodesk.com，但不匹配 entitlements.autodesk.com（复数形式，不同 API 端点）。
- *      两者均为独立覆盖，不可互相替代（见 autodeskKeyword / autodeskSuffix 注释）。
+ *      在 "api.entitlements.autodesk.com"（entitlement 后跟 s 再跟点）中不存在；简言之：匹配 entitlement.autodesk.com，
+ *      但不匹配 entitlements.autodesk.com（复数形式，不同 API 端点）。两者均为独立覆盖，不可互相替代（见 autodeskKeyword / autodeskSuffix 注释）。
  *
  *   💡 BLOCK vs AGGRESSIVE 重叠为纵深防御设计意图：
  *      "entitlement.autodesk" 同时出现在 autodeskKeyword（BLOCK 层）和 aggressiveRules（AGGRESSIVE 层）。
@@ -1834,16 +1767,14 @@ function main(config) {
  *       将其后全部订阅规则无差别删除，当次执行不可逆（规则被删除，仅可通过重载订阅恢复）。
  *
  *     废弃方案(2)：while + findIndex + splice（首个END向前配对两步法）。
- *       原理：每轮取全局第一个 END，向前反查最近的 START，仅删除最内层配对区间。
- *       嵌套场景（如 [S₁,S₂,E₁,E₂]）本身可被正确处理（内-内配对）。
- *       隐蔽缺陷：孤儿 END 出现时（si === -1），执行 break 退出主循环，
- *         其后所有有效 START...END 配对均未处理，旧注入规则全部残留。
+ *       原理：每轮取全局第一个 END，向前反查最近的 START，仅删除最内层配对区间。嵌套场景（如 [S₁,S₂,E₁,E₂]）本身可被正确处理（内-内配对）。
+ *       隐蔽缺陷：孤儿 END 出现时（si === -1），执行 break 退出主循环，其后所有有效 START...END 配对均未处理，旧注入规则全部残留。
+ *         
  *       实测失败用例（算法对输入数组不做任何修改，完全残留原始数组）：
  *         [END, START, inj, END, user] → 期望 ["user"]，实际完全残留 ❌
  *         [END, S,iA,E, S,iB,E, user] → 期望 ["user"]，实际完全残留 ❌
  *       代价：O(P×N) 时间（P=配对数），每轮 splice 引发内存重分配与拷贝。
- *       方案(2)变体（废弃）：findIndex 取全局首个 END 而非向前最近配对，
- *         嵌套堆叠场景下连带删除两哨兵之间的有效用户规则，缺陷更严重。
+ *       方案(2)变体（废弃）：findIndex 取全局首个 END 而非向前最近配对，嵌套堆叠场景下连带删除两哨兵之间的有效用户规则，缺陷更严重。
  *
  *     采用方案：单次遍历栈重建（Stack Rebuild），是三方案中时间/空间/安全综合最优的方案。
  *     边界用例（实测全部通过）：
@@ -1892,21 +1823,18 @@ function main(config) {
     //      \u0085（NEL）/ \u2028 / \u2029；不覆盖 Bidi 控制符（视觉欺骗问题由识别层负责）。
     //    将来修改任一层的覆盖范围时，须对照此处同步更新说明，避免两层独立演化后文档失真。
     //   ⚠️ \u0009(\t) / \u000A(\n) / \u000D(\r) 不在此清理：
-    //      它们是 YAML 结构字符（行终止符 / 缩进控制符）。若在此清理，含这三个字符的原始组名
-    //      在识别阶段会被净化匹配，但 proxyGroupName 存储的仍是原始值；注入时 Token 断言
-    //      检测原始值，仍会拦截，识别通过、注入被拒，这不是纵深防御而是极端情形下的可接受失效路径。
-    //      Token 断言负责在注入前对原始值实施一票否决，两层职责不重叠。
+    //      它们是 YAML 结构字符（行终止符 / 缩进控制符）。若在此清理，含这三个字符的原始组名在识别阶段会被净化匹配，
+    //      但 proxyGroupName 存储的仍是原始值；注入时 Token 断言检测原始值，仍会拦截，识别通过、注入被拒，
+    //      这不是纵深防御而是极端情形下的可接受失效路径。Token 断言负责在注入前对原始值实施一票否决，两层职责不重叠。
     // 定义于 main() 作用域而非 sanitizeName 函数体内部，避免每次调用 sanitizeName() 时
     // 重新求值正则字面量（字符类约 60+ 字符，每次创建新 RegExp 对象的代价在高频调用下累积不可忽略）。
  *
  * ══════════════════════════ ░░ 维护规范 ░░ ══════════════════════════
  *
  *   ⚠️ 位置解耦准则（严禁在注释中建立对绝对行号的空间依赖，防止代码重构引发锚点失效）：
- *     - 【禁止绝对坐标】禁止在注释中引用具体行号（如「见 120 行」），
- *                  必须使用变量名或锚点关键词定位（如「见 adobeFireflyDeps 注释」）
+ *     - 【禁止绝对坐标】禁止在注释中引用具体行号（如「见 120 行」），必须使用变量名或锚点关键词定位（如「见 adobeFireflyDeps 注释」）   
  *     - 【禁绝对值】禁止引用「数组第 N 项」、「前几项」、「第几个」等绝对坐标；
- *                  禁止引用策略编号（如「阶段 1」、「步骤 3」）；
- *                  必须使用逻辑描述或变量名作为锚点（如「关键词优选策略」、「最终容错选取」）
+ *                  禁止引用策略编号（如「阶段 1」、「步骤 3」）；必须使用逻辑描述或变量名作为锚点（如「关键词优选策略」、「最终容错选取」）
  *     - 【禁止标记】严禁在逻辑行添加动态标记（如 // Fix by XXX），保持代码无状态
  *
  * 变量和常量的命名准则：
