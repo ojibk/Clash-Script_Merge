@@ -115,7 +115,7 @@ function main(config) {
     // 派生值，仅由 ENABLE_FIREFLY && ENABLE_BLOCK 决定，不可反向修改上游开关。
     // 设计逻辑：只有同时开启拦截模块（ENABLE_BLOCK）和 Firefly 开关（ENABLE_FIREFLY），Firefly 放行规则才真正生效，有拦截层才有"豁免"的意义。
     // 所有 Firefly 相关代码逻辑均使用此变量，而非原始 ENABLE_FIREFLY，
-    // 防止「用户看到 ENABLE_FIREFLY=true 便以为 Firefly 已放行」的认知错误，ENABLE_BLOCK=false 时 isFireflyActive 自动为 false，Firefly 豁免未写入 allow 层的放行规则。
+    // 防止「用户看到 ENABLE_FIREFLY=true 便以为 Firefly 已放行」的认知错误，ENABLE_BLOCK=false 时 isFireflyActive 自动为 false，Firefly 放行规则不会被写入 allow 层。
     const isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK;
 
     // ══════════════════════ 防御性检查 ══════════════════════
@@ -235,8 +235,10 @@ function main(config) {
     ]);
     const FALLBACK_NAMES = new Set(["GLOBAL"]);  // 兜底组：降级才选
     // ❗ 运行时配置断言：FALLBACK_NAMES ∩ EXCLUDED_NAMES 必须为空集。
-    //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroupCore 中的提前 return true
-    //    会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
+    //    ⚠️ 风险边界：若此断言触发，main() 将抛出未捕获异常，导致 Mihomo 拒绝加载配置。
+    //    若修改 FALLBACK_NAMES 或 EXCLUDED_NAMES，务必确保两者互斥。
+    //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroupCore 中的提前 return true 会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
+    //    
     {
         const _overlap = [...FALLBACK_NAMES].filter(n => EXCLUDED_NAMES.has(n));
         if (_overlap.length > 0)
@@ -265,6 +267,8 @@ function main(config) {
     //   · 即使兜底路径选中"全局"，代理组排除断言的 EXCLUDED_CN_RE.test("全局") 也会为 true，立即中止注入，净效果为零，两个条件同时满足才能正常工作，缺一不可。
     const FALLBACK_CN_RE = /^全局$/;
     // ❗ 运行时配置断言：FALLBACK_CN_RE 与 EXCLUDED_CN_RE 对兜底关键词"全局"的覆盖必须互斥。
+    //    ⚠️ 风险边界：若此断言触发，main() 将抛出未捕获异常，导致 Mihomo 拒绝加载配置。
+    //    若修改 FALLBACK_CN_RE 或 EXCLUDED_CN_RE，务必确保两者互斥。
     //    若"全局"同时被两者匹配，第四轮兜底路径虽能选中它，但随后代理组排除断言（EXCLUDED_CN_RE.test）
     //    会立即中止注入，净效果为零；同时 isEligibleGroupCore 也会将其排除，兜底路径失效。
     {
@@ -294,14 +298,12 @@ function main(config) {
     const _SANITIZE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/g;
     function sanitizeName(name) {
         if (typeof name !== "string") return "";
-        // ⚠️ 若将来改用 exec()/test() 代替 replace()，须在调用前手动重置 lastIndex=0（g 标志正则有状态）；
-        // String.replace() 内部自动重置 lastIndex，此处无需显式重置。
+        // ⚠️ 若将来改用 exec()/test() 代替 replace()，须在调用前手动重置 lastIndex=0（g 标志正则有状态）；String.replace() 内部自动重置 lastIndex，此处无需显式重置。
         return name.replace(_SANITIZE_RE, '').trim();
     }
 
     // _isFallbackGroupCore / _isEligibleGroupCore：接受已清洗字符串，跳过二次 sanitizeName。
-    // 公开接口 isFallbackGroup / isEligibleGroup 负责清洗，再委托此二函数；
-    // _Core 变体仅供已预计算 cleanName 的内部路径使用。
+    // 公开接口 isFallbackGroup / isEligibleGroup 负责清洗，再委托此二函数；_Core 变体仅供已预计算 cleanName 的内部路径使用。
     //
     // ⚠️ 调用顺序约束：_isEligibleGroupCore 中 _isFallbackGroupCore 必须先于 EXCLUDED_NAMES / EXCLUDED_CN_RE 检查执行，
     //    兜底组（GLOBAL/全局）须通过 isEligibleGroup 初步关卡才能在第四轮降级路径中被选中；顺序颠倒则兜底路径失效。
@@ -321,8 +323,7 @@ function main(config) {
         return true;
     }
 
-    // isEligibleGroup("全局") 返回 true（兜底组有入选资格），但前三轮优选策略以 !isFallbackGroup
-    // 二次过滤，"全局"须降至第四轮才被选中。"有资格"≠"优先选中"。
+    // isEligibleGroup("全局") 返回 true（兜底组有入选资格），但前三轮优选策略以 !isFallbackGroup 二次过滤，"全局"须降至第四轮才被选中。"有资格"≠"优先选中"。
     function isEligibleGroup(name) {
         return _isEligibleGroupCore(sanitizeName(name));
     }
@@ -358,8 +359,7 @@ function main(config) {
             const typeOk = VALID_PROXY_TYPES.has(g?.type);
             const nameMatch  = _KW_RE.test(cleanName);
             const hasMany    = Array.isArray(g?.proxies) && g.proxies.length > 3;
-            // length > 3（即 ≥ 4）：排除 proxies 数组近乎为空的极简占位组
-            // （如 proxies 仅含 ["节点选择","自动选择"] 等极少条目），优先选入条目数量充足的组。
+            // length > 3（即 ≥ 4）：排除 proxies 数组近乎为空的极简占位组（如 proxies 仅含 ["节点选择","自动选择"] 等极少条目），优先选入条目数量充足的组。
             // ⚠️ 注意：proxies 数组可包含三类条目：底层节点名称、其他策略组名称、内置代理名称（DIRECT / REJECT）；
             //   length > 3 衡量的是三类条目的总数，不等于底层节点计数（已知局限见下方）。
             //   已知局限：全部条目均为策略组引用（无底层节点）时，阈值仍可成立，但被选中的组仍能正常委托子组路由，实际影响极小；后续多轮兜底进一步覆盖此场景。
@@ -1557,11 +1557,11 @@ function main(config) {
             // hijackDomains 覆盖 backdoorSuffix 全部四个域名，与 rules 层的 REJECT-DROP 规则保持覆盖对称，形成 DNS 层 + rules 层双重纵深防御。
             const hijackDomains = [
                 // ──── 966v26.com（有明确社区记录）────
-                "+.966v26.com",           // 主域 + 所有多级子域
-                // "966v26.com",             // 兼容旧版内核：主域精确匹配。旧版内核可能是远古版本，甚至 Clash 原版内核就支持，注释掉
-                // "*.966v26.com",           // 兼容旧版内核：单级通配符
-                // "api.966v26.com",         // 显式精确（双重保障核心接口）
-                // "status.966v26.com",      // 显式精确（双重保障状态接口）
+                "+.966v26.com",              // 全量覆盖主域 + 所有多级子域
+                // "966v26.com",             // 兼容旧版内核：主域精确匹配。若使用 2022 年以前旧版内核，请取消注释。
+                // "*.966v26.com",           // 兼容旧版内核：单级通配符。同上
+                // "api.966v26.com",         // 兼容旧版内核：显式精确（双重保障核心接口）。同上
+                // "status.966v26.com",      // 兼容旧版内核：显式精确（双重保障状态接口）。同上
                 // ──── vposy.com（知名非官方修改补丁作者域名，风险等级与 966v26.com 对等）────
                 "+.vposy.com",
                 // "vposy.com",
