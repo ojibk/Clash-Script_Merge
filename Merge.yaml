@@ -278,7 +278,6 @@ rule-providers:
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
-                      #    原用 text 格式时因条目数量庞大须懒加载以规避 IPC 超时；MRS 格式已无此顾虑，改为启动即就绪。
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
                       #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
                       #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs
