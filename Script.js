@@ -55,7 +55,7 @@ function main(config) {
                                                  // 关闭拦截模块同时意味着 Firefly 放行规则也不注入。没有任何规则覆盖（既无 REJECT，也无 proxyGroupName），
                                                  // 部分 Adobe 流量被进程规则承接，或最终落入 MATCH 兜底策略。
     const ENABLE_FIREFLY      = true;            // 精确放行 Adobe Firefly AI 生成式请求。启用放行规则需（ENABLE_BLOCK=true）对应拦截层以供豁免。
-                                                 // ⚠️ 注意：此开关实际生效由下方 isFireflyActive 派生值决定，见下方声明
+                                                 // ⚠️ 注意：此开关的放行规则注入状态由 isFireflyActive 唯一决定。见下方声明
                                                  // ⚠️ Firefly 放行出口为 proxyGroupName，该值由下方智能识别逻辑自动确定；若识别失败（全部策略均告失败），
                                                  //    脚本直接 return config 中止注入，Firefly 请求将无法放行。必要妥协：auth/cc-api 等鉴权端点同时放行。
 
@@ -68,7 +68,7 @@ function main(config) {
                                                  // aggressiveRules 必须在 directRules 之前注入，否则父域 DIRECT 规则会优先匹配，子域 REJECT-DROP 将失效。
     const ENABLE_GLOBAL_KEYWORD_BLOCK = false;   // 关键词全局阻断（⚠️ 极度激进，会误杀大量合法 CDN/第三方服务）
                                                  // 命名说明：该开关命名为三段式（ENABLE / GLOBAL_KEYWORD / BLOCK），与同文件其他开关声明的两段式命名不对称；
-                                                 //   原因：命名中的 GLOBAL 表示该开关控制的是全局关键词匹配行为，区别于 BLOCK 控制拦截模块。不在同一抽象层次。
+                                                 //   原因：命名中的 GLOBAL 表示该开关控制的是全局关键词匹配行为，区别于 BLOCK 控制拦截模块。两者语义层次不同。
     const ENABLE_DIRECT          = true;         // 指定域名直连模块
     const ENABLE_HOSTS_OVERRIDE  = true;         // Hosts DNS 覆写模块（四种映射子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
     // ❗ 生效前提：CVR › DNS 覆写，必须同时开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可，脚本无法感知 UI 层开关状态；
@@ -236,7 +236,6 @@ function main(config) {
     ]);
     const FALLBACK_NAMES = new Set(["GLOBAL"]);  // 兜底组：降级才选
     // ❗ 运行时配置断言：FALLBACK_NAMES ∩ EXCLUDED_NAMES 必须为空集。
-    //    ⚠️ 风险边界：若此断言触发，main() 将抛出未捕获异常，导致 Mihomo 拒绝加载配置。
     //    若修改 FALLBACK_NAMES 或 EXCLUDED_NAMES，务必确保两者互斥。
     //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroupCore 中的提前 return true 会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
     // ⚠️ 触发则说明常量集被误修改：改用 return config 而非 throw，保证用户网络不中断（退回订阅原始规则），错误仍通过 console.error 明确输出。
@@ -272,7 +271,6 @@ function main(config) {
     //     净效果为零，两个条件同时满足才能正常工作，缺一不可。
     const FALLBACK_CN_RE = /^全局$/;
     // ❗ 运行时配置断言：FALLBACK_CN_RE 与 EXCLUDED_CN_RE 对兜底关键词"全局"的覆盖必须互斥。
-    //    ⚠️ 风险边界：若此断言触发，main() 将抛出未捕获异常，导致 Mihomo 拒绝加载配置。
     //    若修改 FALLBACK_CN_RE 或 EXCLUDED_CN_RE，务必确保两者互斥。若"全局"同时被两者匹配，第四轮兜底路径虽能选中它，
     //    但随后代理组排除断言（EXCLUDED_CN_RE.test）会立即中止注入，净效果为零；同时 isEligibleGroupCore 也会将其排除，兜底路径失效。
     //    ⚠️ 注意：此时哨兵清理已经执行（旧注入规则已剥离），返回的是清理后但未注入新规则的配置；等效于"本轮脚本跳过注入"，用户仍有原始订阅规则托底，下次重载时恢复正常。
@@ -306,6 +304,7 @@ function main(config) {
     const _SANITIZE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/g;
     function sanitizeName(name) {
         if (typeof name !== "string") return "";
+        if (!name) return "";  // 避免空字符串触发正则
         // ⚠️ 若将来改用 exec()/test() 代替 replace()，须在调用前手动重置 lastIndex=0（g 标志正则有状态）；String.replace() 内部自动重置 lastIndex，此处无需显式重置。
         return name.replace(_SANITIZE_RE, '').trim();
     }
@@ -575,7 +574,7 @@ function main(config) {
         "lcs-roaming.adobe.io",                   // 授权漫游，Firefly 订阅状态同步（已确认）
 
         // ──── 待抓包确认条目（基于行为和命名推断，非官方文档支撑）────
-        // ⚠️ 设计取舍：优先保证 Firefly 功能正常可用，而非严格遵循最严格的拦截策略原则。以下域名尚无公开抓包资料确认其确切功能，但 Firefly 在实测中依赖这些端点，故默认放行。
+        // ⚠️ 设计取舍：优先可用性（Firefly 正常运行），而非最小权限拦截原则。以下域名尚无公开抓包资料确认其确切功能，但 Firefly 在实测中依赖这些端点，故默认放行。
         //    若追求最严格的拦截策略，可手动将其移至 adobeSuffix（改为 REJECT）并重新测试 Firefly 功能是否正常，确认后再决定是否从本数组移除。
         "scdown.adobe.io",                        // 【推断·放行风险低、漏拦截风险可接受】基于行为推断，未经抓包验证；Firefly 在实测中依赖此端点（即使功能定义不明）
         "lcs-cops.adobe.io",                      // 【推断】云端授权策略，推断为 Firefly 订阅鉴权；社区有 2024+ PS 版本产生鉴权流量的反馈，但无公开抓包资料支撑，维持待确认。
@@ -713,8 +712,8 @@ function main(config) {
     //   与常规 HTTP 轮询/REST 调用模式不同；adobeUdpBlock 仅覆盖 UDP，此 TCP 路径须单独注入 DOMAIN 规则拦截）
     // ⚠️ 使用 DOMAIN 精确匹配（而非 DOMAIN-SUFFIX）：WSS 走 TCP，而 adobeUdpBlock 仅覆盖 UDP，无法拦截此类流量；
     //    目前仅有此一个已知端点，无多级子域的抓包证据，保守使用精确匹配，等待后续抓包资料支持后再评估是否扩展。
-    const adobeWsDomain = [                       // 如后续抓包发现更多 WSS 端点，在此数组补充
-        "wss.adobe.io",                           // 域名命名无法证明协议类型；前缀 wss 推断为 WebSocket Secure 遥测端点，待抓包确认（新版 CC 框架）
+    const adobeWsDomain = [                // 如后续抓包发现更多 WSS 端点，在此数组补充
+        "wss.adobe.io",                    // 前缀 wss 推断为 WebSocket Secure 遥测端点，待抓包确认（新版 CC 框架）。wss 仅 3 字符，不满足随机子域长度正则，必须显式列出
     ];
 
     // 🔓 ─────────────── Firefly 生成式 AI 专属放行域名（不含 adobeSharedDeps）───────────────
@@ -836,7 +835,7 @@ function main(config) {
         "cc-cdn.com",                            // 【推断】命名形似 Adobe CC CDN，无抓包证据，保守纳入；可信度低于前三条
     ];
     // 关键词兜底：覆盖 966v26.net / cdn.966v26.org 等非 .com TLD（顶级域名，Top-Level Domain）变种，REJECT-DROP 策略与 backdoorSuffix 一致。
-    // ⚠️ 误命中风险评估："966v26" 为无语义随机 6 字符组合，特异性极高；在当前已知合法域名生态中，无任何域名含此子串，实际误命中概率极低。
+    // ⚠️ 误命中风险评估："966v26" 为高特异性域名特征字符串（抓包来源），在已知合法域名中无任何同名子串，实际误命中概率极低。
     //    若将来发现误命中（如某 CDN 域名恰好含此子串），可将 REJECT-DROP 改为 REJECT 降低影响面；但鉴于字符串高度随机性，此情形极不可能发生，当前策略可接受。
     const backdoorKeyword = ["966v26"];
 
@@ -1170,7 +1169,7 @@ function main(config) {
         // `PROCESS-NAME,Slack.exe,${proxyGroupName}`,
     ];
     const processDirectRules = [ // 进程直连
-        "PROCESS-NAME,BaiduNetdisk.exe,DIRECT",              // 强制直连，提升下载速度
+        "PROCESS-NAME,BaiduNetdisk.exe,DIRECT",              // 强制直连，提升下载速度。仅适用于 v7.0+ 版本，旧版进程名为 BaiduYunGuanjia.exe
         "PROCESS-NAME,filezilla.exe,DIRECT",                 // FTP 数据通道使用随机端口，强制 DIRECT 以规避 FTP 通过代理可能引起的端口映射和速度问题
     ];
 
