@@ -1169,7 +1169,7 @@ function main(config) {
         // `PROCESS-NAME,Slack.exe,${proxyGroupName}`,
     ];
     const processDirectRules = [ // 进程直连
-        "PROCESS-NAME,BaiduNetdisk.exe,DIRECT",              // 强制直连，提升下载速度。仅适用于 v7.0+ 版本，旧版进程名为 BaiduYunGuanjia.exe
+        "PROCESS-NAME,BaiduNetdisk.exe,DIRECT",              // 强制直连，提升下载速度。适用于 v7.0+ 版本，旧版进程名为 BaiduYunGuanjia.exe
         "PROCESS-NAME,filezilla.exe,DIRECT",                 // FTP 数据通道使用随机端口，强制 DIRECT 以规避 FTP 通过代理可能引起的端口映射和速度问题
     ];
 
