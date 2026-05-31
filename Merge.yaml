@@ -375,7 +375,7 @@ rules:
   # - RULE-SET,threat,REJECT              # 🚫 恶意特征域名拦截集 → 拒绝，追踪器/恶意软件/C2 安全防护。
 
   # ▌域名分流集 — cn 规则集在前确保国内域名优先命中
-  - RULE-SET,amazon,DIRECT              # 🔓 个人扩展：亚马逊购物常用域名集 → 直连，基于 Domain Trie 极速命中。置于分流集的顶层是方便切换为代理出口（需前置命中）。
+  - RULE-SET,amazon,DIRECT              # 🔓 个人扩展：亚马逊购物常用域名集 → 直连，基于 Domain Trie 极速命中。置于分流集的顶层是方便切换为代理出口（需优先命中）。
   - RULE-SET,cn,DIRECT                  # 🔓 国内主流域名 → 直连，基于 Domain Trie 极速命中。精确域名匹配直接放行，无需经过 GeoIP 推断，自然规避 CDN 归属误判；
                                         #    小众域名盲区由归属地映射层（GEOIP,CN）补盲覆盖。
   - RULE-SET,non-cn,节点选择             # 🛡️ 境外代理域名 → 送入锚点组 [节点选择]，经用户所选代理节点出站。
