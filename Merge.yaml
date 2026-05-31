@@ -40,10 +40,10 @@ geox-url:                       # ⚙️ geodata 下载地址。未声明时 Mih
                                 #    注意：MetaCubeX MRS 规则集来自 @meta 分支；dat/mmdb 发布于 @release 分支，两者不同。
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
-# ℹ️ mmdb 字段说明：geodata-mode: true 下主用 geoip.dat / geosite.dat；当 geodata-mode: false 时才使用 mmdb 字段，为 true 时会被忽略，仅为保持配置完整性。
+  # ℹ️ mmdb 字段说明：geodata-mode: true 下主用 geoip.dat / geosite.dat；当 geodata-mode: false 时才使用 mmdb 字段，为 true 时会被忽略，仅为保持配置完整性。
   mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
 
-# # ⚠️ sniffer 配置是扩展脚本（Script.js）注入的 UDP/QUIC 域名类规则正常生效的前提，
+# # ⚠️ sniffer 配置是扩展脚本（Script.js）注入的 UDP/QUIC 域名类规则重要前提条件之一，
 # # 禁用 sniffer 将导致这些规则在纯 IP 直连路径（应用绕过 DNS、直接以 IP 建立 UDP/QUIC 连接）下失效。
 # # force-dns-mapping: true：使 Script.js 注入的 DOMAIN 类 AND 多条件组合规则能通过 DNS 映射缓存识别域名。
 # # parse-pure-ip: true：使绕过 DNS 的纯 IP 流量也能触发嗅探，提升 Script.js 规则集的命中率。
@@ -74,13 +74,13 @@ sniffer:
 
 profile:
   store-selected: true          # ⚙️ 策略组节点选择状态持久化：将节点选择写入 cache.db（本地持久化缓存数据库），防止重启或订阅更新、配置重载时导致节点选择状态重置。
-                                # ⚠️ 隐私审计：此字段将策略组节点选择状态写入 cache.db，极端隐私需求可定期清理。
+  #                             # ⚠️ 隐私审计：此字段将策略组节点选择状态写入 cache.db，极端隐私需求可定期清理。
 
-#  store-fake-ip: false         # ⚙️ Fake-IP（虚假 IP DNS 模式）映射持久化：设为 true 则持久化，重启后保持域名与伪 IP 的映射一致；
-#                               # 设为 false（Mihomo 默认值）——重启后伪 IP 映射可能变动，应用程序可能因伪 IP 变化触发重连。
-#                               # ⚠️ 仅 DNS 模式为 fake-ip 时有效，redir-host（真实 IP 重定向模式）下无意义。
-#                               #    维持注释状态即默认禁用，等效于遵循 Mihomo 默认值 false。
-#                               # ⚠️ 隐私审计：启用时 cache.db 将记录域名与 Fake-IP 的映射表，极端隐私需求可定期清理。
+  # store-fake-ip: false        # ⚙️ Fake-IP（虚假 IP DNS 模式）映射持久化：设为 true 则持久化，重启后保持域名与伪 IP 的映射一致；
+  #                             # 设为 false（Mihomo 默认值）——重启后伪 IP 映射可能变动，应用程序可能因伪 IP 变化触发重连。
+  #                             # ⚠️ 仅 DNS 模式为 fake-ip 时有效，redir-host（真实 IP 重定向模式）下无意义。
+  #                             #    维持注释状态即默认禁用，等效于遵循 Mihomo 默认值 false。
+  #                             # ⚠️ 隐私审计：启用时 cache.db 将记录域名与 Fake-IP 的映射表，极端隐私需求可定期清理。
 
 # ⚠️ [deprecated] 此字段已被 Mihomo 标记为废弃，未来可能被内核移除。届时需迁移至节点级 `client-fingerprint` 或移除。
 global-client-fingerprint: chrome   # 🗑️ [deprecated] 全局 TLS 客户端指纹模拟预设，作为内核级全局默认值（节点未定义时的兜底赋值）。
@@ -131,7 +131,7 @@ proxy-groups:
                       # ⚠️ 外部系统风险：若订阅源返回空节点（订阅失效 / 机场清空节点），
                       #    本配置将整体不可用——Fail-Fast 会将外部错误显式暴露为全局连接失败。
                       #    遇此情况须检查订阅源，或改用硬编码订阅组名方案。
-                      #    ⚡ 空组时触发 Fail-Fast（异常立即暴露为连接失败，不静默降级，见术语字典）。
+                      #    ℹ️ 空组时触发 Fail-Fast（异常立即暴露为连接失败，不静默降级，见术语字典）。
 
     # proxies: [🔴 请手动填入节点]    # ⚠️ 非 CVR 客户端必须手动填入节点名称，例如：proxies: [节点A, 节点B]，应替换 []。
                       # 💡 · [占位符为防御性"错误桩"]；在 CVR 中因指向不存在的节点实体而被内核忽略但不导致启动失败（取决于内核版本），作为空组防御桩存在，
@@ -177,7 +177,7 @@ proxy-groups:
 # #  ⚠️ 规则集失效退化路径：
 # #  加载失败 → 优先使用缓存；首次启动且下载失败 → 该规则集条目数为 0。
 # #  当综合拦截集与域名分流集均为 0 条时，规则链穿透路径为：本地放行集 → 归属地映射 → 无条件兜底（MATCH）。
-# #  ⚡ 当 MATCH 设置为代理出口时效果：几乎全部流量进入代理出口（回退为近似全局代理模式），用户无明显提示。建议通过日志或 CVR「规则集」界面定期检查规则集加载状态。
+# #  ℹ️ 当 MATCH 设置为代理出口时效果：几乎全部流量进入代理出口（回退为近似全局代理模式），用户无明显提示。建议通过日志或 CVR「规则集」界面定期检查规则集加载状态。
 # #
 # #  使用说明：
 # #  ⚠️ 强联动约束（双向同步）：启用或禁用须同步注释 rule-providers 块与 rules 段的对应规则行的注释状态。两者互为前置依赖，仅注释其中一处，内核启动即报错，整个配置加载失败。
@@ -325,7 +325,7 @@ rule-providers:
 # # 【规则执行模型】
 # #  核心逻辑：规则按自上而下的顺序逐行求值，命中即停止（First-Match 优先命中策略）。
 # #  💡 设计哲学：空间维度的排序，即时间维度的优先级。即规则的列表顺序（空间位置）决定流量匹配的优先级（执行顺序）——调整位置即调整路由策略。
-# #  ⚠️ 规则顺序即优先级——调整顺序将直接改变流量去向，后续规则绝对无法“补充”或“覆盖”已命中前置规则的流量路径。
+# #  ⚠️ 规则顺序即优先级——调整顺序将直接改变流量去向，后续规则绝对无法“覆盖”已命中前置规则的流量路径。
 # #  MATCH 为最终兜底规则，必须位于规则链末尾，不可省略。
 # #
 # # 【规则分层设计】
@@ -362,7 +362,7 @@ rule-providers:
 
 rules:
   # 【规则执行模型】First-Match 优先命中策略：规则按顺序匹配，命中即停止。
-  # ⚠️ 规则顺序即优先级——调整顺序将直接改变流量去向，后续规则绝对无法“推翻”已命中前置规则的流量路径。
+  # ⚠️ 规则顺序即优先级——调整顺序将直接改变流量去向，后续规则绝对无法“覆盖”已命中前置规则的流量路径。
   # ⚠️ 若需禁用，须同时注释该行与 rule-providers 中的对应规则集内容块后再重载（强联动约束），不可分步。
 
   # ▌本地放行集 — 命中后动作绝对确定（DIRECT），无统计性误判风险
