@@ -145,7 +145,8 @@ proxy-groups:
 
   - name: 非港低延迟
     type: url-test
-    url: http://cp.cloudflare.com/generate_204
+    url: http://www.gstatic.com/generate_204
+    # url: http://cp.cloudflare.com/generate_204 # 备用延迟测试链接
     interval: 300
     tolerance: 50
     include-all: true  # 自动继承订阅源中的全量节点
