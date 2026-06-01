@@ -169,8 +169,15 @@ proxy-groups:
 # #  · 支持的 behavior：仅 domain / ipcidr，classical 模式不支持 MRS，本配置无 classical 条目。
 # #  · MRS 来源：MetaCubeX、peiyingyao、DustinWin（每日自动构建），原 Loyalsoldier yaml 与 Blackmatrix7 text 的格式区分约束在 MRS 下不再存在。
 # #
+# # 【path 规则集存储路径和文件命名 — 规则集文件命名与规则集声明键值解耦】
+# #  ℹ️ 本地缓存路径：相对于 Mihomo 工作目录；路径须位于 Mihomo 允许写入的目录范围内且有写入权限。
+# #  ⚠️ 若目录不存在或无写入权限：
+# #  · 部分内核版本可自动创建目录；部分环境（尤其 Windows 权限受限）会失败。
+# #  · 失败时回退为仅内存缓存（不落盘），每次启动均需重新下载规则集。
+# #  · 若需将缓存写入工作目录外的路径，须将目标路径加入系统环境变量 SAFE_PATHS（详见 Mihomo v1.19.6+ Release Notes；不可在 YAML 中以字段形式声明）。
+# #
 # # 【策略动作解耦原则】
-# #  所有规则集文件均不内置策略动作，流量最终去向完全由 rules 段行末指令统一决定。
+# #  所有规则集文件均不内置策略动作，流量最终去向完全由引用此集合的 rules 段行末指令统一决定。
 # #  采用"纯列表 + 外挂 RULE-SET 指令"时，Trie 树命中后需一次哈希查找将规则集名映射至策略组，开销约为 O(1)，实际可忽略不计。
 # #  这是一个有意识的取舍：以极微小的二次寻址开销，换取"同一规则集可被不同 rules 行以不同动作引用"的配置复用灵活性。
 # #
@@ -195,20 +202,14 @@ rule-providers:
     #    源采用 v2fly/domain-list-community/private 和 blackmatrix7/ios_rule_script/Lan（仅域名）组合，并添加主流 Dashboard 在线面板域名，由 DustinWin 构建并以 MRS 格式分发。
     type: http        # ℹ️ 类型：远程 HTTP 资源，按 interval 定期拉取并缓存至本地 path 路径。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie），解析开销降至接近零。
-                      #     策略不内置于文件，由引用此集合的 rules 行末指令统一决定。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建阶段。
+    path: "./ruleset/providers/private.mrs" # 规则集文件命名与存储路径。
+    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
+                      #    私有/保留域名（如 localhost）列表，内容基于 IETF 标准，属极低频变动项，设 7 天以减少不必要的远程拉取请求。
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/private.mrs"
                       # ℹ️ 远程地址：jsDelivr 官方 Cloudflare 节点，国内可达性优于 fastly 节点。
                       #    来源仓库：https://github.com/DustinWin/ruleset_geodata/blob/mihomo-ruleset/private.list
                       #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/private.mrs
-    path: "./rules/providers/private.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-                      # ℹ️ 本地缓存路径：相对于 Mihomo 工作目录；路径须位于 Mihomo 允许写入的目录范围内。
-                      # ⚠️ 若目录不存在或无写入权限：
-                      #    · 部分内核版本可自动创建目录；部分环境（尤其 Windows 权限受限）会失败。
-                      #    · 失败时回退为仅内存缓存（不落盘），每次启动均需重新下载规则集。
-                      #    · 若需将缓存写入工作目录外的路径，须将目标路径加入系统环境变量 SAFE_PATHS（详见 Mihomo v1.19.6+ Release Notes；不可在 YAML 中以字段形式声明）。
-    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
-                      #    私有/保留域名（如 localhost）列表，内容基于 IETF 标准，属极低频变动项，设 7 天以减少不必要的远程拉取请求。
 
   # lan_cidr: # 🔓 局域网私有 IP 段直连集
   #   # 💡 设计说明：private 仅收录私有/保留域名（依据 RFC 2606 / RFC 6761 等定义的特殊用途域名），不覆盖 192.168.x.x、10.x.x.x、172.16.x.x 等私有 IP 段。
@@ -219,15 +220,13 @@ rule-providers:
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。
   #   behavior: ipcidr  # ℹ️ 行为：IP 网段模式，MRS 直接内存映射已构建的前缀匹配树（CIDR Trie），与 domain 模式不可互换。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建阶段。
+  #   path: "./ruleset/providers/lan_cidr.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
+  #   interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
+  #                     #    列表内容基于 RFC 1918 等标准，结构极低频变动，设 7 天以减少不必要的远程拉取请求。
   #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
   #                     # ℹ️ 远程地址：jsDelivr 官方 Cloudflare 节点，国内可达性优于 fastly 节点。
   #                     #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geoip
   #                     #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs
-  #   path: "./rules/providers/lan_cidr.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-  #                     # ⚠️ 缓存落盘前提同 private：路径须位于 Mihomo 允许写入的目录范围内且有写入权限，
-  #                     #    否则回退为内存缓存，每次启动重新下载。
-  #   interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
-  #                     #    列表内容基于 RFC 1918 等标准，结构极低频变动，设 7 天以减少不必要的远程拉取请求。
 
   # 拦截类规则集数据来源分别由 DustinWin 基于 privacy-protection-tools/anti-AD、peiyingyao 基于 blackmatrix7/EasyPrivacy 每日自动构建并以 MRS 格式分发。
   # 💡 anti-ad 与 threat 以及 advertising 的语义区分（互为补充，非替代关系，可按需启用）：
@@ -241,11 +240,11 @@ rule-providers:
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。
   #   behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
+  #   path: "./ruleset/providers/advertising.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
+  #   interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs"
   #                     #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/Advertising
   #                     #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs
-  #   path: "./rules/providers/advertising.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-  #   interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
 
   anti-ad: # 🚫 综合拦截集（广告 / 跟踪 / 隐私 / 恶意软件 / 挖矿）
     # 💡 主用：基于 privacy-protection-tools/anti-AD 转换，由 DustinWin 每日自动构建并以 MRS 格式分发。
@@ -253,34 +252,35 @@ rule-providers:
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
+    path: "./ruleset/providers/anti-ad.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
+    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.mrs"
                       #    来源仓库：https://github.com/DustinWin/ruleset_geodata/tree/mihomo-ruleset
                       #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs
-    path: "./rules/providers/anti-ad.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
 
   # threat: # 🚫 威胁阻断集（范围未完全覆盖：广告 / 追踪器 / 隐私 / 恶意软件 / 挖矿 / C2 命令与控制域名）
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。
   #   behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
+  #   path: "./ruleset/providers/threat.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
+  #   interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
   #   # 💡 备用：基于 blackmatrix7/EasyPrivacy 转换，由 peiyingyao 每日自动构建并以 MRS 格式分发（AdBlock Plus EasyPrivacy，仅抽取DOMAIN-SUFFIX类型）。
   #   #    覆盖范围：广告、跟踪器、隐私收集。
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
   #                     #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/EasyPrivacy
   #                     #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs
-  #   path: "./rules/providers/threat.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-  #   interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
+
 
   cn: # 🔓 国内域名直连集
     # 💡 收录国内主流及长尾域名，覆盖局限：小众 / 地区性 / 企业内部域名仍可能不在列表内，由后续归属地映射（GEOIP,CN,DIRECT,no-resolve）以 IP 维度补盲。
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
+    path: "./ruleset/providers/cn.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
+    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
                       #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
                       #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs
-    path: "./rules/providers/cn.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
 
   non-cn: # 🛡️ 境外常用需代理域名集
     # 💡 收录 Google / GitHub / Telegram / Twitter (X) / YouTube 等高频境外服务域名。
@@ -290,11 +290,11 @@ rule-providers:
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
+    path: "./ruleset/providers/non-cn.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
+    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。境外域名列表变动较频繁，设较短缓存周期以跟进更新。
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs"
                       #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
                       #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs
-    path: "./rules/providers/non-cn.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。境外域名列表变动较频繁，设较短缓存周期以跟进更新。
 
   amazon: # 🔓 亚马逊购物常用域名集
     # 💡 收录亚马逊全球零售站点 + 静态图片资产 + 广告与前端组件库 + 卖家及物流体系规则集（不含 AWS 基础云，防止 AWS 流量被误送入代理出口）。
@@ -304,10 +304,10 @@ rule-providers:
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式
+    path: "./ruleset/providers/amazon.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
+    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
                       #    备用直链：https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs
-    path: "./rules/providers/amazon.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
 
 # # ======================================================================================
 # # ░░ 路由规则 (Rules) — 自完备规则链（Array 类型，全量替换）
