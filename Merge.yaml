@@ -46,7 +46,7 @@ geox-url:                       # ⚙️ geodata 下载地址。未声明时 Mih
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
   # ℹ️ mmdb 字段说明：geodata-mode: true 时，geoip.dat / geosite.dat 优先，mmdb 字段被跳过；geodata-mode: false 时，mmdb 为唯一生效数据库路径。保持声明仅为保持配置完整性。
   mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
-  asn:     "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb"
+  asn:     "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb"
 
 profile:
   store-selected: true          # ⚙️ 策略组节点选择状态持久化：将节点选择写入 cache.db（本地持久化缓存数据库），防止重启或订阅更新、配置重载时导致节点选择状态重置。
