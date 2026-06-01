@@ -1149,12 +1149,12 @@ function main(config) {
         "PROCESS-NAME,360tray.exe,REJECT",                   // 360 系统托盘弹窗进程
         "PROCESS-NAME,2345Mini.exe,REJECT",                  // 2345 迷你窗口/弹窗进程
         "PROCESS-NAME,2345Helper.exe,REJECT",                // 2345 后台辅助进程
-        "PROCESS-NAME,DTLocker.exe,REJECT",                  // 驱动人生锁屏弹窗
-        "PROCESS-NAME,LDSGameBox.exe,REJECT",                // 鲁大师游戏盒
         "PROCESS-NAME,SogouNews.exe,REJECT",                 // 搜狗新闻弹窗
-        "PROCESS-NAME,DriverGenius.exe,REJECT",              // 驱动精灵
         "PROCESS-NAME,Ludashi.exe,REJECT",                   // 鲁大师主程序
-        // "PROCESS-NAME,Wps.exe,REJECT",                    // ⚠️ 慎用：WPS 主进程，拦截后全部联网功能失效（包括文档云同步）
+        "PROCESS-NAME,LDSGameBox.exe,REJECT",                // 鲁大师游戏盒
+        "PROCESS-NAME,DTLocker.exe,REJECT",                  // 驱动人生锁屏弹窗
+        "PROCESS-NAME,DriverGenius.exe,REJECT",              // 驱动精灵。⚠️ 慎用：拦截后驱动精灵无法下载
+        // "PROCESS-NAME,Wps.exe,REJECT",                    // WPS 办公软件。⚠️ 慎用：WPS 主进程，拦截后全部联网功能失效（包括文档云同步）
     ];
     const processProxyRules = [ // 进程代理（当前为空占位，示例见下方）
         // 示例：修改进程名后取消注释即可——策略组名由脚本自动填入（proxyGroupName），
