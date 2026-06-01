@@ -9,7 +9,7 @@
 # #  本文件基于锚点组架构，负责静态路由规则链（本地放行集 → 综合拦截集 → 域名分流集 → 归属地映射 → 无条件兜底）。
 # #  本配置支持独立运行；若同时启用扩展脚本，由动态注入层在覆写配置合并完成后、内核执行规则前注入规则覆盖修改，注入的规则在流量匹配上优先于本文件的静态规则链，最终合并入生效配置。
 # #  配置处理流：订阅 → Merge Config 合并 → Script 修改 → 最终配置 YAML → CVR 二次注入覆盖 dns/tun → Mihomo 执行
-# #  智能路由锁区受限网络服务 → 走非香港节点，应用场景示例：指定某些对香港 IP 极为敏感的 AI、流媒体等网络服务（含 OpenAI、Claude、Gemini、TikTok）的路由策略。
+# #  🇭🇰 智能路由锁区受限网络服务 → 走非香港节点，应用场景示例：指定某些对香港 IP 极为敏感的 AI、流媒体等网络服务（含 OpenAI、Claude、Gemini、TikTok）的路由策略。
 # #
 # #  职责分工：
 # #    rule-providers → Map 类型（键值映射表）：键值对合并——同名键以本文件为准覆写，其余键保留订阅原值
@@ -307,7 +307,7 @@ rule-providers:
                       #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
                       #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs
 
-  hk_restricted: # 🔓 港区受限的网络服务全生态规则集（含 OpenAI、Claude、Gemini 精准子域、TikTok 全球资源）
+  hk_restricted: # 🇭🇰 港区受限的网络服务全生态规则集（含 OpenAI、Claude、Gemini 精准子域、TikTok 全球资源）
     type: http        # ℹ️ 类型：远程 HTTP 资源。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式
@@ -389,7 +389,7 @@ rules:
   # - RULE-SET,threat,REJECT              # 🚫 恶意特征域名拦截集 → 拒绝，追踪器/恶意软件/C2 安全防护。
 
   # ▌域名分流 — cn 规则集在前确保国内域名优先命中
-  - RULE-SET,hk_restricted,非港低延迟    # 🔓 专属港区受限网络服务高可用路由规则 → 走非港节点代理，置于分流集的顶层是避免被代理规则抢先命中而误走其他节点。
+  - RULE-SET,hk_restricted,非港低延迟    # 🇭🇰 专属港区受限网络服务高可用路由规则 → 走非港节点代理，置于分流集的顶层是避免被代理规则抢先命中而误走其他节点。
                                         # 应用场景示例：指定某些对香港 IP 极为敏感的 AI、流媒体等网络服务（含 OpenAI、Claude、Gemini、TikTok）的路由策略。
   - RULE-SET,amazon,DIRECT              # 🔓 个人扩展：亚马逊购物常用域名集 → 直连，基于 Domain Trie 极速命中。置于分流集的前列是为方便切换到代理时先于直连规则命中。
   - RULE-SET,cn,DIRECT                  # 🔓 国内主流域名 → 直连。精确域名匹配无需经过 GeoIP 推断，自然规避 CDN 误判归属地；小众域名盲区由归属地映射层（GEOIP,CN）补盲覆盖。
