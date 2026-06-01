@@ -204,7 +204,7 @@ rule-providers:
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie），解析开销降至接近零。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建阶段。
     path: "./ruleset/providers/private.mrs" # 规则集文件命名与存储路径。
-    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
+    interval: 604800  # ⏱️ 更新间隔：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
                       #    私有/保留域名（如 localhost）列表，内容基于 IETF 标准，属极低频变动项，设 7 天以减少不必要的远程拉取请求。
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/private.mrs"
                       # ℹ️ 远程地址：jsDelivr 官方 Cloudflare 节点，国内可达性优于 fastly 节点。
@@ -221,7 +221,7 @@ rule-providers:
   #   behavior: ipcidr  # ℹ️ 行为：IP 网段模式，MRS 直接内存映射已构建的前缀匹配树（CIDR Trie），与 domain 模式不可互换。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建阶段。
   #   path: "./ruleset/providers/lan_cidr.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-  #   interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
+  #   interval: 604800  # ⏱️ 更新间隔：604800 秒 = 7 天（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
   #                     #    列表内容基于 RFC 1918 等标准，结构极低频变动，设 7 天以减少不必要的远程拉取请求。
   #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
   #                     # ℹ️ 远程地址：jsDelivr 官方 Cloudflare 节点，国内可达性优于 fastly 节点。
@@ -241,7 +241,7 @@ rule-providers:
   #   behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
   #   path: "./ruleset/providers/advertising.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-  #   interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
+  #   interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs"
   #                     #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/Advertising
   #                     #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs
@@ -253,7 +253,7 @@ rule-providers:
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
     path: "./ruleset/providers/anti-ad.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
+    interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.mrs"
                       #    来源仓库：https://github.com/DustinWin/ruleset_geodata/tree/mihomo-ruleset
                       #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs
@@ -263,7 +263,7 @@ rule-providers:
   #   behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
   #   path: "./ruleset/providers/threat.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-  #   interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
+  #   interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
   #   # 💡 备用：基于 blackmatrix7/EasyPrivacy 转换，由 peiyingyao 每日自动构建并以 MRS 格式分发（AdBlock Plus EasyPrivacy，仅抽取DOMAIN-SUFFIX类型）。
   #   #    覆盖范围：广告、跟踪器、隐私收集。
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
@@ -277,7 +277,7 @@ rule-providers:
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
     path: "./ruleset/providers/cn.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
+    interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
                       #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
                       #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs
@@ -291,7 +291,7 @@ rule-providers:
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
     path: "./ruleset/providers/non-cn.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-    interval: 86400   # ⏱️ 缓存有效期：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。境外域名列表变动较频繁，设较短缓存周期以跟进更新。
+    interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。境外域名列表变动较频繁，设较短缓存周期以跟进更新。
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs"
                       #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
                       #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs
@@ -305,7 +305,7 @@ rule-providers:
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式
     path: "./ruleset/providers/amazon.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
-    interval: 604800  # ⏱️ 缓存有效期：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
+    interval: 604800  # ⏱️ 更新间隔：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
                       #    备用直链：https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs
 
