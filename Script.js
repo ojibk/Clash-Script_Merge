@@ -1,5 +1,5 @@
 /**
- *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260531
+ *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260601
  * 
  * ══════════════════════════ ░░ 脚本自述 ░░ ══════════════════════════
  *
@@ -1521,11 +1521,6 @@ function main(config) {
     //   域名重定向：字符串（不支持数组） → 单元素数组 ["0.0.0.0"] 与字符串 "0.0.0.0" 语义相同，为规避解析歧义，统一使用字符串（单 IP）或数组（多 IP）
 
     if (ENABLE_HOSTS_OVERRIDE) {
-        // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
-        console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可！");
-        // console.warn("❗ 前提1：CVR › DNS 覆写 → 必须开启「启用 DNS」（关闭则 dns 块整体失效）");
-        // console.warn("❗ 前提2：CVR › DNS 覆写 → 必须开启「使用 Hosts」");
-        console.warn("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
         try {
 
             // modeMap 值格式：
@@ -1634,7 +1629,13 @@ function main(config) {
             // 域名大小写不敏感（RFC 4343），比较时统一 toLowerCase，防止 "Steam.com" 与 "steam.com" 被视为不同条目。
             const newEntries    = hijackDomains.filter(d => !existingSet.has(d.toLowerCase())).sort();
             config.dns["fake-ip-filter"] = [...cleanExisting, ...newEntries];
-
+            
+            // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
+            console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可！");
+            // console.warn("❗ 前提1：CVR › DNS 覆写 → 必须开启「启用 DNS」（关闭则 dns 块整体失效）");
+            // console.warn("❗ 前提2：CVR › DNS 覆写 → 必须开启「使用 Hosts」");
+            console.warn("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
+        
             const targetStr = Array.isArray(target) ? target.join(" / ") : target;
             console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条，`
                 + ` | 模式: [${HOSTS_MODE}] → ${targetStr}`
