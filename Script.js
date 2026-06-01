@@ -9,7 +9,7 @@
  *
  *   基于哨兵标记的规则幂等清理与注入（栈重建：O(N) 时间/空间）
  *   默认模式：拦截优先 + Firefly 精确例外放行
- *     - ENABLE_FIREFLY = true：精确放行 Firefly 推理请求，保留其他 Adobe 遥测/激活域名的拦截行为。
+ *     - ENABLE_FIREFLY = true：精确放行 Firefly AI 请求，保留其他 Adobe 遥测/激活域名的拦截行为。
  *     - Firefly 依赖端点必要妥协：auth / cc-api / lcs 等端点因 Firefly 功能依赖而一并放行；
  *       最终防线为 AdobeGCClient.exe → REJECT-DROP（需 ENABLE_PROCESS_RULE=true + TUN 模式，见风险边界），另还需配置文件的 find-process-mode 参数启用获取进程信息。
  *       注意：Creative Cloud.exe / CCXProcess.exe / CoreSync.exe 等进程同样访问这些端点，
@@ -717,10 +717,10 @@ function main(config) {
     ];
 
     // 🔓 ─────────────── Firefly 生成式 AI 专属放行域名（不含 adobeSharedDeps）───────────────
-    // 原则：精确放行 Firefly 推理请求，保留其余激活/遥测域名的拦截。
+    // 原则：精确放行 Firefly AI 请求，保留其余激活/遥测域名的拦截。
     //
     // 【域名分类】
-    // Firefly 依赖端点集：已统一到 adobeSharedDeps（统一引用源），此处仅含 Firefly/Clio/Sensei 专属推理域名。
+    // Firefly 依赖端点集：已统一到 adobeSharedDeps（统一引用源），此处仅含 Firefly/Clio/Sensei 专属 AI 域名。
     // 用于 Adobe AI 生成式填充，需在拦截层中优先放行，走代理以确保可用性：
     //   firefly.adobe.com / firefly.adobe.io / firefly-api.adobe.io /
     //   firefly-cliov2.adobe.com / clio.adobe.io / clio-prober.adobe.io /
@@ -740,7 +740,7 @@ function main(config) {
     //   ⚠️ 前提：此豁免仅在 Mihomo 能识别 SNI 或存在 Fake-IP 映射时成立。
     //   ⚠️ ECH 路径分析同上，详见 adobeSharedDeps 注释。
     const adobeFireflyOnly = [
-        // Firefly 推理核心。
+        // Firefly AI 核心。
         "firefly.adobe.com",                      // Firefly 主服务入口
         "firefly.adobe.io",                       // Firefly API（.io 端点）
         "firefly-api.adobe.io",                   // PS 生成式填充调用入口
@@ -750,7 +750,7 @@ function main(config) {
         "clio-prober.adobe.io",                   // Clio 功能可用性探针
         "clio-assets.adobe.com",                  // Clio 生成结果资源 CDN（内容分发网络）
         // Sensei AI 平台。
-        "senseicore.adobe.io",                    // Sensei 推理服务核心
+        "senseicore.adobe.io",                    // Sensei AI 服务核心
         "senseimds.adobe.io",                     // Sensei 模型分发服务（MDS = Model Distribution Service）
     ];
 
@@ -1290,7 +1290,7 @@ function main(config) {
         // ⚠️ 键名一致性约束：LAYER_ORDER 的字符串元素必须与 layerPools 的键名完全一致；
         //   添加新层时须同步在两处修改；仅改其一会触发 LAYER_ORDER 双向一致性断言，中止注入并输出明确错误信息（规则不会静默丢失）。
         // ⚠️ LAYER_ORDER 顺序 = first-match 策略优先级，禁止随意调整，两类典型错误：
-        //    危险示例1：将 "aggressive" 移至 "allow" 之前，adobe.io 通配 REJECT-DROP 先于 Firefly 精确放行命中，推理请求被错误拦截。
+        //    危险示例1：将 "aggressive" 移至 "allow" 之前，adobe.io 通配 REJECT-DROP 先于 Firefly 精确放行命中，AI 请求被错误拦截。
         //    危险示例2：将 "direct" 移至 "aggressive" 之前，父域 autodesk.com,DIRECT 先命中，子域 accounts.autodesk.com,REJECT-DROP 等激进规则将永久被父域规则遮蔽。
         //    插入/删除层级时，需在 LAYER_ORDER 和 layerPools 两处同步修改（见上方约束说明）；finalPool 的 for 循环本身无需改动。
         const LAYER_ORDER = Object.freeze(["allow", "block", "process", "proxy", "aggressive", "direct"]);
