@@ -143,7 +143,7 @@ proxy-groups:
                       #    · 在不支持 include-all 的客户端（Stash / OpenClash 等）中，此无效引用配合空组可加速暴露配置未修改的错误（Fail-Fast）；
                       #    此占位条目指向不存在的节点名称，等效于空组，所有通过该策略组出站的连接将失败。
 
-  - name: 非港低延迟 # 声明策略组名字
+  - name: 非港低延迟 # 声明策略组名称
     type: url-test # 策略组类型
     url: http://www.gstatic.com/generate_204 # 延迟测试链接
     # url: http://cp.cloudflare.com/generate_204 # 备用延迟测试链接
