@@ -1,4 +1,4 @@
-# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链 v260531
+# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链 v260601
 # # --------------------------------------------------------------------------------------
 # # 存储路径参考：
 # #   Windows : %APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles
@@ -14,7 +14,7 @@
 # #    proxy-groups   → 必须声明固定锚点组，rules 出口的确定性保障
 # #    rules          → 自完备规则链，硬编码指向锚点组名
 # #
-# #  【优化指南】1. MRS；2. 减少 RULE-SET 数量；3. 优化规则顺序，命中规则前置。减少 RULE-SET 穿透深度。
+# #  【优化指南】1. 规则集采用 MRS 格式；2. 减少 RULE-SET 数量；3. 优化规则顺序，命中规则前置，减少 RULE-SET 穿透深度。
 # #
 # # 【CVR（Clash Verge Rev，图形化代理管理界面）崩溃警告 — 禁止声明 mode 字段】
 # #  mode 由 CVR UI 状态机独占管理；在 Merge Config 中声明会触发冲突循环：
