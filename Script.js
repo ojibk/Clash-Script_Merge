@@ -1,5 +1,5 @@
 /**
- *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260601
+ *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260602
  * 
  * ══════════════════════════ ░░ 脚本自述 ░░ ══════════════════════════
  *
@@ -1435,12 +1435,12 @@ function main(config) {
         // Firefly 放行状态需结合 isFireflyActive 综合判断后显示。
         if (ENABLE_FIREFLY) {
             if (isFireflyActive) {
-                console.log(`   Firefly放行: ✅（adobeSharedDeps + adobeFireflyOnly 均已注入 allow 层，走 ${proxyGroupName}）`);
+                console.log(`   Firefly 放行: ✅（adobeSharedDeps + adobeFireflyOnly 均已注入 allow 层，走[${proxyGroupName}]）`);
             } else {
-                console.log(`   Firefly放行: ❌ ENABLE_BLOCK=false，isFireflyActive 已自动降级（不生效）`);
+                console.log(`   Firefly 放行: ❌ ENABLE_BLOCK=false，isFireflyActive 已自动降级（不生效）`);
             }
         } else {
-            console.log(`   Firefly放行: ❌`);
+            console.log(`   Firefly 放行: ❌`);
         }
 
         console.log(`   进程规则:   ${ENABLE_PROCESS_RULE  ? "✅（需管理员权限+TUN/Service 模式，另还须 config 开启获取进程信息，条件不满足则静默失效）" : "❌"}`);
