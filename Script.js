@@ -7,7 +7,7 @@
  *     %APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles
  *     C:\Users\Administrator\AppData\Roaming\io.github.clash-verge-rev.clash-verge-rev\profiles
  *
- *   基于哨兵标记的规则幂等清理与注入（栈重建：(N) 时间 / O(N) 空间）
+ *   基于哨兵标记的规则幂等清理与注入（栈重建：O(N) 时间 / O(N) 空间）
  *   默认模式：拦截优先 + Firefly 精确例外放行
  *     - ENABLE_FIREFLY = true：精确放行 Firefly AI 请求，保留其他 Adobe 遥测/激活域名的拦截行为。
  *     - Firefly 依赖端点必要妥协：auth / cc-api / lcs 等端点因 Firefly 功能依赖而一并放行；
@@ -285,7 +285,7 @@ function main(config) {
     // 合法代理出口类型白名单（统一引用源：关键词优选/正则优选/类型优选各轮均引用此常量，新增类型只需改此处）。
     // ⚠️ 最终容错策略（第五轮）改用 _UNSUITABLE_TYPES 黑名单方式，不引用此常量；
     //    两者从正反两面描述同一批被排除类型（relay / url-latency-benchmark / smart），
-    //    修改此处须同步检查 _UNSUITABLE_TYPES，反之亦然，两者描述同一批被排除类型的正反两面，互为镜像。
+    //    修改此处须同步检查 _UNSUITABLE_TYPES，反之亦然，两者描述同一批被排除类型的正反两面，当前已知类型空间内互补，新增类型须同步检查两处。
     // load-balance 为动态路由策略，与 url-test 同级，具备合法出口语义，纳入白名单。
     // 被排除的三类类型，原因各异：
     //   relay：固定节点链路转发，强制指定出口，无用户可切换的节点选择语义。
@@ -579,7 +579,7 @@ function main(config) {
     ];
 
     // 🚫 ─────────────────────── Adobe 激活 / 遥测核心拦截 ───────────────────────
-    // 📌 关于 REJECT vs REJECT-DROP（Mihomo 的两种拒绝策略）：
+    // 💡 关于 REJECT vs REJECT-DROP（Mihomo 的两种拒绝策略）：
     //    REJECT      发送 TCP RST（TCP 侧）/ ICMP Port Unreachable（UDP 侧），软件立即收到连接拒绝，放弃重试并进入离线模式，启动无卡顿，推荐用于遥测/授权域名。
     //    REJECT-DROP 静默丢包，不回应任何数据包（TCP 和 UDP 均适用），
     //                TCP 侧：软件 Socket 陷入 SYN_SENT 直至系统 TCP 超时；
@@ -1051,7 +1051,7 @@ function main(config) {
         "pinyin.sogou.com",                      // 搜狗拼音输入法弹窗
         "news.sogou.com",                        // 搜狗新闻推送
         "toast.sogou.com",                       // 搜狗 Toast（弹出通知）弹窗通知
-        "timer.sogou.com",                       // 搜狗定时任务上报
+        "timer.sogou.com",                       // 搜狗心跳 / 定时遥测上报（基于 timer 前缀推断）
         "update.sogou.com",                      // 搜狗强制更新
         "config.sogou.com",                      // 搜狗远程配置下发
         "py.sogou.com",                          // 搜狗拼音云服务
@@ -1188,8 +1188,8 @@ function main(config) {
     // ────────────────────────────── 直连规则 ──────────────────────────────
     const directRules = [
         // Microsoft 全家桶直连（防止更新/登录/OneDrive 卡死）
-        // DOMAIN-SUFFIX,microsoft.com 已覆盖所有 *.microsoft.com 子域，无需额外的 DOMAIN-KEYWORD,microsoft（冗余且存在误判风险）
-        "DOMAIN-SUFFIX,microsoft.com,DIRECT",              // 微软主域（含所有 *.microsoft.com 子域）
+        // 针对 microsoft.com 域而言，SUFFIX 已完整覆盖，KEYWORD 匹配范围过宽且有误判风险（会匹配 microsoft.com 以外含 microsoft 关键词的域名），故不使用
+        "DOMAIN-SUFFIX,microsoft.com,DIRECT",              // 微软主域（含 *.microsoft.com 及更深多级子域）
         "DOMAIN-SUFFIX,live.com,DIRECT",                   // 微软账户 / Hotmail
         "DOMAIN-SUFFIX,outlook.com,DIRECT",                // Outlook 邮件服务
         "DOMAIN-SUFFIX,onedrive.com,DIRECT",               // OneDrive 云存储
