@@ -1436,7 +1436,6 @@ function main(config) {
         if (ENABLE_FIREFLY) {
             if (isFireflyActive) {
                 console.log(`   Firefly放行: ✅（adobeSharedDeps + adobeFireflyOnly 均已注入 allow 层，走 ${proxyGroupName}）`);
-                console.warn(`   ⚠️ Firefly 端点已放行：auth/cc-api 等鉴权端点同时放行，最终防线为 AdobeGCClient.exe REJECT-DROP`);
             } else {
                 console.log(`   Firefly放行: ❌ ENABLE_BLOCK=false，isFireflyActive 已自动降级（不生效）`);
             }
@@ -1458,7 +1457,18 @@ function main(config) {
         }
         console.log(`   直连规则:   ${ENABLE_DIRECT        ? "✅" : "❌"}`);
         console.log(`   Hosts 覆写:  ${ENABLE_HOSTS_OVERRIDE   ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
-        console.log(`   注入规则数: ${finalPool.length} 条（含首尾哨兵）`);
+        // 注入规则条目分项统计日志
+        // ▶▶ 分项统计开始 ▶▶
+        console.log(`   ▶ 注入规则条目分项统计:`);
+        console.log(`      - 放行层 (allow)     : ${layerPools.allow.length} 条`);
+        console.log(`      - 拦截层 (block)     : ${layerPools.block.length} 条`);
+        console.log(`      - 进程层 (process)   : ${layerPools.process.length} 条`);
+        console.log(`      - 代理层 (proxy)     : ${layerPools.proxy.length} 条`);
+        console.log(`      - 激进层 (aggressive): ${layerPools.aggressive.length} 条`);
+        console.log(`      - 直连层 (direct)    : ${layerPools.direct.length} 条`);
+        // ◀◀ 分项统计结束 ◀◀
+
+        console.log(`   注入规则数: ${finalPool.length} 条（上述分项之和 + 首尾 2 条哨兵）`);
         console.log(`   总规则数:   ${config.rules.length} 条`);
         console.log(`   规则注入耗时: ${Date.now() - _startTime} ms（非 Hosts 覆写耗时）`);
         console.log("=".repeat(28));
