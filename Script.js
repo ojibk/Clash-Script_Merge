@@ -7,13 +7,13 @@
  *     %APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles
  *     C:\Users\Administrator\AppData\Roaming\io.github.clash-verge-rev.clash-verge-rev\profiles
  *
- *   基于哨兵标记的规则幂等清理与注入（栈重建：O(N) 时间/空间）
+ *   基于哨兵标记的规则幂等清理与注入（栈重建：(N) 时间 / O(N) 空间）
  *   默认模式：拦截优先 + Firefly 精确例外放行
  *     - ENABLE_FIREFLY = true：精确放行 Firefly AI 请求，保留其他 Adobe 遥测/激活域名的拦截行为。
  *     - Firefly 依赖端点必要妥协：auth / cc-api / lcs 等端点因 Firefly 功能依赖而一并放行；
  *       最终防线为 AdobeGCClient.exe → REJECT-DROP（需 ENABLE_PROCESS_RULE=true + TUN 模式，见风险边界），另还需配置文件的 find-process-mode 参数启用获取进程信息。
  *       注意：Creative Cloud.exe / CCXProcess.exe / CoreSync.exe 等进程同样访问这些端点，
- *       进程规则仅覆盖 AdobeGCClient.exe，其余进程因依赖链考量予以必要豁免（原因见正文 Firefly 必要妥协、详见 adobeSharedDeps 注释及设计取舍）。
+ *       进程规则仅覆盖 AdobeGCClient.exe，其余进程因依赖链考量予以必要豁免（原因见正文 Firefly 必要妥协，详见 adobeSharedDeps 注释及设计取舍）。
  *     - 适用场景：需要使用 Photoshop 生成式填充、Firefly 等 Adobe AI 功能。
  *
  * ══════════════════════════ ░░ 功能概览 ░░ ══════════════════════════
@@ -47,7 +47,7 @@ function main(config) {
     const ENABLE_SCRIPT       = true;
 
     // ──── 以下开关分别对应各注入层，但声明顺序与注入顺序解耦，注入顺序由 LAYER_ORDER 唯一决定（三处例外见括号说明）
-    //      大致顺序：allow > block > process > proxy > aggressive > direct
+    //      顺序：allow > block > process > proxy > aggressive > direct
     //      · ENABLE_BLOCK 与 ENABLE_FIREFLY 相邻声明便于阅读（两者分属 block/allow 层，语义紧密关联）
     //      · ENABLE_GLOBAL_KEYWORD_BLOCK 属 block 层子开关，因说明篇幅较长集中声明于配置区末尾
     //      · ENABLE_SCRIPT、ENABLE_HOSTS_OVERRIDE 独立于此六层结构之外
@@ -57,7 +57,7 @@ function main(config) {
     const ENABLE_FIREFLY      = true;            // 精确放行 Adobe Firefly AI 生成式请求。启用放行规则需（ENABLE_BLOCK=true）对应拦截层以供豁免。
                                                  // ⚠️ 注意：此开关的放行规则注入状态由 isFireflyActive 唯一决定。见下方声明
                                                  // ⚠️ Firefly 放行出口为 proxyGroupName，该值由下方智能识别逻辑自动确定；若识别失败（全部策略均告失败），
-                                                 //    脚本直接 return config 中止注入，Firefly 请求将无法放行。必要妥协：auth/cc-api 等鉴权端点同时放行。
+                                                 //    脚本直接 return config 中止注入，Firefly 请求将退回订阅原始策略。必要妥协：auth/cc-api 等鉴权端点同时放行。
 
                                                  // 最终防线为 AdobeGCClient.exe → REJECT-DROP（仅 ENABLE_PROCESS_RULE=true + TUN 模式下有效）
     const ENABLE_PROCESS_RULE = true;            // 进程规则模块（需 TUN 模式或 Service 模式 + 管理员权限；另还需配置文件的 find-process-mode 参数启用获取进程信息）。
@@ -90,7 +90,7 @@ function main(config) {
     //   dual-loopback  → 127.0.0.1 + ::1    → 同 ipv4-loopback，IPv4/IPv6 双栈回环模拟拦截
     //   dual-blackhole → 0.0.0.0 + ::       → 同 ipv4-blackhole，IPv4/IPv6 双栈黑洞拦截（慎用：向 :: 发起连接的 OS 级行为因平台而异，部分运行时对此处理不一致，可能导致应用异常）
     //
-    // 双栈黑洞模式（dual-blackhole）因 IPv6 的 :: 行为更激进，存在崩溃风险；ipv4-blackhole 单栈版风险较低。
+    // 双栈黑洞模式（dual-blackhole）因 IPv6 的 :: 行为更激进，存在非预期的连接错误或应用异常；ipv4-blackhole 单栈版风险较低。
     const HOSTS_MODE = "ipv4-loopback";
 
     // ──── 典型配置组合参考（按需参照调整上方开关值；此处为说明性文字，无需操作）────
@@ -116,7 +116,7 @@ function main(config) {
     // 派生值，仅由 ENABLE_FIREFLY && ENABLE_BLOCK 决定，不可反向修改上游开关。
     // 设计逻辑：只有同时开启拦截模块（ENABLE_BLOCK）和 Firefly 开关（ENABLE_FIREFLY），Firefly 放行规则才真正生效，有拦截层才有"豁免"的意义。
     // 所有 Firefly 相关代码逻辑均使用此变量，而非原始 ENABLE_FIREFLY，
-    // 防止用户因 ENABLE_FIREFLY=true 而误以为 Firefly 已放行（ENABLE_BLOCK=false 时 isFireflyActive 自动降级为 false，放行规则不注入） 
+    // 防止用户因 ENABLE_FIREFLY=true 而误以为 Firefly 已放行（ENABLE_BLOCK=false 时 isFireflyActive 自动降级为 false，放行规则不注入）
     const isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK;
 
     // ══════════════════════ 防御性检查 ══════════════════════
@@ -144,7 +144,7 @@ function main(config) {
     //
     // 💡【算法选型：三候选方案，实测失败用例与边界用例详见附录"哨兵清理算法"节】
     //
-    // (1) 废弃：filter 状态机——孤儿（无匹配配对的单端哨兵） START 将其后全部订阅规则无差别删除，当次执行不可逆（规则被删除，仅可通过重载订阅恢复）。
+    // (1) 废弃：filter 状态机——孤儿（无匹配配对的单端哨兵） START 出现时，其后全部订阅规则被无差别删除，当次执行不可逆（规则被删除，仅可通过重载订阅恢复）。
     //
     // (2) 废弃：while + findIndex + splice（首个END向前配对）——孤儿 END 触发 break，
     //   其后全部有效配对未处理，旧注入规则全部残留；O(P×N) 时间，每轮 splice 内存重分配。
@@ -152,10 +152,10 @@ function main(config) {
     //
     // (3) 采用方案：单次遍历栈重建（Stack Rebuild）—— O(N) 时间 / O(N) 空间。
     //
-    // ⚠️ 哨兵格式设计为固定不变：哨兵必须是合法的 Clash 三段式规则（TYPE,VALUE,POLICY）且格式固定，
+    // ⚠️ 哨兵格式设计：哨兵必须是合法的 Clash 三段式规则（TYPE,VALUE,POLICY）且格式固定，
     //    清理算法依赖精确等值（===）匹配；若确需修改哨兵格式，须同步更新清理逻辑。null/undefined 也不会意外匹配哨兵字符串，严格等值天然防御。
     // 💡 TLD 选型：使用 RFC 6761 明确保留的 .invalid（无效域），而非 .local（RFC 6762 mDNS 保留域）。
-    //    local 在部分 Mihomo 版本或系统级 mDNS 配置下可能触发 DNS 多播查询；invalid 作为保留域，标准 DNS 实现不应对其解析，产生额外 DNS 流量的风险极低，更为安全。
+    //    local 在部分系统级 mDNS 配置下可能触发 DNS 多播查询；invalid 作为保留域，标准 DNS 实现不应对其解析，产生额外 DNS 流量的风险极低，更为安全。
     const _sentinelStart = "DOMAIN,START-script-sentinel-marker.invalid,REJECT";
     const _sentinelEnd   = "DOMAIN,END-script-sentinel-marker.invalid,REJECT";
     {
@@ -177,7 +177,7 @@ function main(config) {
             }
             if (rule === _sentinelEnd) {
                 if (stack.length > 0) {
-                    newRules.length = stack.pop(); // O(1) 回退，等效 splice 但无内存重分配
+                    newRules.length = stack.pop(); // O(1) 截断，等效 splice 但无线性拷贝开销
                 }
                 continue;
             }
@@ -216,8 +216,8 @@ function main(config) {
     // 逻辑：多级降级，兼容大多数订阅格式。无可用组时终止注入，防止 Mihomo 内核崩溃（见容错选取策略及代理组排除断言）。
 
     let proxyGroupName = null; // 初始为 null，强制要求下游所有赋值路径全覆盖；任何未赋值路径均会触发代理组排除断言安全拦截。
-    // 注意：在当前实现路径中，null 不会触发代理组排除断言（因在上方识别失败路径中已提前 return）；所有真实执行路径均会在策略链结束前显式赋值（成功时为 mainGroup.name）；
-    //   识别失败时直接 return config，不依赖 "DIRECT" 哨兵值触发断言。
+    // 注意：在当前实现路径中，null 不会触发代理组排除断言（因在上方识别失败路径中已提前 return）；
+    //   所有真实执行路径均会在策略链结束前显式赋值（成功时为 mainGroup.name）；识别失败时直接 return config。
     // 若将来新增分支遗漏赋值，sanitizeName(null) 返回 ""，断言 !_sanitizedProxy 为 true 并安全拦截。
     // 💡 当前实现中识别成功时 proxyGroupName 必定被赋值为组名；若将来新增代码分支，须确保也对其显式赋值，否则 null 会到达代理组排除断言并触发安全兜底（中止注入）。
     // 💡 出口控制说明：识别逻辑通过 EXCLUDED_NAMES 明确排除了绝大多数不适合的出口；极端情况下（全部策略均失败）代码直接 return config，使网络退回订阅原始规则，防止内核崩溃。
@@ -255,7 +255,6 @@ function main(config) {
     //         保留的代价极低（精确词 $ 锚定，不会误伤含「全用」的复合组名如「全用节点」）
     //   后半段：无位置锚定，子串匹配，覆盖「直连国内」「全局直连」「拒绝广告」等任意位置变体。
     //      → 「拒绝垃圾流量」含「拒绝」，保守排除：含「拒绝」的组名通常指向 REJECT 出口，用作路由出口将导致流量被拒绝。命名模糊时仍保守排除以防路由失效。
-    //        将其用作代理路由出口将导致所有流量被拒绝，此处保守排除以防路由失效。
     //   ⚠️ "全局"已从此正则移出，由独立的 FALLBACK_CN_RE 负责识别（原因见下方 FALLBACK_CN_RE 及 isEligibleGroup 防回归说明）。
     //   ⚠️ 已知局限：后半段无位置锚点，采用子串匹配。若代理组命名为「非直连节点」、「不拒绝广告」等包含否定前缀的复合词，会因包含「直连」或「拒绝」子串而被错误排除。
     //   ⚠️ 「默认节点」等含「默认」的复合词组名不触发（精确词加 $ 锚定为设计取舍）此类指向 DIRECT 的订阅极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。
@@ -283,10 +282,10 @@ function main(config) {
         }
     }
 
-    // 合法代理出口类型白名单（统一引用源：关键词优选/正则优选/类型优选三轮均引用此常量，新增类型只需改此处）。
+    // 合法代理出口类型白名单（统一引用源：关键词优选/正则优选/类型优选各轮均引用此常量，新增类型只需改此处）。
     // ⚠️ 最终容错策略（第五轮）改用 _UNSUITABLE_TYPES 黑名单方式，不引用此常量；
     //    两者从正反两面描述同一批被排除类型（relay / url-latency-benchmark / smart），
-    //    修改此处须同步检查 _UNSUITABLE_TYPES，反之亦然，两者描述同一批被排除类型的正反两面，修改任一处须同步检查另一处，两者互为镜像。
+    //    修改此处须同步检查 _UNSUITABLE_TYPES，反之亦然，两者描述同一批被排除类型的正反两面，互为镜像。
     // load-balance 为动态路由策略，与 url-test 同级，具备合法出口语义，纳入白名单。
     // 被排除的三类类型，原因各异：
     //   relay：固定节点链路转发，强制指定出口，无用户可切换的节点选择语义。
@@ -304,7 +303,7 @@ function main(config) {
     const _SANITIZE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/g;
     function sanitizeName(name) {
         if (typeof name !== "string") return "";
-        if (!name) return "";  // 避免空字符串触发正则
+        if (!name) return "";  // 短路返回，省去对空字符串的无意义正则调用
         // ⚠️ 若将来改用 exec()/test() 代替 replace()，须在调用前手动重置 lastIndex=0（g 标志正则有状态）；String.replace() 内部自动重置 lastIndex，此处无需显式重置。
         return name.replace(_SANITIZE_RE, '').trim();
     }
@@ -313,7 +312,7 @@ function main(config) {
     // 公开接口 isFallbackGroup / isEligibleGroup 负责清洗，再委托此二函数；_Core 变体仅供已预计算 cleanName 的内部路径使用。
     //
     // ⚠️ 调用顺序约束：_isEligibleGroupCore 中 _isFallbackGroupCore 必须先于 EXCLUDED_NAMES / EXCLUDED_CN_RE 检查执行，
-    //    兜底组（GLOBAL/全局）须通过 isEligibleGroup 初步关卡才能在第四轮降级路径中被选中；顺序颠倒则兜底路径失效。
+    //    兜底组（GLOBAL/全局）须通过 isEligibleGroup 初步关卡才能在第四轮降级路径中被选中；此顺序确保在互斥约束被意外违反时兜底路径仍有额外一层保障。
     // ⚠️ 集合互斥约束：FALLBACK_NAMES 中的值不应与 EXCLUDED_NAMES 重叠，若将 "REJECT" 等误加入 FALLBACK_NAMES，提前 return true 将旁路 EXCLUDED_NAMES 检查。
     //    上方运行时断言（FALLBACK_NAMES ∩ EXCLUDED_NAMES）从启动时保证此约束。
     function _isFallbackGroupCore(trimmed) {
@@ -351,7 +350,7 @@ function main(config) {
         // 不含 "global"（GLOBAL 由 FALLBACK_NAMES 单独处理），不含 "默认"（已被 EXCLUDED_CN_RE 覆盖，关键词层无需重复）。
         const _KW_RE = /节点(?:选择)?|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅/i;
 
-        // 预计算所有组的 cleanName，避免三轮 find 各自对同一组名重复调用 sanitizeName。
+        // 预计算所有组的 cleanName，避免各轮 find 各自对同一组名重复调用 sanitizeName。
         // 对含 100+ 代理组的大型订阅，最坏情况下五轮各遍历一次，sanitizeName（_SANITIZE_RE.replace）被执行 5×N 次；预计算降为 1×N，后续各轮直接引用 cleanName。
         const _groupsPrepped = config["proxy-groups"].map(g => ({
             g,
@@ -416,7 +415,7 @@ function main(config) {
         // 优选层策略（关键词/正则/类型）与兜底层降级策略全部失效时进入此分支。
         // 目的：在显式 return config 中止注入之前，尽力寻找可用组。
         // 策略：仅排除出口语义不适合的类型（relay / url-latency-benchmark / smart），其他类型均允许；
-        //   选中非理想类型（固定链路、测速专用或实验性自适应类型）虽有所妥协，但总比中止注入、让用户完全依赖订阅原始规则要好。
+        //   为减少用户干预成本，在无理想出口组时优先选取次优组而非中止注入；用户若发现路由异常，可通过添加关键词或调整组名来引导识别。
         //   注：load-balance 已纳入 VALID_PROXY_TYPES，不在 _UNSUITABLE_TYPES 排除列表中。
         if (!_mainEntry) {
             // [最终容错选取] 排除语义不适合做代理出口的类型（而非全部放开）
@@ -506,7 +505,6 @@ function main(config) {
     }
 
     // ✅ 执行到此处时，proxy-groups 非空且 proxyGroupName 已赋值（空或识别失败均已 return config），此断言针对"选组逻辑重构后 proxyGroupName 与实际数组意外失配"的防御场景。
-    // 空 proxy-groups 情况已在上方 else 分支通过 return config 提前退出，不会执行到此处；此断言针对非空 proxy-groups 但 proxyGroupName 意外失配的防御场景。
     // 正常执行路径下 proxyGroupName = mainGroup.name，必然存在于数组中；此断言针对的是选组逻辑被重构或调用方变更后该假设不再成立的情形，属防御纵深而非冗余。
     //
     // 💡 比较策略：使用原始名称精确匹配（g?.name === proxyGroupName），而非双侧 sanitizeName。
@@ -541,9 +539,9 @@ function main(config) {
     //   isFireflyActive=true  → pushSuffix(adobeSharedDeps, proxyGroupName, layerPools.allow) → 走代理
     //   isFireflyActive=false → pushSuffix(adobeSharedDeps, "REJECT",       layerPools.block) → 走拦截
     //   两条分支覆盖相同域名集合，行为对称，单一维护点，修改只需改此数组。
-    // adobe 相关变量变量命名：
+    // adobe 相关变量命名：
     //   adobeFireflyOnly：Firefly AI 生成式专属（clio, firefly-api 等）
-    //   adobeSharedDeps：共用鉴权端点，Firefly 和其他 Adobe（同时被 CC 激活验证使用） 功能共同依赖的鉴权/授权端点
+    //   adobeSharedDeps：共用鉴权端点，Firefly 和其他 Adobe 功能（同时被用于 CC 激活验证）共同依赖的鉴权/授权端点
     //
     // ⚠️【Firefly 必要妥协】auth.services.adobe.com / cc-api-cp.adobe.io 同时承载 CC 正版验证心跳。
     //   isFireflyActive=true 时放行后，以下进程的鉴权请求均走代理，而进程规则仅覆盖 AdobeGCClient.exe：
@@ -625,7 +623,7 @@ function main(config) {
     //    导致非 adobe.io 域名被错误拦截（过拦截误伤 false positive），而非 adobe.io 的流量无辜受殃。
     // 注意：adobestats.io 已在 adobeSuffix 以 DOMAIN-SUFFIX 全覆盖（含所有子域），
     // 本 REGEX 在实际注入顺序下被前置 SUFFIX 规则遮蔽，功能冗余但无害；保留的意义仅为正则规则集的完整性表达。
-    const _ADOBE_RAND_RE_STR      = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$";       // adobe.io 随机子域（8-12位）
+    const _ADOBE_RAND_RE_STR      = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$";      // adobe.io 随机子域（8-12位）
     const _ADOBESTATS_RAND_RE_STR = "^[A-Za-z0-9]{10}\\.adobestats\\.io$";   // adobestats.io 随机子域（社区记录为固定10位，若实测发现其他长度，请调整此正则）
 
     // 正则：拦截随机子域（遥测特征：8-12 位随机字符）改用 REJECT（非 REJECT-DROP）：
@@ -784,9 +782,7 @@ function main(config) {
         "genuine-software.autodesk.com",         // 正版验证服务
         "edge.activity.autodesk.com",            // 活动/行为追踪
         "developer.api.autodesk.com",            // 开发者 API（含许可验证）
-        "autodesk.com.edgekey.net",              // Akamai CDN 节点（授权验证回源；同时承载官网静态资源和更新下载，
-                                                 //   ⚠️ 拦截后除授权验证外，部分官网资源和下载可能同步受影响；
-                                                 //   如发现官网访问异常，可注释此条并依赖 REJECT-DROP 进程规则兜底）
+        "autodesk.com.edgekey.net",              // Akamai CDN 节点（授权验证回源；同时承载官网静态资源和更新下载，如官网访问异常，可注释此条并改用进程规则兜底）
         "crp.autodesk.com",                      // 云渲染授权（CRP = Cloud Rendering Platform）
         "autodesk.flexnetoperations.com",        // Revenera FlexNet Operations 许可云平台（Autodesk 租户子域，第三方托管）
     ];
@@ -918,7 +914,7 @@ function main(config) {
         // WPS
         "ups.k0s.gk.kingsoft.com",               // WPS 升级推送服务
         "pcfg.wps.cn",                           // WPS 配置/广告下发
-        "wps.com.cn",                            // WPS 备用主域（.com.cn 为金山在 .cn 下注册的备用主域）
+        "wps.com.cn",                            // WPS 备用主域（.com.cn 为金山注册的备用主域）
                                                  // ⚠️ 全域 SUFFIX 拦截（含所有子域）；无抓包资料确认其子域仅含遥测端点，拦截后可能影响账号类或功能类子域。
                                                  //    若发现登录异常，可改用精确 DOMAIN 匹配（类比 360.cn 的处理方式）。
         "wpsgold.wpscdn.cn",                     // WPS 广告资源 CDN（内容分发网络）
@@ -1098,7 +1094,7 @@ function main(config) {
     const youtubeDomain  = ["s.youtube.com"];               // 观看历史 + 遥测上报（⚠️ 拦截后观看历史失效）
     // ⚠️ youtubei.googleapis.com 不仅是遥测：/youtubei/v1/player 是播放器视频元数据 API，
     //    拦截后可能导致码率切换、字幕加载、下一集预加载出现异常，不仅限于隐私影响。评估副作用后再决定是否保留此关键词规则。
-    const youtubeKeyword = []; // 清空赋值即禁用：["youtubei.googleapis"]。 YouTube 内部 API（含遥测及播放器元数据）。
+    const youtubeKeyword = []; // YouTube 内部 API（含遥测及播放器元数据）。💡 当前已禁用（空数组）；启用方式：改为 ['youtubei.googleapis']。 
 
     // ──────────────── 全球主流广告联盟（REJECT 立即终止连接） ────────────────
     const genericAdSuffix = [
@@ -1300,7 +1296,7 @@ function main(config) {
         // layerPools 对象仅用作具名容器，方便分类追加规则；各数组在运行期间持续被 pushLayer 写入（可变）。
         // 此命名约定（大小写区分）适用于模块级别标识符；函数体内部临时变量的'私有'区分由附录命名准则的下划线前缀体系负责，两套规范不重叠。
         // 优先级完全由 LAYER_ORDER 数组的元素顺序决定（有意不依赖 layerPools 对象键迭代顺序——ES2015+ 已明确规范字符串键按插入顺序迭代，
-        // 但显式 LAYER_ORDER 数组使优先级意图一目了然，且防止未来新增层时因键位置隐性改变注入顺序）。
+        // 显式 LAYER_ORDER 数组使优先级意图一目了然，且防止未来新增层时因键位置隐性改变注入顺序）。
         const layerPools = { allow: [], block: [], process: [], proxy: [], aggressive: [], direct: [] };
         // pushLayer：逐项追加，避免 push(...rules) 在规则量超过 V8 参数栈上限（~65536）时抛出 RangeError
         const pushLayer = (layer, rules) => {
@@ -1518,7 +1514,7 @@ function main(config) {
     // 【hosts 值格式（来源：wiki.metacubex.one/en/config/dns/hosts）】
     //   单 IP：字符串 "0.0.0.0"
     //   多 IP：数组   ["0.0.0.0", "::"]
-    //   域名重定向：字符串（不支持数组） → 单元素数组 ["0.0.0.0"] 与字符串 "0.0.0.0" 语义相同，为规避解析歧义，统一使用字符串（单 IP）或数组（多 IP）
+    //   域名 → IP：字符串（单 IP）或数组（多 IP，Mihomo hosts 支持），域名 → 域名重定向：仅字符串，不支持数组，为规避解析歧义，统一使用字符串（单 IP）或数组（多 IP）
 
     if (ENABLE_HOSTS_OVERRIDE) {
         try {
@@ -1576,14 +1572,14 @@ function main(config) {
             // ⚠️ 不同内核/版本对 hosts 段和 dns.hosts 段的支持情况可能不同，双写确保覆盖
             // ⚠️ config.dns 可能不存在（订阅无 dns 块时为 undefined），必须先确保 dns 对象存在再操作子字段。
 
-            // safeHostsObj：hosts / dns.hosts 字段类型校验辅助工具，就近声明于首次使用处。
+            // ensureHostsObj：hosts / dns.hosts 字段类型校验辅助工具，就近声明于首次使用处。
             // 若上游订阅将 hosts 写成数组/字符串，直接展开产生以索引为 key 的非法对象；
             // typeof + !Array.isArray 双重验证，类型异常时安全退化为空对象。
             // ⚠️ 不可简化为 val || {}：|| 无法拦截数组/字符串类型。
-            const safeHostsObj = val =>
+            const ensureHostsObj = val =>
                 (typeof val === "object" && val !== null && !Array.isArray(val)) ? val : {};
 
-            config.hosts     = { ...safeHostsObj(config.hosts),     ...customHosts };
+            config.hosts     = { ...ensureHostsObj(config.hosts),     ...customHosts };
 
             if (typeof config.dns !== "object" || config.dns === null || Array.isArray(config.dns)) {
                 config.dns = {};
@@ -1593,8 +1589,8 @@ function main(config) {
             //    → 必须在 CVR 设置 › DNS 覆写 › 手动开启「使用 Hosts」，Hosts DNS 覆写才能真正生效。
             //    注意：同页面还有「使用系统 Hosts」开关，该开关控制的是系统原生 hosts 文件，与本脚本向 Mihomo 注入的 hosts 条目完全独立，保持关闭即可。
 
-            // dns.hosts 同样使用 safeHostsObj 校验。
-            config.dns.hosts = { ...safeHostsObj(config.dns.hosts), ...customHosts };
+            // dns.hosts 同样使用 ensureHostsObj 校验。
+            config.dns.hosts = { ...ensureHostsObj(config.dns.hosts), ...customHosts };
 
             //    hosts 命中时请求直接返回拦截地址，根本不走到 Fake-IP 分配阶段；
             //    此处追加的真实意义是：防止 Fake-IP（198.18.x.x）被分配给这些域名，导致 IP 类规则产生误命中——不应将其理解为 hosts 失效时的替代防护。
@@ -1607,7 +1603,7 @@ function main(config) {
             //
             // [优化] 仅追加新条目，不对全量 fake-ip-filter 排序，保留订阅原有顺序。
             //        全量重排会触发 Mihomo DNS hash 重建，可能导致连接瞬断，故仅追加。
-            //        保留 .sort() 以防将来取消注释 *.domain 行时（* = ASCII 42，排序先于 +），保证条目顺序跨 reload 一致。
+            //        保留 .sort() 以确保将来若同时存在 *.domain 和 +.domain 条目时，*（ASCII 42）排在 +（ASCII 43）之前，保证每次 reload 的追加顺序一致。
             //        确保将来 hijackDomains 改为动态生成时每次 reload 追加顺序仍一致，与"不打乱订阅原有顺序"不矛盾（仅对新条目排序）。
             // ⚠️ 注意：CVR UI 若开启了某些预设模板或覆盖 DNS 配置，可能清空或重置 fake-ip-filter 列表，导致此处追加的条目丢失。
             //    建议在 CVR 日志中确认最终生效的 fake-ip-filter 条目包含本脚本注入的域名。
@@ -1628,8 +1624,7 @@ function main(config) {
             }
             // 域名大小写不敏感（RFC 4343），比较时统一 toLowerCase，防止 "Steam.com" 与 "steam.com" 被视为不同条目。
             const newEntries    = hijackDomains.filter(d => !existingSet.has(d.toLowerCase())).sort();
-            config.dns["fake-ip-filter"] = [...cleanExisting, ...newEntries];
-            
+            config.dns["fake-ip-filter"] = [...cleanExisting, ...newEntries];            
             // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
             console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可！");
             // console.warn("❗ 前提1：CVR › DNS 覆写 → 必须开启「启用 DNS」（关闭则 dns 块整体失效）");
