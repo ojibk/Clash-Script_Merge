@@ -7,24 +7,23 @@
  *     %APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles
  *     C:\Users\Administrator\AppData\Roaming\io.github.clash-verge-rev.clash-verge-rev\profiles
  *
- *   基于哨兵标记的规则幂等清理与注入（栈重建：O(N) 时间 / O(N) 空间）
  *   默认模式：拦截优先 + Firefly 精确例外放行
  *     - ENABLE_FIREFLY = true：精确放行 Firefly AI 请求，保留其他 Adobe 遥测/激活域名的拦截行为。
  *     - Firefly 依赖端点必要妥协：auth / cc-api / lcs 等端点因 Firefly 功能依赖而一并放行；
- *       最终防线为 AdobeGCClient.exe → REJECT-DROP（需 ENABLE_PROCESS_RULE=true + TUN 模式，见风险边界），另还需配置文件的 find-process-mode 参数启用获取进程信息。
+ *       最后防线为 AdobeGCClient.exe → REJECT-DROP（需 ENABLE_PROCESS_RULE=true + TUN 模式 + 管理员权限），另还需配置文件的 find-process-mode 参数启用获取进程信息。
  *       注意：Creative Cloud.exe / CCXProcess.exe / CoreSync.exe 等进程同样访问这些端点，
  *       进程规则仅覆盖 AdobeGCClient.exe，其余进程因依赖链考量予以必要豁免（原因见正文 Firefly 必要妥协，详见 adobeSharedDeps 注释及设计取舍）。
  *     - 适用场景：需要使用 Photoshop 生成式填充、Firefly 等 Adobe AI 功能。
  *
  * ══════════════════════════ ░░ 功能概览 ░░ ══════════════════════════
  *
- *   - 智能识别代理策略组（多级降级策略：优选组 → 兜底组 → 容错选取 → 全部失败则中止注入）
+ *   - 智能识别代理策略组（多级降级策略：优选组（三轮：关键词→正则→类型）→ 兜底组 → 容错选取 → 全部失败则中止注入）
  *   - 注入拦截规则（Adobe / Corel / Autodesk 等软件的激活域名与遥测域名）
- *   - 注入代理 / 直连规则
+ *   - 代理与直连规则
  *   - 进程规则（需管理员权限 + TUN 模式，即 Mihomo 创建虚拟网卡接管全部流量）
  *   - 激进阻断模块（默认关闭，需谨慎开启）
  *   - Hosts 级 DNS 覆写（四种映射子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
- *   - 基于哨兵标记的幂等性规则清理与注入（栈重建算法，O(N) 时间 / O(N) 空间，单次遍历，防止用户多次重新加载订阅导致本脚本注入的规则块重复追加）
+ *   - 基于哨兵标记的幂等性（即无论执行多少次，结果相同）规则清理与注入（栈重建算法，O(N) 时间 / O(N) 空间，单次遍历，防止用户多次重新加载订阅导致本脚本注入的规则块重复追加）
  *   - 异常降级保护，详细运行日志
  *
  * ══════════════════════════ ░░ 使用说明 ░░ ══════════════════════════
@@ -36,6 +35,8 @@
  */
 
 function main(config) {
+    
+    const _startTime = Date.now();               // 计时起点
 
     // ⚙️ ══════════════════════ 配置区（按需调整） ══════════════════════
     // 所有 ENABLE_* 开关语义统一：true = 启用  false = 禁用。
@@ -57,10 +58,8 @@ function main(config) {
                                                  // ⚠️ 注意：此开关的放行规则注入状态由 isFireflyActive 唯一决定。见下方声明
                                                  // ⚠️ Firefly 放行出口为 proxyGroupName，该值由下方智能识别逻辑自动确定；若识别失败（全部策略均告失败），
                                                  //    脚本直接 return config 中止注入，Firefly 请求将退回订阅原始策略。必要妥协：auth/cc-api 等鉴权端点同时放行。
-
-                                                 // 最终防线为 AdobeGCClient.exe → REJECT-DROP（仅 ENABLE_PROCESS_RULE=true + TUN 模式下有效）
-    const ENABLE_PROCESS_RULE = true;            // 进程规则模块（需 TUN 模式或 Service 模式 + 管理员权限；另还需配置文件的 find-process-mode 参数启用获取进程信息）。
-                                                 // TUN：Mihomo 创建虚拟网卡接管全部流量；Service 模式效果等同，区别仅在启动方式；两种模式均透明代理全流量，系统代理模式下无效。
+                                                 // 最后防线为 AdobeGCClient.exe → REJECT-DROP（仅 ENABLE_PROCESS_RULE=true + TUN 模式下有效）
+    const ENABLE_PROCESS_RULE = true;            // 进程规则模块（需 TUN 模式 + 管理员权限；另还需配置文件的 find-process-mode 参数启用获取进程信息）。
     const ENABLE_PROXY        = true;            // 指定域名走代理模块
     const ENABLE_AGGRESSIVE   = false;           // 激进阻断模块（⚠️ 谨慎启用，可能影响官网/插件商店访问）
                                                  // ⚠️ 受影响范围：Adobe 插件市场/字体、Autodesk 官网/登录/授权、Office 更新/模板、ActiveX/旧版 OA 系统
@@ -74,7 +73,6 @@ function main(config) {
     //    未开启时本模块失效（脚本仍打印成功日志，但 Hosts 覆写不生效）。
     // ℹ️ 依赖约束：ENABLE_SCRIPT=false 时此模块被跳过（脚本提前返回，Hosts 注入不执行）；
     //    如需关闭规则注入同时保留 Hosts 覆写，应保持 ENABLE_SCRIPT=true 并关闭各子模块开关。
-
     // 💡 推荐使用 "ipv4-loopback"（当前默认值）：返回 127.0.0.1，产生 ECONNREFUSED（回环模拟拦截），
     //    应用兼容性通常最好；ipv4-blackhole 阻断速度最快，但可能被部分应用归类为断网状态。
     //
@@ -91,6 +89,25 @@ function main(config) {
     //
     // 双栈黑洞模式（dual-blackhole）因 IPv6 的 :: 行为更激进，存在非预期的连接错误或应用异常；ipv4-blackhole 单栈版风险较低。
     const HOSTS_MODE = "ipv4-loopback";
+    //
+    // ──── ✅ 节点级 client-fingerprint 注入开关，TLS 客户端指纹模拟预设 ────
+    // 模拟指定客户端的 TLS 握手特征，以增强抗检测能力。实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
+    // - true:  为所有未设置 fingerprint 的节点注入默认指纹
+    // - false: 完全跳过指纹注入，保留节点原始配置
+    const ENABLE_CLIENT_FINGERPRINT = true;
+    //
+    // 默认指纹，仅在 ENABLE_CLIENT_FINGERPRINT 为 true 时生效。
+    // 可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random / none
+    // 💡 random：启动时从指纹库随机抽取一个值并固定使用，非每连接随机切换。random 模式下，各指纹的权重分布为：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
+    const DEFAULT_FINGERPRINT = "chrome";
+    //
+    // 指纹注入黑名单：名称中包含这些关键词的节点，即使没有指纹也不会被注入。
+    // 用途：保护特殊节点（如专用 IP 节点、特定落地机）不被意外修改指纹。
+    const FINGERPRINT_BLACKLIST = [
+        "专用",      // 例：用户自建的落地节点，不希望被修改
+        "原生",      // 例：原生 IP 节点
+        "nobook",   // 例：特定服务商要求不修改指纹
+    ];
 
     // ──── 典型配置组合参考（按需参照调整上方开关值；此处为说明性文字，无需操作）────
     //
@@ -133,19 +150,42 @@ function main(config) {
     if (ENABLE_PROCESS_RULE && config["find-process-mode"] !== "strict" && config["find-process-mode"] !== "always") {
         console.warn(`⚠️ 进程规则要求 find-process-mode 为 strict 或 always，当前为 [${config["find-process-mode"] ?? "（未设置）"}]，进程规则将静默失效`);
     }
-    // ──── ✅ 节点级 client-fingerprint 注入，TLS 客户端指纹模拟预设────
-    // 可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random
-    // 💡 random：启动时从指纹库随机抽取一个值并固定使用，非每连接随机切换。
-    // 模拟指定客户端的 TLS 握手特征；实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
-    if (Array.isArray(config.proxies)) {
+
+    // ═══════════════ client-fingerprint 注入逻辑 ═══════════════
+
+    if (ENABLE_CLIENT_FINGERPRINT && DEFAULT_FINGERPRINT !== "none" && Array.isArray(config.proxies)) {
+        const blacklistSet = new Set(FINGERPRINT_BLACKLIST.map(s => s.toLowerCase()));
+        let injectedCount = 0;
+        let skippedCount = 0;
+        let preExistingCount = 0;
+
         config.proxies = config.proxies.map(p => {
-            // 如果节点已有自己的 fingerprint，可以选择跳过覆盖（保留原值）
-            if (p['client-fingerprint']) return p;
-            return { ...p, 'client-fingerprint': 'chrome' };
+            // 1. 尊重节点已有配置：如果已设置，直接保留
+            if (p['client-fingerprint']) {
+                preExistingCount++;
+                return p;
+            }
+
+            // 2. 检查黑名单：节点名包含黑名单关键词则跳过
+            const nodeName = (p.name || "").toLowerCase();
+            const isBlacklisted = [...blacklistSet].some(keyword => nodeName.includes(keyword));
+            if (isBlacklisted) {
+                skippedCount++;
+                return p;
+            }
+
+            // 3. 注入默认指纹
+            injectedCount++;
+            return { ...p, 'client-fingerprint': DEFAULT_FINGERPRINT };
         });
-        console.log(`✅ 已为 ${config.proxies.length} 个代理节点注入 client-fingerprint: chrome`);
+
+        console.log(`✅ TLS 指纹注入完成: 新增注入 ${injectedCount} 个，`
+                + `跳过黑名单 ${skippedCount} 个，`
+                + `保留原有指纹 ${preExistingCount} 个 (默认指纹: ${DEFAULT_FINGERPRINT})`);
+    } else if (ENABLE_CLIENT_FINGERPRINT && DEFAULT_FINGERPRINT === "none") {
+        console.log("ℹ️ TLS 指纹注入已启用，但默认指纹为 'none'，不执行注入。");
     } else {
-        console.warn("⚠️ config.proxies 不存在或不是数组，跳过 fingerprint 注入");
+        console.log("ℹ️ TLS 指纹注入已禁用 (ENABLE_CLIENT_FINGERPRINT = false)。");
     }
     // ────────────────────────────────────────────────
 
@@ -209,16 +249,15 @@ function main(config) {
         //    如需零修改直接返回（Passthrough 直通模式），将此 if 分支体改为 return config; 即可。
         //    如需保留 Hosts DNS 覆写但关闭规则注入，请保持 ENABLE_SCRIPT=true，
         //    并将 ENABLE_BLOCK / ENABLE_PROXY / ENABLE_DIRECT 等各子模块开关设为 false。
-        // 精确等值匹配，与哨兵清理保持一致，避免宽泛子串误删合法规则。
+        // 等值匹配策略一致；避免宽泛子串误删合法规则此处用 filter 而非栈重建，因调试标记为单条平铺，无嵌套清理需求。
         config.rules = config.rules.filter(r => r !== "DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         return config;
     }
 
     console.log("=".repeat(28));
-    const _startTime = Date.now();
     // 当前实现手动 padStart 拼接，格式固定为 HH:MM:SS（本地时区），跨引擎跨区域设置格式一致（时间值仍为本地时区）。
-    const _now  = new Date();
+    const _now  = new Date();  // 计时终点
     const _ts = [_now.getHours(), _now.getMinutes(), _now.getSeconds()]
         .map(n => String(n).padStart(2, "0"))
         .join(":");
@@ -304,12 +343,13 @@ function main(config) {
     // 被排除的三类类型，原因各异：
     //   relay：固定节点链路转发，强制指定出口，无用户可切换的节点选择语义。
     //   url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。
-    //   smart：实验性自适应选择类型（≠测速工具），出口语义依赖 Mihomo 版本，行为尚不稳定，保守排除。
+    //   smart：Mihomo v1.18+ 正式稳定类型，自适应出口选择，具备合法出口语义，已纳入白名单。旧版对 smart 行为不保证，若遇路由异常可回退：将 smart 从本 Set 移除。
     //   load-balance 已纳入 VALID_PROXY_TYPES（动态路由，具备合法出口语义），不再排除。
     //   注意：此处保留最低限度的类型语义过滤，而非彻底放开，彻底放开会导致 relay 等固定链路被选中，流量走预设链路而非用户期望的可切换代理，行为与预期不符。
-    const VALID_PROXY_TYPES = new Set(["select", "url-test", "fallback", "load-balance"]);
+    const VALID_PROXY_TYPES = new Set(["select", "url-test", "fallback", "load-balance", "smart"]);
     // ⚠️ 互补视图：与 VALID_PROXY_TYPES 正反两面描述同一批被排除类型，修改任一处须同步检查另一处。
-    const _UNSUITABLE_TYPES = new Set(["relay", "url-latency-benchmark", "smart"]);
+    // 当前排除：relay（固定链路）/ url-latency-benchmark（测速工具）。smart 已从本 Set 移除并纳入 VALID_PROXY_TYPES。
+    const _UNSUITABLE_TYPES = new Set(["relay", "url-latency-benchmark"]);
 
     // sanitizeName：统一不可见字符与 Bidi 控制符清理逻辑（完整列表见附录特殊字符集说明），防止视觉欺骗攻击与比较失配。
     // @param {string} name - 原始组名，函数内部负责清洗；调用方无需预先清洗，传入原始字符串即可。
@@ -323,7 +363,7 @@ function main(config) {
         return name.replace(_SANITIZE_RE, '').trim();
     }
 
-    // _isFallbackGroupCore / _isEligibleGroupCore：接受已清洗字符串，跳过二次 sanitizeName。
+    // _isFallbackGroupCore / _isEligibleGroupCore：_Core 后缀约定（见附录命名准则）接受已清洗字符串，轻量版公开接口委托版，跳过二次 sanitizeName。
     // 公开接口 isFallbackGroup / isEligibleGroup 负责清洗，再委托此二函数；_Core 变体仅供已预计算 cleanName 的内部路径使用。
     //
     // ⚠️ 调用顺序约束：_isEligibleGroupCore 中 _isFallbackGroupCore 必须先于 EXCLUDED_NAMES / EXCLUDED_CN_RE 检查执行，
@@ -384,7 +424,7 @@ function main(config) {
             // length > 3（即 ≥ 4）：排除 proxies 数组近乎为空的极简占位组，如：["节点1","节点2","节点3"]（length=3，被排除），
             // ["节点1","节点2","节点3","节点4"]（length=4，通过），优先选入条目数量充足的组。
             // ⚠️ 注意：proxies 数组可包含三类条目：底层节点名称、其他策略组名称、内置代理名称（DIRECT / REJECT）；
-            //   length > 3 衡量的是三类条目的总数，不等于底层节点计数（已知局限见下方）。
+            //   length > 3 衡量的是三类条目的总数，不等于底层节点计数。
             //   已知局限：全部条目均为策略组引用（无底层节点）时，阈值仍可成立，但被选中的组仍能正常委托子组路由，实际影响极小；后续多轮兜底进一步覆盖此场景。
             const includeAll = g?.["include-all"] === true || g?.["include-all"] === "true";
             // includeAll 仅接受 boolean true 或字符串 "true"（严格等值）；数字 1 / 其他 truthy 值不触发（有意严格，避免意外匹配）。
@@ -437,8 +477,7 @@ function main(config) {
         if (!_mainEntry) {
             // [最终容错选取] 排除语义不适合做代理出口的类型（而非全部放开）
             // relay：固定节点链路转发，无节点选择语义，用户无法在其界面切换节点。
-            // url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。
-            // smart：实验性自适应选择类型，出口语义依赖 Mihomo 版本，行为尚不稳定，保守排除。
+            // url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。smart 已移入 VALID_PROXY_TYPES，Mihomo v1.18+ 已稳定，不再列为不适用类型。
             _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
                 _isEligibleGroupCore(cleanName) &&
                 !_UNSUITABLE_TYPES.has(g?.type) &&
@@ -512,7 +551,7 @@ function main(config) {
     //   两者不是冗余，是刻意的"宽进严出（识别阶段宽容，注入阶段严格）"纵深防御：识别尽量不漏选，注入绝对不破坏语法。
     // proxyGroupName 存储原始值（mainGroup.name），sanitizeName 的清洗结果不用于此处。清洗结果仅用于排除词汇匹配，注入时仍使用原始值。
     // 四类拒绝维度（不同攻击向量），详细字符集见附录特殊字符集说明。
-    // 注：_SANITIZE_RE 中有部分重合，其清洗的是识别阶段副本（sanitizeName 输出），此断言检验的是注入用原始值（proxyGroupName），两者作用不同。两处不重叠，非冗余。
+    // 注：注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
     // 💡 两层覆盖范围的完整差异说明见 _SANITIZE_RE 注释（权威定义源）；
     //    本断言为注入层权威说明：仅覆盖 Clash/YAML 语法破坏字符，不覆盖 Bidi 控制符（Bidi 视觉欺骗问题由识别层处理，注入层不需要重复防御）。
     if (/[,\u0000-\u001F\u007F\u0085\u2028\u2029]/.test(proxyGroupName)) {
@@ -1460,7 +1499,7 @@ function main(config) {
             console.log(`   Firefly 放行: ❌`);
         }
 
-        console.log(`   进程规则:   ${ENABLE_PROCESS_RULE  ? "✅（需管理员权限+TUN/Service 模式，另还须 config 开启获取进程信息，条件不满足则静默失效）" : "❌"}`);
+        console.log(`   进程规则:   ${ENABLE_PROCESS_RULE  ? "✅（需管理员权限+TUN 模式，另还须 config 开启获取进程信息，条件不满足则静默失效）" : "❌"}`);
         console.log(`   代理规则:   ${ENABLE_PROXY         ? "✅" : "❌"}`);
         // ENABLE_AGGRESSIVE 激进模式日志增加警告行，列出已知受影响域。
         if (ENABLE_AGGRESSIVE) {
@@ -1843,7 +1882,7 @@ function main(config) {
  *         它们是 YAML 结构字符（行终止符 / 缩进控制符）。若在此清理，含这三个字符的原始组名在识别阶段会被净化匹配，
  *         但 proxyGroupName 存储的仍是原始值；注入时 Token 断言检测原始值，仍会拦截，识别通过、注入被拒，
  *         这不是纵深防御而是极端情形下的可接受失效路径。Token 断言负责在注入前对原始值实施一票否决，两层职责不重叠。
- *    定义于 main() 作用域：确保跨引擎兼容性（部分非 V8 引擎不缓存函数内正则字面量），同时明确表达此正则为模块级常量，不随 sanitizeName 调用频率变化。
+ *    定义于 main() 作用域：确保跨引擎兼容性（部分非 V8 引擎不缓存函数内正则字面量），同时明确表达此正则为 main() 作用域内的函数级常量，不随 sanitizeName 调用频率变化。
  *
  * ══════════════════════════ ░░ 维护规范 ░░ ══════════════════════════
  *
