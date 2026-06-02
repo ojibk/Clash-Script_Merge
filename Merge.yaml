@@ -59,14 +59,11 @@ profile:
                               # ⚠️ 隐私审计：启用时 cache.db 将记录域名与 Fake-IP 的映射表，极端隐私需求可定期清理。
 
 # ⚠️ [deprecated] 此字段已被 Mihomo 标记为废弃，未来可能被内核移除。届时需迁移至节点级 `client-fingerprint` 或移除。
-global-client-fingerprint: chrome   # 🗑️ [deprecated] 全局 TLS 客户端指纹模拟预设，作为内核级全局默认值（节点未定义时的兜底赋值）。
-#                                   # 可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random
-#                                   # 💡 random：启动时从指纹库随机抽取一个值并固定使用，非每连接随机切换。
-#                                   # 模拟指定客户端的 TLS 握手特征；实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
-#                                   # 优先级：协议特定指纹（如 Reality）> 节点级 client-fingerprint > 全局（本字段）。
-#                                   # 仅在节点未声明 client-fingerprint 时生效，为最低优先级的全局兜底。
-#                                   # 直接拉取的机场订阅节点无法通过 Merge 注入节点级 client-fingerprint 字段，故本全局字段保留。
-#                                   # 若所有节点均经脚本预处理，可注释禁用。
+# 可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random。💡 random：启动时从指纹库随机抽取一个值并固定使用，非每连接随机切换。
+# 模拟指定客户端的 TLS 握手特征；实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
+# 优先级：协议特定指纹（如 Reality）> 节点级 client-fingerprint > 全局（本字段）。仅在节点未声明 client-fingerprint 时生效，为最低优先级的全局兜底。
+# 直接拉取的机场订阅节点无法通过 Merge 注入节点级 client-fingerprint 字段，故本全局字段保留。若所有节点均经脚本预处理，可注释禁用。
+# global-client-fingerprint: chrome   # 🗑️ [deprecated] 全局 TLS 客户端指纹模拟预设，作为内核级全局默认值（节点未定义时的兜底赋值）。
 
 # # ⚠️ sniffer 配置是扩展脚本（Script.js）注入的 UDP/QUIC 域名类规则重要前提条件之一，
 # # 禁用 sniffer 将导致这些规则在纯 IP 直连路径（应用绕过 DNS、直接以 IP 建立 UDP/QUIC 连接）下失效。
