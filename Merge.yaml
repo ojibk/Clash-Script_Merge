@@ -11,12 +11,17 @@
 # #  配置处理流：订阅 → Merge Config 合并 → Script 修改 → 最终配置 YAML → CVR 二次注入覆盖 dns/tun → Mihomo 执行
 # #  🇭🇰 智能路由锁区受限网络服务 → 走非香港节点，应用场景示例：指定某些对香港 IP 极为敏感的 AI、流媒体等网络服务（含 OpenAI、Claude、Gemini、TikTok）的路由策略。
 # #
-# #  职责分工：
+# # 【订阅须满足的最低前提】
+# #  · dns: 须声明（fake-ip 或 redir-host，影响 sniffer / store-fake-ip 行为）
+# #  · tun: 须在 CVR 中启用（parse-pure-ip 的完整性前提）
+# #  · 订阅须包含 outbound proxies（非纯策略组订阅），否则 include-all 继承为空
+# #
+# # 【职责分工】
 # #    rule-providers → Map 类型（键值映射表）：键值对合并——同名键以本文件为准覆写，其余键保留订阅原值
 # #    proxy-groups   → 必须声明固定锚点组，rules 出口的确定性保障
 # #    rules          → 自完备规则链，硬编码指向锚点组名
 # #
-# #  【优化指南】1. 规则集采用 MRS 格式；2. 减少 RULE-SET 数量；3. 优化规则顺序，将高频命中规则置于链条前部，减少 RULE-SET 穿透深度。
+# # 【优化指南】1. 规则集采用 MRS 格式；2. 减少 RULE-SET 数量；3. 优化规则顺序，将高频命中规则置于链条前部，减少 RULE-SET 穿透深度。
 # #
 # # 【CVR（Clash Verge Rev，图形化代理管理界面）崩溃警告 — 禁止声明 mode 字段】
 # #  mode 由 CVR UI 状态机独占管理；在 Merge Config 中声明会触发冲突循环：
@@ -152,19 +157,20 @@ proxy-groups:
     lazy: true        # true懒惰状态，默认为true,未选择到当前策略组时，不进行测试
     url: http://www.gstatic.com/generate_204 # 延迟测试链接
     # url: http://cp.cloudflare.com/generate_204 # 备用延迟测试链接
-    expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用
-    filter: '^(?:(?!香港|HK|Hong\s*Kong|🇭🇰|🳪).)*$' # 正则表达式过滤，反引号包裹。正向匹配过滤 香港、HK、HongKong、Hong Kong、🇭🇰、🳪 的节点
-    # filter: '^(?!.*(香港|HK|Hong\s*Kong|🇭🇰|🳪)).*$' # 正则表达式过滤，需引号包裹。利用负向先行断言过滤包含 香港、HK、HongKong、Hong Kong、🇭🇰、🳪 的节点
+    expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用。为注释状态时容忍 200 OK 响应，防止探针被误杀
+    filter: '^(?:(?!香港|HK|Hong\s*Kong|🇭🇰).)(?:(?!剩余|到期|官网|套餐|重置|群|客服).)+$' # 正则表达式过滤，反引号包裹。正向匹配过滤香港节点及属订阅信息的非代理节点
+    # filter: '^(?!.*(香港|HK|Hong\s*Kong|🇭🇰)).+$' # 正则表达式过滤，需引号包裹。利用负向先行断言过滤包含 香港、HK、HongKong、Hong Kong、🇭🇰 的节点
 
-  - name: 🤖 动态切换 # 声明策略组名称，基于延迟测试的自动选优策略组（当前应用场景嵌入🎛️ 节点选择，作用如同策略组分支节点）
-    type: url-test    # 策略组类型,自动延迟测试。⚠️ 已知风险：IP 频繁变动（可能触发网络服务风控）；无谓的后台探测流量消耗
+  - name: 🤖 动态选路 # 声明策略组名称，基于延迟测试的自动选优策略组（当前应用场景嵌入🎛️ 节点选择，作用如同策略组分支节点）
+    type: url-test    # 策略组类型，自动延迟测试。⚠️ 已知风险：IP 频繁变动（可能触发网络服务风控）；无谓的后台探测流量消耗
     interval: 300     # 健康检查间隔，如不为 0 则启用定时测试，默认值 300，单位：秒。可根据实际情况动态调整
     tolerance: 50     # 节点切换容差，单位：毫秒。只有当新旧节点的差值大于 50ms 内核才会触发切换。
     include-all: true # 引入所有出站代理以及代理集合，顺序将按照名称排序。自动继承订阅源中的全量节点
-    lazy: true        # true懒惰状态，默认为true,未选择到当前策略组时，不进行测试
+    lazy: true        # true懒惰状态，默认为true，未选择到当前策略组时，不进行测试
     url: http://www.gstatic.com/generate_204 # 延迟测试链接
     # url: http://cp.cloudflare.com/generate_204 # 备用延迟测试链接
-    # expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用。为注释状态时容忍 200 OK 响应，防止探针被误杀
+    expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用。为注释状态时容忍 200 OK 响应，防止探针被误杀
+    filter: '^(?!.*(剩余|到期|官网|套餐|重置|群|客服)).+$'  # 正则表达式过滤，需引号包裹。排除"流量剩余""套餐到期""官网"等非代理节点
 
 # # ======================================================================================
 # # ░░ 规则集 (Rule Providers) — Map（键值对）合并，不替换订阅原有条目
@@ -175,7 +181,7 @@ proxy-groups:
 # #  · 非首次启动下载失败（CDN 波动 / DNS 污染 / GitHub 被封锁）：Mihomo 自动使用本地缓存继续运行，用户无感知。
 # #  以上均为 Mihomo 内核机制。本配置通过末尾无条件兜底（MATCH）承接所有未命中流量，保证异常时仍有确定出口。
 # #  若需确认规则集当前状态，可在 CVR >「规则集」界面查看条目数与最后更新时间。
-# #  软件冷启动远程规则集未就绪说明：启动初期短暂穿透窗口。规则集在首次被求值时异步加载，加载完成前到达该规则位置的连接将因 Trie 为空而穿透至后续规则（MRS 下延迟极小）。
+# #  软件冷启动远程规则集未就绪说明：启动初期短暂穿透窗口。规则集在启动期间异步加载，加载完成前到达该规则位置的连接将因 Trie 为空而穿透至后续规则（MRS 下延迟极小）。
 # #
 # # 【behavior 行为模式性能原理】
 # #  全线选用 domain / ipcidr 模式，内核加载时分别构建：
@@ -184,7 +190,7 @@ proxy-groups:
 # #  · 前缀匹配树（CIDR Trie）：IP 地址按二进制前缀存入前缀树，高效处理 IP 段范围命中。
 # #  相比 classical（逐行线性扫描）模式，在规则集条目数量庞大时可显著降低 CPU 与内存开销，匹配速度更快。
 # #  classical 模式要求文件内每行为完整规则指令（如 DOMAIN,example.com 或 IP-CIDR,192.168.0.0/16），本配置所选源文件均为纯列表，不使用此模式。
-# #  MRS 在此基础上进一步优化：以二进制序列化形式存储已构建的 Trie 树，加载时直接内存映射，跳过文本词法/语法分析及 Trie 构建，启动开销接近于零。
+# #  MRS 在此基础上进一步优化：以二进制序列化形式存储已构建的 Trie 树，加载时直接内存映射，跳过文本解析与 Trie 构建阶段，启动开销显著低于 yaml/text 格式。
 # #  yaml/text 格式需经"磁盘 IO → 反序列化 → Trie 构建"三阶段；MRS 仅需"磁盘 IO → 映射"。
 # #
 # # 【format 格式选择 — MRS 二进制预编译格式】
@@ -255,8 +261,8 @@ rule-providers:
 
   # 拦截类规则集数据来源分别由 DustinWin 基于 privacy-protection-tools/anti-AD、peiyingyao 基于 blackmatrix7/EasyPrivacy 每日自动构建并以 MRS 格式分发。
   # 💡 anti-ad 与 threat 以及 advertising 的语义区分（互为补充，非替代关系，可按需启用）：
-  #   anti-ad：       广告 / 跟踪 / 隐私 / 恶意软件 / 挖矿 → 隐私及安全防护
-  #   threat：        恶意特征（追踪器 / 隐私收集 / 恶意软件 / C2 命令与控制域名） → 安全防护
+  #   anti-ad：       广告 / 跟踪 / 隐私 / 恶意域名 / 挖矿 → 隐私及安全防护
+  #   threat：        恶意特征（追踪器 / 隐私收集 / 恶意域名 / C2 命令与控制域名） → 安全防护
   #   advertising：   广告域名 → 体验优化
   
   # advertising: # 🚫 广告拦截集
@@ -271,7 +277,7 @@ rule-providers:
   #                     #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/Advertising
   #                     #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs
 
-  anti-ad: # 🚫 综合拦截集（广告 / 跟踪 / 隐私 / 恶意软件 / 挖矿）
+  anti-ad: # 🚫 综合拦截集（广告 / 跟踪 / 隐私 / 恶意域名 / 挖矿）
     # 💡 主用：基于 privacy-protection-tools/anti-AD 转换，由 DustinWin 每日自动构建并以 MRS 格式分发。
     #    覆盖范围：广告、跟踪器、隐私收集、恶意域名、挖矿。
     type: http        # ℹ️ 类型：远程 HTTP 资源。
@@ -283,7 +289,7 @@ rule-providers:
                       #    来源仓库：https://github.com/DustinWin/ruleset_geodata/tree/mihomo-ruleset
                       #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs
 
-  # threat: # 🚫 威胁阻断集（范围未完全覆盖：广告 / 追踪器 / 隐私收集 / 挖矿，暂未覆盖恶意软件 / C2 命令与控制域名）
+  # threat: # 🚫 威胁阻断集（范围未完全覆盖：广告 / 追踪器 / 隐私收集 / 挖矿，暂未覆盖恶意域名 / C2 命令与控制域名）
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。
   #   behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
@@ -400,7 +406,7 @@ rules:
   # ▌综合拦截 — 拦截广告、遥测、恶意类流量
   - RULE-SET,anti-ad,REJECT             # 🚫 综合拦截域名 → 拒绝，广告过滤及隐私保护。
   # - RULE-SET,advertising,REJECT         # 🚫 主流广告域名 → 拒绝，广告过滤。
-  # - RULE-SET,threat,REJECT              # 🚫 恶意特征域名拦截集 → 拒绝，追踪器/恶意软件/C2 安全防护。
+  # - RULE-SET,threat,REJECT              # 🚫 恶意特征域名拦截集 → 拒绝，追踪器/恶意域名/C2 安全防护。
 
   # ▌域名分流 — cn 规则集在前确保国内域名优先命中
   - RULE-SET,hk-restricted,🔀 绕港优选     # 🇭🇰 专属港区受限网络服务高可用路由规则 → 走非港节点代理，置于分流集的顶层是避免被代理规则抢先命中而误走其他节点。
@@ -546,7 +552,7 @@ rules:
 # # 静默容错机制（Silent Fault Tolerance）
 # #   Mihomo 对远程规则集加载失败的处理策略：优先使用本地缓存；首次失败则该集合条目数为 0，
 # #   相关规则不命中，流量滑落至后续规则，内核不报错不中断。
-# #   ⚠️ 静默容错意味着失效无提示，首次启动无缓存且下载失败时，不会在日志中产生 error，需通过 CVR「规则集」界面主动检查条目数。
+# #   ⚠️ 静默容错意味着失效无提示，首次启动无缓存且下载失败时，通过 CVR「规则集」界面主动检查条目数是最直观的验证手段。
 # #
 # # 策略动作解耦原则（Action Decoupling）
 # #   rule-providers 文件均不内置流量动作（如 DIRECT / REJECT），
@@ -560,7 +566,7 @@ rules:
 # # GEOIP（IP 地理归属匹配）
 # #   ⚠️ GeoIP ≠ 真实地理位置。GeoIP 基于 IP 区块注册数据推断地理归属，而非检测流量实际经过的物理节点位置，在 CDN / Anycast（任播）调度下存在不可避免的归属地误差。
 # #   在 CDN / Anycast 跨区调度场景下可能出现"境外服务命中 CN"或反之。
-# #   GeoIP 为不可直接读写的数据库格式，与 RULE-SET 可见文件性质不同。出现误判只能通过行为观测定位，无法直接审查数据库内容。
+# #   GeoIP 以二进制格式存储，无法以文本编辑器直接查看；可借助专用工具（如 mmdbinspect）审计内容，但操作成本远高于文本列表。出现误判可通过行为观测定位。
 # #   当前配置启用 geodata-mode: true，数据库来源为 MetaCubeX dat 格式，由 geo-auto-update 自动更新。默认 mmdb 模式下来源通常为 MaxMind 或社区分发版。
 # #
 # # MATCH（无条件兜底指令）
@@ -573,7 +579,7 @@ rules:
 # #   统一附加于 GEOIP 规则后，禁止内核为仅有域名的流量主动触发 DNS 解析以获取 IP。
 # #   两种场景：DNS 污染 → 返回虚假 CN IP、CDN GeoDNS → 正常返回但 IP 归属为 CN；因此，强制解析可能将 DNS 污染和 CDN 多归属 IP 误判为国内而错误直连；
 # #   常见路径：流量已有 IP → 直接比对 GeoIP 库；仅有域名且上方未命中 → 因无 IP 可比对而匹配失败，流量滑落至 MATCH 兜底，这是规则链拓扑的必然结果，
-# #   并非 no-resolve 主动触发的行为（MATCH 指定代理出口是 Unknown → Proxy 立场的实现基础）。
+# #   并非 no-resolve 主动触发的行为（若将 MATCH 指向代理出口，则实现了 Unknown → Proxy 立场）。
 # #  ℹ️ 边界条件：no-resolve 跳过的是内核主动发起的 DNS 解析；已有真实 IP 的流量仍可正常命中 GeoIP 规则。
 # #    性能效益：减少规则匹配阶段的 DNS 查询等待，降低延迟。
 # #    当流量在上层规则中已获得真实 IP 时，带 no-resolve 的 GEOIP 规则仍可正常命中该 IP；"仅有域名无 IP → 匹配失败 → 滑落 MATCH"是最常见路径，但并非 no-resolve 的唯一触发场景。
@@ -618,7 +624,7 @@ rules:
 # #
 # # DNS（域名解析系统，Domain Name System）
 # #   将域名解析为 IP 地址的分布式系统。
-# #   传统 DNS（Do53）明文无加密，在污染环境下解析响应可能被篡改（MITM 或运营商注入伪造 IP），结果不可信；使用 DoH/DoT 的订阅配置因加密通道不受此影响。
+# #   传统 DNS（Do53）明文无加密，在污染环境下解析响应可能被篡改（MITM 或运营商注入伪造 IP），结果不可信；使用 DoH/DoT 的订阅配置因加密通道免于注入攻击，服务可用性仍有风险。
 # #
 # # DNS 污染（DNS Poisoning）
 # #   攻击者或运营商向 DNS 响应中注入伪造 IP，导致域名解析至错误地址。
@@ -664,8 +670,8 @@ rules:
 # #   REJECT 动作在 TCP 场景下通过发送 RST 实现即时拦截；在 UDP 场景下通过返回 ICMP 不可达报文实现。
 # #
 # # IPC（进程间通信，Inter-Process Communication）
-# #   进程之间传递数据的机制。此处特指 CVR 前端与 Mihomo 内核之间的 RPC（HTTP API）通信。核初始化阶段 Trie 构建为 CPU 密集型任务，可能造成调度延迟，
-# #   导致 HTTP API goroutine 响应缓慢，CVR 前端报告超时或加载失败，但内核本身未崩溃——这是 RPC 层的通信超时，非进程崩溃。
+# #   进程之间传递数据的机制。此处特指 CVR 前端与 Mihomo 内核之间的 RPC（HTTP API）通信。内核初始化阶段 Trie 构建为 CPU 密集型任务，可能造成调度延迟，
+# #   导致 HTTP API 协程响应缓慢，CVR 前端报告超时或加载失败，但内核本身未崩溃——这是 RPC 层的通信超时，非进程崩溃。
 # #
 # # ──────────────────────────────────────────────────────────────────────────────────────
 # # 【G】工程设计术语
