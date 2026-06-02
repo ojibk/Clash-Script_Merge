@@ -133,6 +133,21 @@ function main(config) {
     if (ENABLE_PROCESS_RULE && config["find-process-mode"] !== "strict" && config["find-process-mode"] !== "always") {
         console.warn(`⚠️ 进程规则要求 find-process-mode 为 strict 或 always，当前为 [${config["find-process-mode"] ?? "（未设置）"}]，进程规则将静默失效`);
     }
+    // ──── ✅ 节点级 client-fingerprint 注入，TLS 客户端指纹模拟预设────
+    // 可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random
+    // 💡 random：启动时从指纹库随机抽取一个值并固定使用，非每连接随机切换。
+    // 模拟指定客户端的 TLS 握手特征；实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
+    if (Array.isArray(config.proxies)) {
+        config.proxies = config.proxies.map(p => {
+            // 如果节点已有自己的 fingerprint，可以选择跳过覆盖（保留原值）
+            if (p['client-fingerprint']) return p;
+            return { ...p, 'client-fingerprint': 'chrome' };
+        });
+        console.log(`✅ 已为 ${config.proxies.length} 个代理节点注入 client-fingerprint: chrome`);
+    } else {
+        console.warn("⚠️ config.proxies 不存在或不是数组，跳过 fingerprint 注入");
+    }
+    // ────────────────────────────────────────────────
 
     // ══════════════════════ ENABLE_SCRIPT 分支 ══════════════════════
     // 先清理上次遗留标记，再插入新标记，防止多次切换后堆叠。
