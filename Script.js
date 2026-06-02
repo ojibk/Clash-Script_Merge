@@ -52,8 +52,7 @@ function main(config) {
     //      · ENABLE_GLOBAL_KEYWORD_BLOCK 属 block 层子开关，因说明篇幅较长集中声明于配置区末尾
     //      · ENABLE_SCRIPT、ENABLE_HOSTS_OVERRIDE 独立于此六层结构之外
     const ENABLE_BLOCK        = true;            // 拦截模块（规则优先级高，仅次于 allow 层，isFireflyActive=true 时 Firefly 放行先于拦截执行，见 LAYER_ORDER）
-                                                 // 关闭拦截模块同时意味着 Firefly 放行规则也不注入。没有任何规则覆盖（既无 REJECT，也无 proxyGroupName），
-                                                 // 部分 Adobe 流量被进程规则承接，或最终落入 MATCH 兜底策略。
+                                                 // 关闭拦截模块同时意味着 Firefly 放行规则也不注入。流量既无 REJECT 也无代理覆盖，被进程规则或 MATCH 兜底策略接管。
     const ENABLE_FIREFLY      = true;            // 精确放行 Adobe Firefly AI 生成式请求。启用放行规则需（ENABLE_BLOCK=true）对应拦截层以供豁免。
                                                  // ⚠️ 注意：此开关的放行规则注入状态由 isFireflyActive 唯一决定。见下方声明
                                                  // ⚠️ Firefly 放行出口为 proxyGroupName，该值由下方智能识别逻辑自动确定；若识别失败（全部策略均告失败），
@@ -156,8 +155,8 @@ function main(config) {
     //    清理算法依赖精确等值（===）匹配；若确需修改哨兵格式，须同步更新清理逻辑。null/undefined 也不会意外匹配哨兵字符串，严格等值天然防御。
     // 💡 TLD 选型：使用 RFC 6761 明确保留的 .invalid（无效域），而非 .local（RFC 6762 mDNS 保留域）。
     //    local 在部分系统级 mDNS 配置下可能触发 DNS 多播查询；invalid 作为保留域，标准 DNS 实现不应对其解析，产生额外 DNS 流量的风险极低，更为安全。
-    const _sentinelStart = "DOMAIN,START-script-sentinel-marker.invalid,REJECT";
-    const _sentinelEnd   = "DOMAIN,END-script-sentinel-marker.invalid,REJECT";
+    const _SENTINEL_START = "DOMAIN,START-script-sentinel-marker.invalid,REJECT";
+    const _SENTINEL_END   = "DOMAIN,END-script-sentinel-marker.invalid,REJECT";
     {
         // 栈重建：单次遍历，O(N) 时间，O(N) 空间。
         // START 压栈时记录 newRules.length 快照；END 匹配时回退 length 至快照值，等效删除整段旧注入区块。
@@ -171,11 +170,11 @@ function main(config) {
         const newRules = [];
         const stack    = [];
         for (const rule of config.rules) {
-            if (rule === _sentinelStart) {
+            if (rule === _SENTINEL_START) {
                 stack.push(newRules.length);
                 continue;
             }
-            if (rule === _sentinelEnd) {
+            if (rule === _SENTINEL_END) {
                 if (stack.length > 0) {
                     newRules.length = stack.pop(); // O(1) 截断，等效 splice 但无线性拷贝开销
                 }
@@ -518,7 +517,7 @@ function main(config) {
         return config;
     }
 
-    // 💡 哨兵为合法三段式规则（见 _sentinelStart / _sentinelEnd 声明）；纯注释字符串（如 "# START"）会导致内核加载失败。
+    // 💡 哨兵为合法三段式规则（见 _SENTINEL_START / _SENTINEL_END 声明）；纯注释字符串（如 "# START"）会导致内核加载失败。
 
     // ════════════ 2. 数据层（域名列表 + 注入辅助工具，在此维护） ════════════
     //
@@ -1153,7 +1152,7 @@ function main(config) {
         "PROCESS-NAME,Ludashi.exe,REJECT",                   // 鲁大师主程序
         "PROCESS-NAME,LDSGameBox.exe,REJECT",                // 鲁大师游戏盒
         "PROCESS-NAME,DTLocker.exe,REJECT",                  // 驱动人生锁屏弹窗
-        "PROCESS-NAME,DriverGenius.exe,REJECT",              // 驱动精灵。⚠️ 慎用：拦截后驱动精灵无法下载
+        "PROCESS-NAME,DriverGenius.exe,REJECT",              // 驱动精灵。⚠️ 慎用：拦截后驱动下载功能失效（进程无法联网），驱动更新将中断
         // "PROCESS-NAME,Wps.exe,REJECT",                    // WPS 办公软件。⚠️ 慎用：WPS 主进程，拦截后全部联网功能失效（包括文档云同步）
     ];
     const processProxyRules = [ // 进程代理（当前为空占位，示例见下方）
@@ -1215,7 +1214,7 @@ function main(config) {
         "DOMAIN-SUFFIX,behance.net,DIRECT",                // Behance 设计作品展示平台
         "DOMAIN-SUFFIX,behance.adobe.com,DIRECT",          // Behance Adobe 子域
         "DOMAIN-SUFFIX,color.adobe.com,DIRECT",            // Adobe Color 配色工具
-        "DOMAIN,assets.adobe.com,DIRECT",                  // Adobe 静态资源 CDN（内容分发网络），精确匹配（若实测需要子域可改 DOMAIN-SUFFIX）
+        "DOMAIN,assets.adobe.com,DIRECT",                  // Adobe 静态资源 CDN（内容分发网络），精确匹配以防过度放行（若实测需要子域可改 DOMAIN-SUFFIX）
         // 官网放行
         "DOMAIN-SUFFIX,autodesk.com,DIRECT",               // Autodesk 官网放行（下载/账户/论坛）
         "DOMAIN-SUFFIX,corel.com,DIRECT",                  // 父域放行（主域即官网，精确子域拦截见 corelSuffix）
@@ -1232,8 +1231,8 @@ function main(config) {
         "DOMAIN-SUFFIX,lanzoux.com,DIRECT",       // 蓝奏云备用域 2
         // 可选扩展区
         "DOMAIN-SUFFIX,masuit.com,DIRECT",        // 学习版软件站 懒得勤快
-        "DOMAIN-SUFFIX,masuit.net,DIRECT",        // 学习版软件站 懒得勤快
-        "DOMAIN-SUFFIX,masuit.org,DIRECT",        // 学习版软件站 懒得勤快
+        "DOMAIN-SUFFIX,masuit.net,DIRECT",        // 学习版软件站 懒得勤快 备用域1
+        "DOMAIN-SUFFIX,masuit.org,DIRECT",        // 学习版软件站 懒得勤快 备用域2
         "DOMAIN-SUFFIX,423down.com,DIRECT",       // 知名绿色软件站
         "DOMAIN-SUFFIX,ghxi.com,DIRECT",          // 果核剥壳（绿色软件站）
         "DOMAIN-SUFFIX,mpyit.com,DIRECT",         // 殁漂遥软件分享站
@@ -1299,6 +1298,7 @@ function main(config) {
         // 显式 LAYER_ORDER 数组使优先级意图一目了然，且防止未来新增层时因键位置隐性改变注入顺序）。
         const layerPools = { allow: [], block: [], process: [], proxy: [], aggressive: [], direct: [] };
         // pushLayer：逐项追加，避免 push(...rules) 在规则量超过 V8 参数栈上限（~65536）时抛出 RangeError
+        // 此检查面向将来 pushLayer 被动态层名调用的情形；当前所有调用均使用字符串字面量，本行在现有代码路径下不会触发，属前向防御。
         const pushLayer = (layer, rules) => {
             if (!(layer in layerPools)) throw new Error(`[Script] pushLayer: 未知层 '${layer}'，请检查 layerPools 键名与 LAYER_ORDER 是否一致`);
             for (const r of rules) layerPools[layer].push(r);
@@ -1415,12 +1415,12 @@ function main(config) {
                 throw new Error(`[Script] layerPools 键 '${k}' 不在 LAYER_ORDER 中，该层规则将被静默丢弃`);
         }
 
-        const finalPool = [_sentinelStart];
+        const finalPool = [_SENTINEL_START];
         // 按 LAYER_ORDER 顺序展开各层，单次迭代用 push(r) 规避大型数组 push(...arr) 的 RangeError。
         for (const key of LAYER_ORDER) {
             for (const r of layerPools[key]) finalPool.push(r);
         }
-        finalPool.push(_sentinelEnd);
+        finalPool.push(_SENTINEL_END);
 
         // 插入到规则列表最前面（最高优先级）
         config.rules = finalPool.concat(config.rules);
@@ -1477,7 +1477,7 @@ function main(config) {
         // ⚠️ 降级说明：规则注入异常时不再立即 return，让代码继续执行到下方独立的 Hosts 注入 try 块。
         //    Hosts DNS 覆写（尤其是后门域名黑洞化）在规则注入失败时仍有独立防护价值，应尽力执行。
         // ⚠️ 降级场景的哨兵边界说明：
-        //   _sentinelEnd 在 finalPool 构建阶段（LAYER_ORDER for 循环结束后）即已压入，
+        //   _SENTINEL_END 在 finalPool 构建阶段（LAYER_ORDER for 循环结束后）即已压入，
         //   config.rules 赋值（finalPool.concat）是单条同步语句，在 JS 单线程模型中不会被中断：
         //     · 若错误发生在赋值之前（for 循环中），config.rules 尚未被写入，返回干净状态；
         //     · 若错误发生在赋值之后（console.log 阶段），全量注入规则已完整写入（不存在半写入状态），且两端哨兵均已完整写入，不产生孤儿哨兵。
@@ -1503,12 +1503,13 @@ function main(config) {
     //
     //   ⚠️ 两种模式的共同边界——应用使用硬编码 IP（完全绕过 DNS）：
     //     app → 直接发起 IP 连接 → 路由规则匹配 → DOMAIN-SUFFIX / DOMAIN 规则不触发（无域名可匹配） → PROCESS-NAME / IP-CIDR / NETWORK 规则触发 → REJECT-DROP
-    //     此时 DOMAIN-SUFFIX 类规则（含 backdoorSuffix）同样无效；唯一有效防线为 PROCESS-NAME（进程规则）和 IP-CIDR 规则。
+    //     此时 DOMAIN 类规则全部失效，仅剩 PROCESS-NAME（进程规则）和 IP-CIDR 规则作为有效防线。
     //
     // 💡【Hosts 与 Rules 分层说明】
     //    hosts 命中后，DNS 已在解析阶段返回拦截地址，TCP 连接不会发出，rules 层（DOMAIN-SUFFIX REJECT-DROP 等）不会执行。
     //    rules 层是 hosts 未生效时（用户未开启「使用 Hosts」或应用使用硬编码 IP 绕过 DNS）的兜底。
-    //    两者存在有意的依赖关系：Hosts 层优先，rules 层兜底；Hosts 命中时 rules 不参与，形成有序的主防线（Hosts）与兜底防线（rules）串联结构，而非两层并行冗余。
+    //    两者存在有意的依赖关系：Hosts 层优先，rules 层兜底；Hosts 命中时 rules 不参与，
+    //    两者形成有序的优先级覆盖结构——Hosts 为主防线、rules 为兜底——而非两层并行对同一流量重复处理的冗余关系。
     //
     //   各 HOSTS_MODE 的连接失败类型：
     //     0.0.0.0 / :: → ENETUNREACH（Linux/Android）/ WSAEINVAL（Windows，10022，通常返回，因 Windows 版本而异：0.0.0.0 为非法连接目标）
@@ -1613,7 +1614,7 @@ function main(config) {
             //
             // [优化] 仅追加新条目，不对全量 fake-ip-filter 排序，保留订阅原有顺序。
             //        全量重排会触发 Mihomo DNS hash 重建，可能导致连接瞬断，故仅追加。
-            //        保留 .sort() 以确保将来若同时存在 *.domain 和 +.domain 条目时，*（ASCII 42）排在 +（ASCII 43）之前，保证每次 reload 的追加顺序一致。
+            //        保留 .sort() 确保每次 reload 的追加顺序幂等一致，防止 hijackDomains 将来改为动态生成时产生随机排列；当前静态数组无此风险，sort 为前向预防。
             //        确保将来 hijackDomains 改为动态生成时每次 reload 追加顺序仍一致，与"不打乱订阅原有顺序"不矛盾（仅对新条目排序）。
             // ⚠️ 注意：CVR UI 若开启了某些预设模板或覆盖 DNS 配置，可能清空或重置 fake-ip-filter 列表，导致此处追加的条目丢失。
             //    建议在 CVR 日志中确认最终生效的 fake-ip-filter 条目包含本脚本注入的域名。
@@ -1837,6 +1838,7 @@ function main(config) {
  *
  *   变量和常量的命名准则：
  *    _camelCase 对应运行时临时变量，_UPPER_CASE 对应运行时常量（冻结集合/正则），不应被修改。两段命名语义上是对称的，类似于"私有变量"与"私有常量"的区分惯例。
+ *    _Core 后缀进一步标识"接受已清洗 cleanName，不再调用 sanitizeName"的轻量版本，与公开接口（无 _Core 后缀）形成成对设计。
  * 
  *   🛠️ 编程防御：
  *     - 严禁直接访问 config[n]，必须使用 ?. 或 Array.isArray() 级联校验
