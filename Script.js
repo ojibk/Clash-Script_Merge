@@ -19,7 +19,7 @@
  * ══════════════════════════ ░░ 功能概览 ░░ ══════════════════════════
  *
  *   - 智能识别代理策略组（多级降级策略：优选组 → 兜底组 → 容错选取 → 全部失败则中止注入）
- *   - 注入拦截规则（Adobe / Corel / Autodesk 等激活 / 遥测域名）
+ *   - 注入拦截规则（Adobe / Corel / Autodesk 等软件的激活域名与遥测域名）
  *   - 注入代理 / 直连规则
  *   - 进程规则（需管理员权限 + TUN 模式，即 Mihomo 创建虚拟网卡接管全部流量）
  *   - 激进阻断模块（默认关闭，需谨慎开启）
@@ -85,7 +85,7 @@ function main(config) {
     //
     // 各模式连接失败类型（来源：Mihomo wiki + OS 网络栈行为）：
     //   ipv4-loopback  → 127.0.0.1          → 本地 TCP 栈返回 RST（无监听端口），应用层收到 ECONNREFUSED，回环模拟拦截，更温和
-    //   ipv4-blackhole → 0.0.0.0            → 错误码取决于操作系统：无论哪种错误码，TCP SYN 都不会发出，阻断速度最快。但部分应用可能将上述错误归类为断网状态而显示断网提示。
+    //   ipv4-blackhole → 0.0.0.0            → 错误码取决于操作系统：无论哪种错误码，TCP SYN 都不会发出，阻断速度最快。但部分应用可能将此错误误判为断网状态，进而显示断网提示。
     //   dual-loopback  → 127.0.0.1 + ::1    → 同 ipv4-loopback，IPv4/IPv6 双栈回环模拟拦截
     //   dual-blackhole → 0.0.0.0 + ::       → 同 ipv4-blackhole，IPv4/IPv6 双栈黑洞拦截（慎用：向 :: 发起连接的 OS 级行为因平台而异，部分运行时对此处理不一致，可能导致应用异常）
     //
@@ -121,7 +121,7 @@ function main(config) {
     // ══════════════════════ 防御性检查 ══════════════════════
 
     if (!config || typeof config !== "object" || Array.isArray(config)) {
-        throw new Error("[Script] main() 收到非法 config（null / 非对象类型），终止执行以保护内核加载安全");
+        throw new Error("[Script] main() 收到非法 config（null / 数组 / 非对象类型），终止执行以保护内核加载安全");
     }
     if (!Array.isArray(config.rules))           config.rules = [];
     if (!Array.isArray(config["proxy-groups"])) config["proxy-groups"] = [];
@@ -215,7 +215,7 @@ function main(config) {
     // 逻辑：多级降级，兼容大多数订阅格式。无可用组时终止注入，防止 Mihomo 内核崩溃（见容错选取策略及代理组排除断言）。
 
     let proxyGroupName = null; // 初始为 null，强制要求下游所有赋值路径全覆盖；任何未赋值路径均会触发代理组排除断言安全拦截。
-    // 注意：在当前实现路径中，null 不会触发代理组排除断言（因在上方识别失败路径中已提前 return）；
+    // 注意：当前路径：null 不到达断言（识别失败已 return config）;防御路径（仅在未来分支遗漏赋值时触发）：sanitizeName(null) →""→ 断言拦截;
     //   所有真实执行路径均会在策略链结束前显式赋值（成功时为 mainGroup.name）；识别失败时直接 return config。
     // 若将来新增分支遗漏赋值，sanitizeName(null) 返回 ""，断言 !_sanitizedProxy 为 true 并安全拦截。
     // 💡 当前实现中识别成功时 proxyGroupName 必定被赋值为组名；若将来新增代码分支，须确保也对其显式赋值，否则 null 会到达代理组排除断言并触发安全兜底（中止注入）。
@@ -299,6 +299,7 @@ function main(config) {
     // sanitizeName：统一不可见字符与 Bidi 控制符清理逻辑（完整列表见附录特殊字符集说明），防止视觉欺骗攻击与比较失配。
     // @param {string} name - 原始组名，函数内部负责清洗；调用方无需预先清洗，传入原始字符串即可。
     // @returns {string} 清洗后的组名（已移除不可见控制符并 trim）；非字符串输入返回空字符串。
+    // ⚠️ g 是功能必要条件：需要清除字符串中所有不可见字符，而非仅首次命中。
     const _SANITIZE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/g;
     function sanitizeName(name) {
         if (typeof name !== "string") return "";
@@ -350,7 +351,8 @@ function main(config) {
         const _KW_RE = /节点(?:选择)?|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅/i;
 
         // 预计算所有组的 cleanName，避免各轮 find 各自对同一组名重复调用 sanitizeName。
-        // 对含 100+ 代理组的大型订阅，最坏情况下五轮各遍历一次，sanitizeName（_SANITIZE_RE.replace）被执行 5×N 次；预计算降为 1×N，后续各轮直接引用 cleanName。
+        // 对含 100+ 代理组的大型订阅，最坏情况下五轮各遍历一次，sanitizeName（_SANITIZE_RE.replace）被执行 1×N 次 sanitize + 5×N 次正则测试；
+        // 预计算降为 1×N，后续各轮直接引用 cleanName。
         const _groupsPrepped = config["proxy-groups"].map(g => ({
             g,
             cleanName: sanitizeName(g?.name)
@@ -379,6 +381,7 @@ function main(config) {
             _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
                 _isEligibleGroupCore(cleanName) && !_isFallbackGroupCore(cleanName) &&
                 /代理|节点|选择|Proxy/i.test(cleanName) &&
+                VALID_PROXY_TYPES.has(g?.type) &&
                 Array.isArray(g?.proxies) && g.proxies.length > 3
             );
         }
@@ -489,7 +492,7 @@ function main(config) {
     // ❗ 规则字段注入安全断言：proxyGroupName（原始值）不得含破坏 Clash 规则语法或 YAML 结构的字符。
     // 💡【设计意图：容错识别 vs 安全注入分离】
     //   sanitizeName 在"识别阶段"清洗组名，目的是宽容匹配，因编辑器或复制粘贴意外引入不可见控制符的代理组（如名称带 BOM 的组），
-    //   其用户本意是合法代理出口，不应因不可见字符导致识别阶段漏选。此断言在"注入阶段"对原始值实施一票否决，Mihomo 内核按原始名称匹配策略组，
+    //   用户设置该组的本意是合法代理出口，不应因组名中意外混入的不可见字符导致识别阶段漏选。此断言在"注入阶段"对原始值实施一票否决，Mihomo 内核按原始名称匹配策略组，
     //   注入只能使用原始名；若原始名含控制符，会破坏 Clash 规则行语法，危及整个规则文件解析。
     //   两者不是冗余，是刻意的"宽进严出（识别阶段宽容，注入阶段严格）"纵深防御：识别尽量不漏选，注入绝对不破坏语法。
     // proxyGroupName 存储原始值（mainGroup.name），sanitizeName 的清洗结果不用于此处。清洗结果仅用于排除词汇匹配，注入时仍使用原始值。
@@ -596,7 +599,7 @@ function main(config) {
         "na1e.services.adobe.com",                // Genuine 服务备用
         // "adobedtm.com",                           // Adobe DTM 旧版遥测域（DTM 已于 2021 年停止维护，新版 CC 不再依赖此域），可能仍有旧版 CC 存量实例使用
         "crs.cr.adobe.com",                       // License check（许可证检查）
-        "cclibraries-defaults-cdn.adobe.com",     // CC Libraries 默认资源 CDN（内容分发网络）
+        "cclibraries-defaults-cdn.adobe.com",     // CC Libraries 默认资源 CDN（内容分发网络），截后会导致跨 CC 应用的共享资源库无法加载默认资源，影响正版用户。
         "adobesearch.adobe.io",                   // 搜索遥测
         "p13n.adobe.io",                          // 个性化遥测（p13n = personalization 字符数缩写）
         "ic.adobe.io",                            // Insight Collector（洞察收集器）
@@ -664,8 +667,7 @@ function main(config) {
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",           // 阻断 adobe.io 所有 UDP 流量（含 QUIC/443），强制回退 TCP
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT",      // 阻断统计域所有 UDP 流量（含 QUIC/443）
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",          // 阻断 adobe.com 所有 UDP 流量（含 QUIC/443）
-        `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE_STR})),REJECT`,
-        // 阻断随机子域 QUIC（遥测特征，8-12位，引用 _ADOBE_RAND_RE_STR 统一引用源）
+        `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE_STR})),REJECT`, // 阻断随机子域 QUIC（遥测特征，8-12位，引用 _ADOBE_RAND_RE_STR 统一引用源）
         // ⚠️ 转义链路：JS 字符串 "\\." → 字符串值 "\." → Mihomo Go regexp 接收 \. → 匹配字面点。
         //    AND 规则内嵌 DOMAIN-REGEX 的括号解析基于 Mihomo v1.15+ 实测；旧版可能静默忽略整条 AND 规则，
         //    此时 adobeUdpBlock 其余精确条目（DOMAIN-SUFFIX）仍有效，此条失效不影响整体覆盖。
@@ -1144,7 +1146,7 @@ function main(config) {
         // ⚠️ 部分请求经 msedgewebview2.exe 发出（系统共享进程，不可拦截），已由 corelSuffix 域名层覆盖。
         "PROCESS-NAME,CorelDRW.exe,REJECT-DROP",
         // ──── 国产流氓软件：改用 REJECT（快速拒绝，用户感知更好，不卡死软件）────
-        "PROCESS-NAME,360sd.exe,REJECT",                     // 360 杀毒主进程
+        "PROCESS-NAME,360sd.exe,REJECT",                     // 360 杀毒主进程，可能导致 360 反复弹窗报告"网络异常"，若印证则改用 REJECT-DROP 让 360 静默超时反而更好。
         "PROCESS-NAME,360tray.exe,REJECT",                   // 360 系统托盘弹窗进程
         "PROCESS-NAME,2345Mini.exe,REJECT",                  // 2345 迷你窗口/弹窗进程
         "PROCESS-NAME,2345Helper.exe,REJECT",                // 2345 后台辅助进程
@@ -1256,7 +1258,7 @@ function main(config) {
         // ⚠️ 功能上 SUFFIX 单独即可覆盖全部情形，REGEX 并非必要；保留 REGEX 的意义：明确表达"拦截所有 adobe.io 子域"的设计意图，
         //    且便于未来独立调整子域与裸域的动作（如：子域 REJECT-DROP、裸域改 REJECT），分层更灵活。
         //    如无上述分层需求，可安全删除 REGEX 而零覆盖损失（SUFFIX 完全兜底）。
-        "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",        // ⚠️ 激进：所有 adobe.io 子域；覆盖范围已被下方 SUFFIX 包含，保留为意图表达与分层灵活性（见上方说明）
+        "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",        // ⚠️ 激进：所有 adobe.io 子域；覆盖范围已被下方 SUFFIX 包含，保留意图为将来独立调整子域与裸域动作
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // ⚠️ 激进：adobe.io 裸域+全部子域（SUFFIX 为 REGEX 的严格超集，此条为功能必要条目）
         // 多平台共用域（Zapier/Notion/GitHub Actions 也在用，慎用）
         "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP",
@@ -1616,13 +1618,13 @@ function main(config) {
             //        全量重排会触发 Mihomo DNS hash 重建，可能导致连接瞬断，故仅追加。
             //        保留 .sort() 确保每次 reload 的追加顺序幂等一致，防止 hijackDomains 将来改为动态生成时产生随机排列；当前静态数组无此风险，sort 为前向预防。
             //        确保将来 hijackDomains 改为动态生成时每次 reload 追加顺序仍一致，与"不打乱订阅原有顺序"不矛盾（仅对新条目排序）。
-            // ⚠️ 注意：CVR UI 若开启了某些预设模板或覆盖 DNS 配置，可能清空或重置 fake-ip-filter 列表，导致此处追加的条目丢失。
+            // ⚠️ 注意：CVR UI 若开启了某些预设模板或覆盖 DNS 配置，可能清空或重置 fake-ip-filter 列表，导致本脚本注入的条目在该次加载中无法生效（被 UI 设置覆盖清空）。
             //    建议在 CVR 日志中确认最终生效的 fake-ip-filter 条目包含本脚本注入的域名。
             if (!Array.isArray(config.dns["fake-ip-filter"])) {
                 config.dns["fake-ip-filter"] = [];
             }
-            // 【性能优化】单次遍历同时完成归一化、去重与分类，避免双重 Set 构造开销。
-            // 先 trim 归一化（消除首尾空白），过滤非法条目，再用 existingSet 去重并写入 cleanExisting。
+            // 【性能优化】单次遍历同时完成归一化、去重与分类，避免双重 Set 构造开销。先 trim 归一化（消除首尾空白），过滤非法条目，再用 existingSet 去重并写入 cleanExisting。
+            // hosts 字段采用对象展开覆写，而 fake-ip-filter 采用数组追加，两者生命周期管理策略不一致，fake-ip-filter 具有累加性，如需清理请重置 CVR 的 DNS 设置或重置订阅。
             const existingSet   = new Set();
             const cleanExisting = [];
             for (const entry of config.dns["fake-ip-filter"]) {
