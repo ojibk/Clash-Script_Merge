@@ -602,7 +602,8 @@ function main(config) {
     //     Creative Cloud.exe ← CC 桌面客户端含授权心跳（基于依赖链考量的必要豁免：心跳放行不触发重验证，TUN 进程规则本身不可靠）
     //     CCXProcess.exe     ← CC 扩展宿主进程（同 Creative Cloud.exe，必要豁免）
     //     CoreSync.exe       ← CC 同步守护进程（同上）
-    //   取舍依据：非官方激活环境中，补丁通过阻断 AdobeGCClient.exe 的出站网络连接来绕过激活验证，
+    //   取舍依据：非官方激活环境中，补丁修改了 AdobeGCClient.exe 的本地验证逻辑（本地返回激活成功，无需真实网络应答）；
+    //   本脚本在此基础上阻断其出站连接，作为额外网络层防线，防止激活状态回报和设备信息上传。
     //   其余进程的心跳即便放行也不会触发重新验证。进程规则本身需管理员+TUN，不可靠。
     //
     // ⚠️【QUIC（RFC 9000；基于 UDP 的安全传输协议，内嵌 TLS 1.3）豁免机制】Firefly 相关 .adobe.io 域名在 adobeUdpBlock 之前注入（first-match），
@@ -629,11 +630,12 @@ function main(config) {
         //    若追求最严格的拦截策略，可手动将其移至 adobeSuffix（改为 REJECT）并重新测试 Firefly 功能是否正常，确认后再决定是否从本数组移除。
         "scdown.adobe.io",                        // 【推断·放行风险低、漏拦截风险可接受】基于行为推断，未经抓包验证；Firefly 在实测中依赖此端点（即使功能定义不明）
         "lcs-cops.adobe.io",                      // 【推断】云端授权策略，推断为 Firefly 订阅鉴权；社区有 2024+ PS 版本产生鉴权流量的反馈，但无公开抓包资料支撑，维持待确认。
+                                                  //  若此域实为 CC 激活验证端点（非 Firefly 专属），isFireflyActive=true 时将被错误放行，激活拦截防线出现缺口。
     ];
 
     // 🚫 ─────────────────────── Adobe 激活 / 遥测核心拦截 ───────────────────────
     // 💡 关于 REJECT vs REJECT-DROP（Mihomo 的两种拒绝策略）：
-    //    REJECT      发送 TCP RST（TCP 侧）/ ICMP Port Unreachable（UDP 侧），软件立即收到连接拒绝，放弃重试并进入离线模式，启动无卡顿，推荐用于遥测/授权域名。
+    //    REJECT      发送 TCP RST（TCP 侧）/ ICMP Port Unreachable（UDP 侧），软件快速感知失败（通常切换离线模式或放弃重试），启动无卡顿，推荐用于遥测/授权域名。
     //    REJECT-DROP 静默丢包，不回应任何数据包（TCP 和 UDP 均适用），
     //                TCP 侧：软件 Socket 陷入 SYN_SENT 直至系统 TCP 超时；
     //                UDP 侧：数据包被无声丢弃，软件等待响应直至应用层超时；
@@ -681,7 +683,7 @@ function main(config) {
 
     // 正则：拦截随机子域（遥测特征：8-12 位随机字符）改用 REJECT（非 REJECT-DROP）：
     // 遥测随机子域无"拖延感知"的必要，此类域名不存在切换备用域名的自适应逻辑，
-    // REJECT 让软件立即感知失败并进入离线模式，避免 15–30s 超时卡顿影响 PS 启动体验。
+    // REJECT 让软件快速感知失败（通常切换离线模式或放弃重试），避免 15–30s 超时卡顿影响 PS 启动体验。
     const adobeRegex = [
         `DOMAIN-REGEX,${_ADOBE_RAND_RE_STR},REJECT`,
         // ⚠️ senseicore（10位）/ senseimds（9位）也满足 _ADOBE_RAND_RE_STR，但均为具名服务域名而非随机遥测子域。
@@ -727,34 +729,7 @@ function main(config) {
         //    Mihomo 需开启 Sniffer（dns.sniffer）解析 QUIC 握手 SNI 才能识别域名；
         //    实际生效取决于 Mihomo 版本，不可作为唯一防线，上方精确规则为主要覆盖。
         //
-        // ⚠️【ECH 架构级边界——仅适用于绕过 Mihomo DNS 的场景】
-        //    ECH（Encrypted Client Hello）将 TLS ClientHello 中的 SNI 加密，使 Sniffer 无法嗅探域名。
-        //    但其对 DOMAIN 类规则的实际影响，取决于 Mihomo 的域名识别路径：
-        //
-        //   路径A（标准 Fake-IP + TUN 模式，CVR 默认配置路径）：
-        //     app → Mihomo DNS → 返回 198.18.x.x（Fake-IP），记录映射 198.18.x.x→域名
-        //     → TUN 截获 QUIC 流量到 198.18.x.x → Mihomo 查 Fake-IP 表 → 域名已知
-        //     → DOMAIN-SUFFIX / DOMAIN-KEYWORD 规则正常生效，ECH 加密与否无关。
-        //     → ✅ 此路径下本注释块描述的 MATCH 滑落问题【不成立】。
-        //
-        //   路径B（应用绕过 Mihomo DNS，使用 DoH / DoT 或硬编码真实 IP）：
-        //     Mihomo 无 Fake-IP 映射记录 → 只能靠 Sniffer 嗅探 SNI
-        //     → DOMAIN 类规则全部失效；PROCESS-NAME 规则不依赖 SNI，仍可命中（如 AdobeGCClient.exe）；
-        //       若无 PROCESS-NAME 规则覆盖（Firefly 渲染进程 / PS 调用 Firefly API 的进程通常无对应条目），
-        //       流量最终滑落至 MATCH 兜底策略
-        //     → 若兜底为 DIRECT，Firefly 因地区限制直连失败；内核产生 IP 命中 MATCH 的日志，
-        //       但域名信息丢失，溯源难度极高（可观测性降级，非完全静默）
-        //     → 缓解：将 MATCH 兜底策略指向代理出口（而非 DIRECT）；或封锁外部 DoT 端口（853/TCP）；
-        //             DoH 与 HTTPS 共用 443 端口，无法通过端口封锁，需域名级阻断已知 DoH 解析器
-        //             （如 DOMAIN,one.one.one.one,REJECT / DOMAIN,dns.google,REJECT 等；
-        //              1.1.1.1 为 IP 地址而非域名，须用 IP-CIDR,1.1.1.1/32,REJECT 阻断直连）
-        //     → ✅ 此路径下 ECH 滑落 MATCH 的描述成立。
-        //
-        //   → 拦截侧兜底：
-        //      · 路径A：DOMAIN 规则正常生效，PROCESS-NAME 为附加纵深，非唯一手段。
-        //      · 路径B：DOMAIN 规则全部失效，PROCESS-NAME 规则（通过系统 Socket 获取进程信息，
-        //        不依赖 SNI，不受 ECH 影响）是此路径下唯一有效的域名无关拦截手段；
-        //        但 Firefly 渲染进程等无对应 PROCESS-NAME 条目，无法被进程规则覆盖。
+        // ⚠️【ECH 架构级边界——仅适用于绕过 Mihomo DNS 的场景。详见 adobeSharedDeps 注释中的路径A/B 分析】
     ];
 
     // Adobe WebSocket 遥测（2025 年新增：以 WSS（WebSocket Secure）建立持久 TCP 长连接上传遥测；
@@ -781,13 +756,10 @@ function main(config) {
     //           其余未覆盖进程详见 adobeSharedDeps 注释中的 Firefly 必要妥协。
     // 关于 adobeUdpBlock 与 Firefly .adobe.io 域名的 QUIC 豁免机制：
     //   最终规则池展开顺序（由 LAYER_ORDER 决定，allow → block，与 push 调用书写顺序无关）：
-    //   adobeSharedDeps+adobeFireflyOnly（allow 层）→ adobeSuffix → adobeRegex → adobeUdpBlock（block 层）
-    //   isFireflyActive=true 时，allow 层的精确 DOMAIN-SUFFIX 规则（如
-    //   firefly-api.adobe.io / clio.adobe.io 等）已在 adobeUdpBlock 之前入 pool。
-    //   Mihomo first-match（首条命中生效）：Firefly 域名的 UDP 流量先命中 allow 层走代理，
-    //   adobeUdpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)) 不再执行。
-    //   → 豁免效果由注入顺序自动保证（allow 层先于 adobeUdpBlock 入 pool，先命中即生效），无需额外处理。
-    //   ⚠️ 前提：此豁免仅在 Mihomo 能识别 SNI 或存在 Fake-IP 映射时成立。
+    //   adobeSharedDeps+adobeFireflyOnly（allow 层）→ adobeSuffix → adobeRegex → adobeUdpBlock（block 层）isFireflyActive=true 时，
+    //   allow 层的精确 DOMAIN-SUFFIX 规则（如 firefly-api.adobe.io / clio.adobe.io 等）已在 adobeUdpBlock 之前入 pool。
+    //   Mihomo first-match（首条命中生效）：Firefly 域名的 UDP 流量先命中 allow 层走代理，adobeUdpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)) 不再执行。
+    //   → 豁免效果由注入顺序自动保证（allow 层先于 adobeUdpBlock 入 pool，先命中即生效），无需额外处理。⚠️ 前提：此豁免仅在 Mihomo 能识别 SNI 或存在 Fake-IP 映射时成立。
     //   ⚠️ ECH 路径分析同上，详见 adobeSharedDeps 注释。
     const adobeFireflyOnly = [
         // Firefly AI 核心。
@@ -930,9 +902,9 @@ function main(config) {
         // 来源：多份抓包记录及 hosts 屏蔽教程（CSDN / 博客园 / 52pojie）
         // XMind 2020+（Electron）与 XMind 8（Java）均通过以下域名验证授权：
         "www.xmind.app",        // XMind 2020+ 授权验证主接口（Electron 版）
-        "www.xmind.net",        // XMind 8 授权验证接口（Java 版）/ 国际更新检查
+        "www.xmind.net",        // XMind 8 授权验证接口（Java 版）/ 更新检查
         "www.xmind.cn",         // XMind 中文站授权验证 / 国内更新检查
-        "dl2.xmind.cn",         // XMind 8 更新安装包下载服务器（弹出更新提示的来源）
+        "dl2.xmind.cn",         // XMind 8 更新安装包下载 CDN（版本检查由 www.xmind.net 触发，此域仅承载安装包分发
         // ⚠️ 扩展提醒：如需追加其他 XMind 子域，请注意 api.xmind.net / api.xmind.app 等 API 端点可能承载功能性请求（而非仅授权验证），拦截前应抓包确认，避免影响正常使用。
 
         // ──────────────────────────── Listary ────────────────────────────
@@ -968,7 +940,7 @@ function main(config) {
         "pcfg.wps.cn",                           // WPS 配置/广告下发
         "wps.com.cn",                            // WPS 备用主域（.com.cn 为金山注册的备用主域）
                                                  // ⚠️ 全域 SUFFIX 拦截（含所有子域）；无抓包资料确认其子域仅含遥测端点，拦截后可能影响账号类或功能类子域。
-                                                 //    若发现登录异常，可改用精确 DOMAIN 匹配（类比 360.cn 的处理方式）。
+                                                 //    若发现登录异常，可改用精确子域 DOMAIN 匹配（与 360.cn 的保守策略一致：主域放行，仅拦截已确认的遥测子域）
         "wpsgold.wpscdn.cn",                     // WPS 广告资源 CDN（内容分发网络）
         // "sync.wps.cn",                        // ⚠️ 已注释：WPS 云文档同步，拦截后云同步失效
         // 海康威视（仅精确子域，主域不拦截）
@@ -992,9 +964,10 @@ function main(config) {
         // "api.sogoucloud.com",                 // ⚠️ 已注释：搜狗输入法云端接口，域名拼写无公开抓包资料确认，待验证后启用
         // 腾讯 Bugly 崩溃上报 SDK（Software Development Kit，软件开发工具包；大量国产软件集成，含设备指纹）
         "bugly.qq.com",                          // 腾讯 Bugly 崩溃上报 SDK
+        "bugly.gtimg.com",                          // 腾讯 Bugly 管理后台使用的静态资源 CDN（未覆盖）
         // 字节跳动系（抖音/剪映/头条/西瓜共用）
         "log.snssdk.com",                        // 字节系客户端日志上报（头条/西瓜等）
-        "i.snssdk.com",                          // 字节跳动国内 SDK（软件开发工具包）遥测
+        "i.snssdk.com",                          // 字节跳动国内 SDK 主接口域（⚠️ 非单纯遥测：含账号认证、功能 API 等，拦截后可能导致字节系 APP 功能性断连，非仅屏蔽上报）
         "log.byteoversea.com",                   // 字节跳动海外日志上报（抖音/剪映共用）
         // 剪映专业版（CapCut）
         "metrics.capcut.com",                    // 剪映遥测上报
@@ -1113,13 +1086,11 @@ function main(config) {
     // ─────── Mozilla / Firefox 遥测（REJECT 立即终止连接，减少浏览器重试） ───────
     const mozillaSuffix = [
         "telemetry.mozilla.org",                 // Firefox 遥测主域
-        "incoming.telemetry.mozilla.org",        // 遥测数据接收端点
         "experiments.mozilla.org",               // Firefox 实验性功能遥测
         "healthreport.mozilla.org",              // Firefox 健康报告上报
         "metrics.mozilla.com",                   // 指标统计
         "crash-stats.mozilla.com",               // Mozilla Crash Reporter 崩溃报告
-        // ⚠️ 副作用：拦截后 Firefox 地址栏持续显示「网络连接可能受限」警告，
-        //    对用户有明显可感知的负面体验（该请求本身无意义，但与遥测不同，拦截会影响 UI 显示）。
+        // ⚠️ 副作用：拦截后 Firefox 地址栏持续显示「网络连接可能受限」警告，对用户有明显可感知的负面体验（该请求本身无意义，但与遥测不同，拦截会影响 UI 显示）。
         //    如能接受上述副作用，可取消以下注释以屏蔽此探测请求：
         // "detectportal.firefox.com",           // Firefox 网络连接检测（该探测本身无业务价值），但拦截后 Firefox 地址栏持续报"网络连接可能受限"
     ];
@@ -1197,7 +1168,7 @@ function main(config) {
         // ⚠️ 部分请求经 msedgewebview2.exe 发出（系统共享进程，不可拦截），已由 corelSuffix 域名层覆盖。
         "PROCESS-NAME,CorelDRW.exe,REJECT-DROP",
         // ──── 国产流氓软件：改用 REJECT（快速拒绝，用户感知更好，不卡死软件）────
-        "PROCESS-NAME,360sd.exe,REJECT",                     // 360 杀毒主进程，可能导致 360 反复弹窗报告"网络异常"，若印证则改用 REJECT-DROP 让 360 静默超时反而更好。
+        "PROCESS-NAME,360sd.exe,REJECT-DROP",                // 360 杀毒主进程，可能导致 360 反复弹窗报告"网络异常"，改用 REJECT-DROP 让 360 静默超时反而更好。
         "PROCESS-NAME,360tray.exe,REJECT",                   // 360 系统托盘弹窗进程
         "PROCESS-NAME,2345Mini.exe,REJECT",                  // 2345 迷你窗口/弹窗进程
         "PROCESS-NAME,2345Helper.exe,REJECT",                // 2345 后台辅助进程
@@ -1211,7 +1182,7 @@ function main(config) {
     const processProxyRules = [ // 进程代理（当前为空占位，示例见下方）
         // 示例：修改进程名后取消注释即可——策略组名由脚本自动填入（proxyGroupName），
         // 依赖前提：proxyGroupName 已通过代理组排除断言、Token 断言与存在性断言，此处取值为合法代理出口组名。
-        // 注意：以上三道断言与 ENABLE_PROXY 无关，即使 ENABLE_PROXY=false，proxyGroupName 仍有效；
+        // 注意：以上三道断言（代理组识别阶段执行，代码位置见下方 proxy-group 识别逻辑）与 ENABLE_PROXY 无关，即使 ENABLE_PROXY=false，proxyGroupName 仍有效；
         //   此处取消注释后进程代理规则由 ENABLE_PROCESS_RULE 独立控制，ENABLE_PROXY=false 不影响其注入。
         // `PROCESS-NAME,Telegram.exe,${proxyGroupName}`,
         // `PROCESS-NAME,Slack.exe,${proxyGroupName}`,
@@ -1375,7 +1346,7 @@ function main(config) {
                 : ["REJECT",       layerPools.block];
             pushSuffix(adobeSharedDeps, _fireflyAction, _fireflyPool);
             pushSuffix(adobeFireflyOnly, _fireflyAction, _fireflyPool);
-            // Adobe（遥测/授权域改用 REJECT，软件立即进入离线模式，避免启动卡顿）
+            // Adobe（遥测/授权域改用 REJECT，软件快速感知失败（通常切换离线模式或放弃重试），避免启动卡顿）
             pushSuffix(adobeSuffix, "REJECT", layerPools.block);
             pushLayer("block", adobeRegex);
             // ❗ adobeUdpBlock 仅 TUN 模式有效，系统代理模式下这些规则不会命中任何 UDP 流量（见 adobeUdpBlock 声明处注释）
@@ -1703,7 +1674,7 @@ function main(config) {
             // existingSet.size = 原 fake-ip-filter 所有条目总数（含订阅自带的非脚本条目）；
             // 本脚本条目已存在数 = hijackDomains.length - newEntries.length。
             const _alreadyIn = hijackDomains.length - newEntries.length;
-            console.log(`   fake-ip-filter 去重后新增: ${newEntries.length} 条（注入前已有 ${_alreadyIn} 条脚本条目重合，原列表共 ${existingSet.size} 条）`);
+            console.log(`   fake-ip-filter 去重后新增: ${newEntries.length} 条（注入前已有 ${_alreadyIn} 条脚本条目重合，原列表去重后共 ${existingSet.size} 条）`);
             if (existingSet.size === 0) {
                 console.log("（fake-ip-filter 此前为空或已被 CVR UI 清空，已完整重新写入）");
             }
@@ -1746,7 +1717,7 @@ function main(config) {
  *       no-resolve 在此场景下自然无需发挥作用，规则仍按 IP 直接比对，与有无 no-resolve 无关
  *
  *   ⚠️ REJECT-DROP（静默丢包）vs REJECT（立即拒绝）选型原则：
- *     REJECT      → TCP 侧：立即返回 TCP RST（重置报文），软件立刻感知失败，进入离线模式，启动无卡顿；
+ *     REJECT      → TCP 侧：立即返回 TCP RST（重置报文），软件快速感知失败（具体行为依软件实现而异），启动无卡顿；
  *                   UDP 侧：返回 ICMP Port Unreachable，软件同样立即感知失败；推荐用于遥测 / 授权域名
  *     REJECT-DROP → TCP/UDP 均适用：静默丢包，不回应任何报文；TCP 侧：软件 Socket 陷入 SYN_SENT 直至系统 TCP 超时，应用层 Socket 阻塞约 15–30s（含 TCP 重传轮次），
  *                   实际取决于 OS TCP 重传配置（Windows 10 默认 TcpMaxSynRetransmissions=2，SYN 重传总时长约 21s；Windows 11 默认值已调整，
@@ -1776,8 +1747,9 @@ function main(config) {
  *        Creative Cloud.exe ← 含授权心跳（必要豁免）
  *        CCXProcess.exe     ← CC 扩展宿主进程（必要豁免）
  *        CoreSync.exe       ← CC 同步守护进程（必要豁免）
- *      取舍依据：非官方激活环境中，补丁通过阻断 AdobeGCClient.exe 的出站连接来绕过激活验证，
- *      其余进程的心跳即便放行也不会触发重新验证；TUN 进程规则本身不可靠，扩展覆盖成本高于收益。
+ *      取舍依据：非官方激活环境中，非官方激活环境中，补丁修改了 AdobeGCClient.exe 的本地验证逻辑（本地返回激活成功，无需真实网络应答）；本脚本在此基础上阻断其出站连接，
+ *      作为额外网络层防线，防止激活状态回报和设备信息上传。其余进程的心跳即便放行也不会触发重新验证；TUN 进程规则本身不可靠，扩展覆盖成本高于收益。
+ *      
  *
  *   💡 KEYWORD "entitlement.autodesk" 与 "api.entitlements.autodesk.com" 无重叠：
  *      DOMAIN-KEYWORD 为子串匹配，"entitlement.autodesk"（entitlement 后紧跟点）
