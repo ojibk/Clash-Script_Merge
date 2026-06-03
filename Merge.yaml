@@ -232,7 +232,7 @@ rule-providers:
 
   # 拦截类规则集数据来源分别由 DustinWin 基于 privacy-protection-tools/anti-AD、peiyingyao 基于 blackmatrix7/EasyPrivacy 自动构建并以 MRS 格式分发。
   # 规则集选用范围类型：广告 / 营销追踪 / 隐私收集 / 统计遥测上报 / 劫持 / 挖矿 / 恶意域名 / C2 命令与控制域名
-  # 💡 各规则集条目内容可能有重合，互为补充，非替代关系，可按需启用。目的：→ 防范隐私泄露 → 安全防护 → 体验优化
+  # 💡 各规则集条目内容可能有重合，互为补充，非替代关系，可按需启用。目的：→ 隐私保护 → 安全防护 → 体验优化
   # advertising: # 🚫 广告拦截集
   #   # 💡 数据源说明：基于 blackmatrix7/Advertising 完整广告域名集（非精简版），由 peiyingyao 自动构建并以 MRS 格式分发。
   #   #    原选用精简版时，主线程同步阻塞（I/O + Trie 构建）会导致内核无法响应前端 RPC 查询，这一超时风险在改用 MRS 格式后已消除，故直接使用完整版。
