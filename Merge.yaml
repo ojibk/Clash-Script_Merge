@@ -106,13 +106,13 @@ sniffer:
 # #  · 在本文件中定义固定组名 [🎛️ 动态选择]，rules 段硬编码的代理出口指向此名称。该组由本文件保证必然存在，切换任意订阅均不会因找不到组名而触发启动报错。
 # #  · include-all: true 为 Mihomo 内核支持字段，各客户端 UI 兼容性不一：
 # #    CVR 完整实现，Stash / ClashX 等静默跳过（即该策略组不包含任何节点，成为空组）。
-# #    设为 true 时内核启动自动将订阅内所有 outbound proxies（底层代理节点）及 proxy sets（proxy-providers 声明的节点集合）注入本组（proxy groups 及嵌套策略组均不在继承范围内），
+# #    设为 true 时内核启动将订阅内所有 outbound proxies（底层代理节点）及 proxy sets（proxy-providers 的节点集合）引入本组（proxy groups 及嵌套策略组均不在继承范围内），
 # #    切换订阅后无需手动维护节点列表。大多数机场提供的均为裸节点，"不含 proxy groups"这条限制在常见场景下影响极小。
 # #  ⚠️ 若不声明此块，切换订阅时一旦订阅不含该组名，Mihomo（代理内核）启动即报错 proxy XXX not found，rules 中所有指向该组的条目失效。
 # #
 # # 【已知代价】
 # #  proxy-groups 为 Array 类型（有序列表），声明即触发全量替换，订阅原有所有策略组被丢弃。
-# #  代理面板仅保留 [🎛️ 动态选择] 一个出口，由用户手动切换节点。订阅原有精细策略组（自动选择 / ChatGPT / Netflix 等）将完全消失。
+# #  代理面板仅保留 [🎛️ 动态选择] 一个出口。订阅原有精细策略组（自动选择 / ChatGPT / Netflix 等）将完全消失。
 # #  若需同时保留订阅策略组与锚点组，须注释掉本文件的 proxy-groups 段，改由脚本主导。
 # #  ⚠️ 注意：在 type: url-test 策略组中手动点选即为固定所选节点（可替代全手动的 select），自动切换机制暂时失效直到点击延迟测试后解除锁定；也可清理 cache.db 或重启 CVR。
 proxy-groups:
@@ -130,7 +130,7 @@ proxy-groups:
     lazy: true        # true懒惰状态，默认为true，未选择到当前策略组时，不进行测试
     url: http://www.gstatic.com/generate_204 # 延迟测试链接
     # url: http://cp.cloudflare.com/generate_204 # 备用延迟测试链接
-    expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用。为注释状态时容忍 200 OK 响应，防止探针被误杀
+    expected-status: 204/200/302 # 当健康检查返回状态码与期望值不符时，认为节点不可用。默认为 *，表示对响应状态不做要求。可使用 / 匹配多个状态码、- 匹配状态范围，可混合书写
     filter: '^(?!.*(剩余|到期|官网|套餐|重置|群|客服)).+$'  # 正则表达式过滤，需引号包裹。排除"流量剩余""套餐到期""官网"等非代理节点
     
   - name: 🔀 绕港优选  # 声明策略组名称，优选除香港外的低延迟节点。🇭🇰 专属港区网络服务受限场景：对香港 IP 敏感的 AI、流媒体等（如 ChatGPT、Claude、Gemini、TikTok）。
@@ -141,7 +141,7 @@ proxy-groups:
     lazy: true        # true懒惰状态，默认为true,未选择到当前策略组时，不进行测试
     url: http://www.gstatic.com/generate_204 # 延迟测试链接
     # url: http://cp.cloudflare.com/generate_204 # 备用延迟测试链接
-    expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用。为注释状态时容忍 200 OK 响应，防止探针被误杀
+    expected-status: 204/200/302 # 当健康检查返回状态码与期望值不符时，认为节点不可用。默认值为 *，表示对响应状态不做要求，容忍 其他返回状态码 OK 响应，防止探针被误杀
     filter: '^(?:(?!香港|HK|Hong\s*Kong|🇭🇰).)(?:(?!剩余|到期|官网|套餐|重置|群|客服).)+$' # 正则表达式过滤，反引号包裹。正向匹配过滤香港节点及属订阅信息的非代理节点
     # filter: '^(?!.*(香港|HK|Hong\s*Kong|🇭🇰)).+$' # 正则表达式过滤，需引号包裹。利用负向先行断言过滤包含 香港、HK、HongKong、Hong Kong、🇭🇰 的节点
 
