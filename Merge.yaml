@@ -215,7 +215,7 @@ rule-providers:
   # lan_cidr: # 🔓 局域网私有 IP 段直连集
   #   # 💡 设计说明：private 仅收录私有/保留域名（依据 RFC 2606 / RFC 6761 等定义的特殊用途域名），不覆盖 192.168.x.x、10.x.x.x、172.16.x.x 等私有 IP 段。
   #   #    本条目以 IP 维度，与 private（域名维度）互为补充，共同构成完整的局域网直连防线。
-  #   #    缺失时，内网 IP 直连规则层失效，内网请求将穿透至代理出口；但 GEOIP,PRIVATE 仍可在 IP 维度兜底覆盖 RFC 1918 段，并非绝对失效。
+  #   #    缺失时，内网 IP 直连规则层失效，内网请求将穿透至代理出口；但 GEOIP,PRIVATE 仍可在 IP 维度兜底覆盖私有/保留地址段，并非绝对失效。
   #   #    数据源与 Loyalsoldier lancidr.txt 语义接近，由 MetaCubeX 每日自动构建并以 MRS 格式分发。
   #   #    远程源文件名：private.mrs（来自 geoip/private.mrs）。本地缓存因与 geosite/private.mrs 同名冲突，故重命名为 lan_cidr.mrs。
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。
@@ -223,7 +223,7 @@ rule-providers:
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建阶段。
   #   path: "./ruleset/providers/lan_cidr.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦
   #   interval: 604800  # ⏱️ 更新间隔：604800 秒 = 7 天（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
-  #                     #    列表内容基于 RFC 1918 等标准，结构极低频变动，设 7 天以减少不必要的远程拉取请求。
+  #                     #    列表内容基于 RFC 1918 / RFC 1122（回环） / RFC 6598（CGNAT）等私有/保留地址标准，结构极低频变动，设 7 天以减少不必要的远程拉取请求。
   #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
   #                     # ℹ️ 远程地址：jsDelivr 官方 Cloudflare 节点，国内可达性优于 fastly 节点。
   #                     #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geoip
@@ -337,7 +337,7 @@ rule-providers:
 # #
 # #  ▌本地放行集：   私有/保留域名与局域网 IP 段，命中后动作绝对确定（DIRECT），无误判风险。注意：private / lan_cidr 同为远程规则集，首次加载失败时条目数为 0；
 # #                 GEOIP,PRIVATE 作为 IP 层兜底，在规则集失效时仍可确定性覆盖私有网段。本地放行集以域名与 IP 段双维度精确匹配，归属地映射为 IP 维度作统计性补充，
-# #                 其中 lan_cidr 与 GEOIP,PRIVATE 在 RFC 1918 私有 IP 段存在重叠，两者互为补充属有意冗余。
+# #                 其中 lan_cidr 与 GEOIP,PRIVATE 在私有/保留地址段（含 RFC 1918 及回环、链路本地、CGNAT 等）存在重叠，两者互为补充属有意冗余。
 # #  ▌综合拦截集：   远程规则集 REJECT，依赖加载状态，加载失败静默跳过。
 # #                 💡 REJECT vs REJECT-DROP 选型原则：
 # #                 REJECT      → 主动拒绝连接（连接立即失败），客户端立刻感知错误并终止连接尝试，无启动卡顿。
@@ -386,7 +386,7 @@ rules:
   - RULE-SET,non-cn,🎛️ 动态选择             # 🛡️ 境外代理域名 → 送入锚点组 [🎛️ 动态选择]，经用户所选代理节点出站。
 
   # ▌归属地映射 — GeoIP 库基于静态 IP 注册数据进行归属地查询推断，不代表实际物理位置，在 CDN / Anycast（任播）调度下存在不可避免的归属地误差。
-  - GEOIP,PRIVATE,DIRECT,no-resolve     # 🔓 私有/保留 IP 段（含 RFC 1918 私有段、回环、链路本地、IPv6 ULA 等）→ 直连，
+  - GEOIP,PRIVATE,DIRECT,no-resolve     # 🔓 私有/保留 IP 段（含 RFC 1918 私有段、回环、链路本地、、CGNAT、基准测试保留段、IPv6 ULA 等）→ 直连，
                                         #    绝对确定集合，无误判风险；故排于 CN（统计性集合）规则之前；与本地放行集形成双重保障。
   - GEOIP,CN,DIRECT,no-resolve          # 🔓 国内 IP 段 → 直连（统计性集合，基于 IP 注册归属弥补域名长尾盲区；存在 CDN 动态调度导致的归属地误判风险）。
                                         # ⚠️ 误判方向A（漏直连）：未被域名分流集收录的国内企业内网域名、私有 SaaS 将走代理出口（MATCH 兜底指定代理时）；
@@ -616,9 +616,13 @@ rules:
 # #   新写法优先在节点级使用 client-fingerprint 字段。
 # #
 # # RFC 1918（私有 IP 地址分配标准）
-# #   定义了三段不可公网路由的私有 IP 地址范围：
+# #   定义了三段不可公网路由的私有网络地址范围：
 # #   10.0.0.0/8、172.16.0.0/12、192.168.0.0/16
-# #   GEOIP,PRIVATE 基于此标准定义，属于绝对确定集合，无误判风险。
+# #   ⚠️ GEOIP,PRIVATE 的覆盖范围远不止 RFC 1918：还包含回环（127.0.0.0/8，RFC 1122）、
+# #   链路本地（169.254.0.0/16，RFC 3927）、CGNAT（100.64.0.0/10，RFC 6598）、
+# #   基准测试保留段（198.18.0.0/15，RFC 2544，即 Fake-IP 默认 fake-ip-range）、
+# #   文档示例段（192.0.2.0/24 等，RFC 5737）、IPv6 ULA（fc00::/7，RFC 4193）等。
+# #   PRIVATE 段总量约为 RFC 1918 的 2.2 倍（IPv4），属绝对确定集合，无误判风险。
 # #
 # # CDN（内容分发网络，Content Delivery Network）
 # #   通过全球分布的边缘节点就近向用户提供内容的网络架构。

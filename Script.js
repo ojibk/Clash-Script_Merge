@@ -207,8 +207,8 @@ function main(config) {
     //    清理算法依赖精确等值（===）匹配；若确需修改哨兵格式，须同步更新清理逻辑。null/undefined 也不会意外匹配哨兵字符串，严格等值天然防御。
     // 💡 TLD 选型：使用 RFC 6761 明确保留的 .invalid（无效域），而非 .local（RFC 6762 mDNS 保留域）。
     //    local 在部分系统级 mDNS 配置下可能触发 DNS 多播查询；invalid 作为保留域，标准 DNS 实现不应对其解析，产生额外 DNS 流量的风险极低，更为安全。
-    const _SENTINEL_START = "DOMAIN,START-script-sentinel-marker.invalid,REJECT";
-    const _SENTINEL_END   = "DOMAIN,END-script-sentinel-marker.invalid,REJECT";
+    const _SENTINEL_START = "DOMAIN,start-rule-injection-sentinel,REJECT";
+    const _SENTINEL_END   = "DOMAIN,end-rule-injection-sentinel,REJECT";
     {
         // 栈重建：单次遍历，O(N) 时间，O(N) 空间。
         // START 压栈时记录 newRules.length 快照；END 匹配时回退 length 至快照值，等效删除整段旧注入区块。
@@ -254,7 +254,7 @@ function main(config) {
 
     console.log("=".repeat(28));
     // 当前实现手动 padStart 拼接，格式固定为 HH:MM:SS（本地时区），跨引擎跨区域设置格式一致（时间值仍为本地时区）。
-    const _now  = new Date();  // 计时终点
+    const _now  = new Date();  // 当前时间（用于格式化日志时间戳）
     const _ts = [_now.getHours(), _now.getMinutes(), _now.getSeconds()]
         .map(n => String(n).padStart(2, "0"))
         .join(":");
@@ -1747,7 +1747,7 @@ function main(config) {
  *        Creative Cloud.exe ← 含授权心跳（必要豁免）
  *        CCXProcess.exe     ← CC 扩展宿主进程（必要豁免）
  *        CoreSync.exe       ← CC 同步守护进程（必要豁免）
- *      取舍依据：非官方激活环境中，非官方激活环境中，补丁修改了 AdobeGCClient.exe 的本地验证逻辑（本地返回激活成功，无需真实网络应答）；本脚本在此基础上阻断其出站连接，
+ *      取舍依据：非官方激活环境中，补丁修改了 AdobeGCClient.exe 的本地验证逻辑（本地返回激活成功，无需真实网络应答）；本脚本在此基础上阻断其出站连接，
  *      作为额外网络层防线，防止激活状态回报和设备信息上传。其余进程的心跳即便放行也不会触发重新验证；TUN 进程规则本身不可靠，扩展覆盖成本高于收益。
  *      
  *
