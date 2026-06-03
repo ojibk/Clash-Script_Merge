@@ -104,8 +104,7 @@ sniffer:
 # # --------------------------------------------------------------------------------------
 # # 【proxy-groups 锚点组设计逻辑】
 # #  · 在本文件中定义固定组名 [🎛️ 动态选择]，rules 段硬编码的代理出口指向此名称。该组由本文件保证必然存在，切换任意订阅均不会因找不到组名而触发启动报错。
-# #  · include-all: true 为 Mihomo 内核支持字段，各客户端 UI 兼容性不一：
-# #    CVR 完整实现，Stash / ClashX 等静默跳过（即该策略组不包含任何节点，成为空组）。
+# #  · include-all: true 为 Mihomo 内核支持字段，各客户端 UI 兼容性不一。部分采用原版 Clash (Premium/FOSS) 内核的客户端静默跳过（即该策略组不包含任何节点，成为空组）。
 # #    设为 true 时内核启动将订阅内所有 outbound proxies（底层代理节点）及 proxy sets（proxy-providers 的节点集合）引入本组（proxy groups 及嵌套策略组均不在继承范围内），
 # #    切换订阅后无需手动维护节点列表。大多数机场提供的均为裸节点，"不含 proxy groups"这条限制在常见场景下影响极小。
 # #  ⚠️ 若不声明此块，切换订阅时一旦订阅不含该组名，Mihomo（代理内核）启动即报错 proxy XXX not found，rules 中所有指向该组的条目失效。
@@ -492,20 +491,15 @@ rules:
 # #
 # # Mihomo（代理内核）
 # #   原名 Clash.Meta，Clash Verge Rev 底层使用的代理内核。
-# #   负责解析配置、执行规则匹配、建立代理连接。
-# #   与 Clash Premium 配置格式部分兼容，但存在字段差异，迁移须核查。
+# #   负责解析配置、执行规则匹配、建立代理连接。与 Clash Premium 配置格式部分兼容，但存在字段差异，迁移须核查。
 # #
 # # CVR（Clash Verge Rev，图形化代理管理界面）
 # #   基于 Mihomo 内核的桌面客户端，提供规则集管理、连接日志、节点切换等功能。
-# #   部分字段（如 include-all）由 Mihomo 内核支持，但各客户端 UI 兼容性不一；
-# #   CVR 完整实现，在其他客户端中可能静默跳过。
 # #
 # # include-all（代理资源全量继承）
-# #   Mihomo 内核支持字段，各客户端 UI 兼容性不一（CVR 完整实现，Stash / ClashX 等静默跳过）。
-# #   设为 true 时，内核启动自动将订阅内所有 outbound proxies（底层代理节点）及
-# #   proxy sets（proxy-providers 代理提供者/订阅源 声明的节点集合）注入当前策略组
-# #   （proxy groups 及嵌套策略组均不在继承范围内），切换订阅无需手动维护节点列表。
-# #   ⚠️ 在不支持该字段的客户端中静默跳过，即该策略组成为空组。
+# #   Mihomo 内核支持字段，各客户端 UI 兼容性不一，部分采用原版 Clash (Premium/FOSS) 内核的客户端静默跳过（即该策略组不包含任何节点，成为空组）。
+# #   设为 true 时，内核启动自动将订阅内所有 outbound proxies（底层代理节点）及 proxy sets（proxy-providers 代理提供者/订阅源 声明的节点集合）引入当前策略组
+# #   （proxy groups 及嵌套策略组均不在继承范围内），切换订阅无需手动维护节点列表。⚠️ 在不支持该字段的客户端中静默跳过，即该策略组成为空组。
 # #
 # # TUN（虚拟隧道网卡，Tunnel Network Interface）
 # #   操作系统级虚拟网卡，使内核可以接管系统全局流量（包括非 HTTP/SOCKS 流量）。
