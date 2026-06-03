@@ -217,7 +217,7 @@ rule-providers:
   #   # 💡 设计说明：private 仅收录私有/保留域名（依据 RFC 2606 / RFC 6761 等定义的特殊用途域名），不覆盖 192.168.x.x、10.x.x.x、172.16.x.x 等私有 IP 段。
   #   #    本条目以 IP 维度，与 private（域名维度）互为补充，共同构成完整的局域网直连防线。
   #   #    缺失时，内网 IP 直连规则层失效，内网请求将穿透至代理出口；但 GEOIP,PRIVATE 仍可在 IP 维度兜底覆盖私有/保留地址段，并非绝对失效。
-  #   #    数据源与 Loyalsoldier lancidr.txt 语义接近，由 MetaCubeX 每日自动构建并以 MRS 格式分发。
+  #   #    数据源与 Loyalsoldier lancidr.txt 语义接近，由 MetaCubeX 自动构建并以 MRS 格式分发。
   #   #    远程源文件名：private.mrs（来自 geoip/private.mrs）。本地缓存因与 geosite/private.mrs 同名冲突，故重命名为 lan_cidr.mrs。
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
   #   behavior: ipcidr  # ℹ️ 行为：IP 网段模式，MRS 直接内存映射已构建的前缀匹配树（CIDR Trie），与 domain 模式不可互换。
@@ -230,14 +230,11 @@ rule-providers:
   #                     #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geoip
   #                     #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs
 
-  # 拦截类规则集数据来源分别由 DustinWin 基于 privacy-protection-tools/anti-AD、peiyingyao 基于 blackmatrix7/EasyPrivacy 每日自动构建并以 MRS 格式分发。
-  # 💡 ads 与 threat 以及 advertising 的语义区分（条目内容可能有重合，互为补充，非替代关系，可按需启用）：
-  #   ads：           广告 / 跟踪 / 隐私 / 恶意域名 / 挖矿 → 隐私及安全防护
-  #   threat：        恶意特征（广告 / 追踪器 / 隐私收集 / 恶意域名） → 隐私及安全防护
-  #   advertising：   广告域名 → 体验优化
-  
+  # 拦截类规则集数据来源分别由 DustinWin 基于 privacy-protection-tools/anti-AD、peiyingyao 基于 blackmatrix7/EasyPrivacy 自动构建并以 MRS 格式分发。
+  # 规则集选用范围类型：广告 / 营销追踪 / 隐私收集 / 统计遥测上报 / 劫持 / 挖矿 / 恶意域名 / C2 命令与控制域名
+  # 💡 各规则集条目内容可能有重合，互为补充，非替代关系，可按需启用。目的：→ 防范隐私泄露 → 安全防护 → 体验优化
   # advertising: # 🚫 广告拦截集
-  #   # 💡 数据源说明：基于 blackmatrix7/Advertising 完整广告域名集（非精简版），由 peiyingyao 每日自动构建并以 MRS 格式分发。
+  #   # 💡 数据源说明：基于 blackmatrix7/Advertising 完整广告域名集（非精简版），由 peiyingyao 自动构建并以 MRS 格式分发。
   #   #    原选用精简版时，主线程同步阻塞（I/O + Trie 构建）会导致内核无法响应前端 RPC 查询，这一超时风险在改用 MRS 格式后已消除，故直接使用完整版。
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
   #   behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
@@ -249,7 +246,7 @@ rule-providers:
   #                     #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs
 
   ads: # 🚫 综合拦截集（广告 / 跟踪 / 隐私 / 恶意域名 / 挖矿）
-    # 💡 主用：基于 privacy-protection-tools/anti-AD 转换，由 DustinWin 每日自动构建并以 MRS 格式分发。
+    # 💡 主用：基于 privacy-protection-tools/anti-AD 转换，由 DustinWin 自动构建并以 MRS 格式分发。
     #    覆盖范围：广告、跟踪器、隐私收集、恶意域名、挖矿。
     type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
@@ -260,13 +257,13 @@ rule-providers:
                       #    来源仓库：https://github.com/DustinWin/ruleset_geodata/tree/mihomo-ruleset
                       #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs
 
-  # threat: # 🚫 威胁阻断集（仅覆盖：广告 / 追踪器 / 隐私收集 / 挖矿，暂未覆盖：恶意域名 / C2 命令与控制域名）
+  # threat: # 🚫 威胁阻断集（暂无理想规则集合）
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
   #   behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
   #   path: "./ruleset/providers/threat.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
   #   interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
-  #   # 💡 备用：基于 blackmatrix7/EasyPrivacy 转换，由 peiyingyao 每日自动构建并以 MRS 格式分发（AdBlock Plus EasyPrivacy，仅抽取DOMAIN-SUFFIX类型）。
+  #   # 💡 备用：基于 blackmatrix7/EasyPrivacy 转换，由 peiyingyao 自动构建并以 MRS 格式分发（AdBlock Plus EasyPrivacy，仅抽取DOMAIN-SUFFIX类型）。
   #   #    覆盖范围：广告、跟踪器、隐私收集。
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
   #                     #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/EasyPrivacy
@@ -284,7 +281,7 @@ rule-providers:
                       #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
                       #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs
 
-  non-cn: # 🛡️ 境外常用需代理域名集
+  non-cn: # 🛡️ 境外域名代理集
     # 💡 收录 Google / GitHub / Telegram / Twitter (X) / YouTube 等高频境外服务域名。
     #    命中此规则集的流量送入锚点组 [🎛️ 动态选择]，经用户所选代理节点出站。
     #    rules 中直连规则置于代理规则之前，国内域名优先命中直连出口，不会滑落至 non-cn。
