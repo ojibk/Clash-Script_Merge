@@ -169,8 +169,8 @@ function main(config) {
     //    清理算法依赖精确等值（===）匹配；若确需修改哨兵格式，须同步更新清理逻辑。null/undefined 也不会意外匹配哨兵字符串，严格等值天然防御。
     // 💡 TLD 选型：使用 RFC 6761 明确保留的 .invalid（无效域），而非 .local（RFC 6762 mDNS 保留域）。
     //    local 在部分系统级 mDNS 配置下可能触发 DNS 多播查询；invalid 作为保留域，标准 DNS 实现不应对其解析，产生额外 DNS 流量的风险极低，更为安全。
-    const _SENTINEL_START = "DOMAIN,start-rule-injection-sentinel,REJECT";
-    const _SENTINEL_END   = "DOMAIN,end-rule-injection-sentinel,REJECT";
+    const _SENTINEL_START = "DOMAIN,start-rule-injection-sentinel.invalid,REJECT";
+    const _SENTINEL_END   = "DOMAIN,end-rule-injection-sentinel.invalid,REJECT";
     {
         // 栈重建：单次遍历，O(N) 时间，O(N) 空间。
         // START 压栈时记录 newRules.length 快照；END 匹配时回退 length 至快照值，等效删除整段旧注入区块。
@@ -224,6 +224,7 @@ function main(config) {
 
         config.proxies = config.proxies.map(p => {
             // 1. 尊重节点已有配置：字段存在即保留（包括 null、false、""）
+            //    ⚠️ 变更 DEFAULT_FINGERPRINT 不会更新已有该字段的节点；如需强制覆盖，须先从订阅 YAML 删除节点的 client-fingerprint 字段后重新加载。
             if (Object.prototype.hasOwnProperty.call(p, 'client-fingerprint')) {
                 preExistingCount++;
                 return p;
