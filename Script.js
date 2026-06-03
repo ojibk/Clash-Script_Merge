@@ -71,8 +71,7 @@ function main(config) {
     const ENABLE_HOSTS_OVERRIDE  = true;         // Hosts DNS 覆写模块（四种映射子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
     // ❗ 生效前提：CVR › DNS 覆写，必须同时开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可，脚本无法感知 UI 层开关状态；
     //    未开启时本模块失效（脚本仍打印成功日志，但 Hosts 覆写不生效）。
-    // ℹ️ 依赖约束：ENABLE_SCRIPT=false 时此模块被跳过（脚本提前返回，Hosts 注入不执行）；
-    //    如需关闭规则注入同时保留 Hosts 覆写，应保持 ENABLE_SCRIPT=true 并关闭各子模块开关。
+    // ℹ️ 依赖约束：ENABLE_SCRIPT=false 时此模块被跳过（脚本提前返回，Hosts 注入不执行）；如需关闭规则注入同时保留 Hosts 覆写，应保持 ENABLE_SCRIPT=true 并关闭各子模块开关。
     // 💡 推荐使用 "ipv4-loopback"（当前默认值）：返回 127.0.0.1，产生 ECONNREFUSED（回环模拟拦截），
     //    应用兼容性通常最好；ipv4-blackhole 阻断速度最快，但可能被部分应用归类为断网状态。
     //
@@ -83,9 +82,9 @@ function main(config) {
     //
     // 各模式连接失败类型（来源：Mihomo wiki + OS 网络栈行为）：
     //   ipv4-loopback  → 127.0.0.1          → 本地 TCP 栈返回 RST（无监听端口），应用层收到 ECONNREFUSED，回环模拟拦截，更温和
-    //   ipv4-blackhole → 0.0.0.0            → 错误码取决于操作系统：无论哪种错误码，TCP SYN 都不会发出，阻断速度最快。但部分应用可能将此错误误判为断网状态，进而显示断网提示。
+    //   ipv4-blackhole → 0.0.0.0            → 错误码取决于操作系统：无论哪种错误码，TCP SYN 都不会发出，阻断速度最快。但部分应用可能将此错误误判为断网状态
     //   dual-loopback  → 127.0.0.1 + ::1    → 同 ipv4-loopback，IPv4/IPv6 双栈回环模拟拦截
-    //   dual-blackhole → 0.0.0.0 + ::       → 同 ipv4-blackhole，IPv4/IPv6 双栈黑洞拦截（慎用：向 :: 发起连接的 OS 级行为因平台而异，部分运行时对此处理不一致，可能导致应用异常）
+    //   dual-blackhole → 0.0.0.0 + ::       → 同 ipv4-blackhole，IPv4/IPv6 双栈黑洞拦截（慎用：向 :: 发起连接的 OS 级行为因平台而异，可能导致应用异常）
     //
     // 双栈黑洞模式（dual-blackhole）因 IPv6 的 :: 行为更激进，存在非预期的连接错误或应用异常；ipv4-blackhole 单栈版风险较低。
     const HOSTS_MODE = "ipv4-loopback";
@@ -94,13 +93,14 @@ function main(config) {
     // 模拟指定客户端的 TLS 握手特征，以增强抗检测能力。实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
     // - true:  为所有未设置 fingerprint 的节点注入默认指纹
     // - false: 完全跳过指纹注入，保留节点原始配置
+    // ℹ️ 两种方式可阻止指纹注入：
+    //    1. 设置 ENABLE_CLIENT_FINGERPRINT = false → 模块完全关闭，日志显示“已禁用”
+    //    2. 设置 DEFAULT_FINGERPRINT = "none"   → 模块运行但跳过注入，日志显示“已启用但 none”
+    //    两者最终效果相同（节点无 client-fingerprint 字段），可根据需要选择。
     const ENABLE_CLIENT_FINGERPRINT = true;
-    //
-    // 默认指纹，仅在 ENABLE_CLIENT_FINGERPRINT 为 true 时生效。
-    // 可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random / none
-    // 💡 random：启动时从指纹库随机抽取一个值并固定使用，非每连接随机切换。random 模式下，各指纹的权重分布为：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
+    // 默认指纹，仅在 ENABLE_CLIENT_FINGERPRINT 为 true 时生效。可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random / none
+    // 💡 random：启动时从指纹库按 Cloudflare Radar 数据概率生成一个现代浏览器指纹并固定使用，非每连接随机切换。概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
     const DEFAULT_FINGERPRINT = "chrome";
-    //
     // 指纹注入黑名单：名称中包含这些关键词的节点，即使没有指纹也不会被注入。用途：保护特殊节点（如专用 IP 节点、特定落地机）不被意外修改指纹。
     const FINGERPRINT_BLACKLIST = [
         // "专用", "原生", "nobook",     // 例：用户自建的落地节点，不希望被修改；原生 IP 节点；特定服务商要求不修改指纹。取消注释状态即启用。
@@ -147,44 +147,6 @@ function main(config) {
     if (ENABLE_PROCESS_RULE && config["find-process-mode"] !== "strict" && config["find-process-mode"] !== "always") {
         console.warn(`⚠️ 进程规则要求 find-process-mode 为 strict 或 always，当前为 [${config["find-process-mode"] ?? "（未设置）"}]，进程规则将静默失效`);
     }
-
-    // ═══════════════ client-fingerprint 注入逻辑 ═══════════════
-
-    if (ENABLE_CLIENT_FINGERPRINT && DEFAULT_FINGERPRINT !== "none" && Array.isArray(config.proxies)) {
-        const blacklistSet = new Set(FINGERPRINT_BLACKLIST.map(s => s.toLowerCase()));
-        let injectedCount = 0;
-        let skippedCount = 0;
-        let preExistingCount = 0;
-
-        config.proxies = config.proxies.map(p => {
-            // 1. 尊重节点已有配置：如果已设置，直接保留
-            if (p['client-fingerprint']) {
-                preExistingCount++;
-                return p;
-            }
-
-            // 2. 检查黑名单：节点名包含黑名单关键词则跳过
-            const nodeName = (p.name || "").toLowerCase();
-            const isBlacklisted = [...blacklistSet].some(keyword => nodeName.includes(keyword));
-            if (isBlacklisted) {
-                skippedCount++;
-                return p;
-            }
-
-            // 3. 注入默认指纹
-            injectedCount++;
-            return { ...p, 'client-fingerprint': DEFAULT_FINGERPRINT };
-        });
-
-        console.log(`✅ TLS 指纹注入完成: 新增注入 ${injectedCount} 个，`
-                + `跳过黑名单 ${skippedCount} 个，`
-                + `保留原有指纹 ${preExistingCount} 个 (默认指纹: ${DEFAULT_FINGERPRINT})`);
-    } else if (ENABLE_CLIENT_FINGERPRINT && DEFAULT_FINGERPRINT === "none") {
-        console.log("ℹ️ TLS 指纹注入已启用，但默认指纹为 'none'，不执行注入。");
-    } else {
-        console.log("ℹ️ TLS 指纹注入已禁用 (ENABLE_CLIENT_FINGERPRINT = false)。");
-    }
-    // ────────────────────────────────────────────────
 
     // ══════════════════════ ENABLE_SCRIPT 分支 ══════════════════════
     // 先清理上次遗留标记，再插入新标记，防止多次切换后堆叠。
@@ -251,6 +213,46 @@ function main(config) {
         config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         return config;
     }
+
+    // ═══════════════ client-fingerprint 注入逻辑 ═══════════════
+    if (ENABLE_CLIENT_FINGERPRINT && DEFAULT_FINGERPRINT !== "none" && Array.isArray(config.proxies)) {
+        const blacklistSet = new Set(FINGERPRINT_BLACKLIST.map(s => s.toLowerCase()));
+        const blacklistArr = [...blacklistSet];
+        let injectedCount = 0;
+        let skippedCount = 0;
+        let preExistingCount = 0;
+
+        config.proxies = config.proxies.map(p => {
+            // 1. 尊重节点已有配置：字段存在即保留（包括 null、false、""）
+            if (Object.prototype.hasOwnProperty.call(p, 'client-fingerprint')) {
+                preExistingCount++;
+                return p;
+            }
+
+            // 2. 检查黑名单：节点名包含黑名单关键词则跳过
+            const nodeName = (p.name || "").toLowerCase();
+            const isBlacklisted = blacklistArr.some(keyword => nodeName.includes(keyword));
+            if (isBlacklisted) {
+                skippedCount++;
+                return p;
+            }
+
+            // 3. 注入默认指纹
+            injectedCount++;
+            return { ...p, 'client-fingerprint': DEFAULT_FINGERPRINT };
+        });
+
+        console.log(`✅ TLS 指纹注入完成: 新增注入 ${injectedCount} 个，`
+                + `跳过黑名单 ${skippedCount} 个，`
+                + `保留原有指纹 ${preExistingCount} 个 (默认指纹: ${DEFAULT_FINGERPRINT})`);
+    } else if (ENABLE_CLIENT_FINGERPRINT && DEFAULT_FINGERPRINT === "none") {
+        console.log("ℹ️ TLS 指纹注入已启用，但默认指纹为 'none'，不执行注入。");
+    } else if (ENABLE_CLIENT_FINGERPRINT && !Array.isArray(config.proxies)) {
+        console.log("ℹ️ TLS 指纹注入已启用，但 config.proxies 不是数组（订阅可能仅含 proxy-providers），跳过注入。");
+    } else {
+        console.log("ℹ️ TLS 指纹注入已禁用 (ENABLE_CLIENT_FINGERPRINT = false)。");
+    }
+    // ────────────────────────────────────────────────
 
     console.log("=".repeat(28));
     // 当前实现手动 padStart 拼接，格式固定为 HH:MM:SS（本地时区），跨引擎跨区域设置格式一致（时间值仍为本地时区）。
@@ -1813,6 +1815,14 @@ function main(config) {
  *     isFireflyActive 是 ENABLE_FIREFLY && ENABLE_BLOCK 的派生值，无独立存储，是两个上游开关逻辑与运算的投影，
  *     无法独立修改，即无法反向影响 ENABLE_FIREFLY 或 ENABLE_BLOCK。
  *     所有 Firefly 逻辑均使用此变量，防止"看起来开了但没生效"的状态误读（ENABLE_FIREFLY=true + ENABLE_BLOCK=false 时自动降级为 false）。
+ *   ──────────────────────────────────────────────────────────────
+ *
+ *   ── client-fingerprint 注入模块 ──
+ *     该模块在所有节点上统一注入 TLS 客户端指纹（如 chrome），以增强抗检测能力。
+ *     设计意图：模拟主流浏览器 TLS 握手特征，减少因代理客户端指纹异常触发的验证码。
+ *     注意：模块不覆盖已设置指纹的节点（尊重已有配置），修改 DEFAULT_FINGERPRINT 后需手动清理旧指纹。
+ *     黑名单支持子串匹配（大小写不敏感），用于保护特殊节点（如专用 IP 落地机）不被修改。
+ *     模块在 ENABLE_SCRIPT 检查之后执行，因此受 ENABLE_SCRIPT 统一控制。
  *   ──────────────────────────────────────────────────────────────
  * 
  * 特殊字符集说明：
