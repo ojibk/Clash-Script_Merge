@@ -359,7 +359,10 @@ function main(config) {
     // @param {string} name - 原始组名，函数内部负责清洗；调用方无需预先清洗，传入原始字符串即可。
     // @returns {string} 清洗后的组名（已移除不可见控制符并 trim）；非字符串输入返回空字符串。
     // ⚠️ g 是功能必要条件：需要清除字符串中所有不可见字符，而非仅首次命中。
-    const _SANITIZE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/g;
+    // ⚠️ u 标志（Unicode 模式）：确保字符类 [] 按完整 Unicode 码点解析，避免代理对被拆分匹配，语义更严谨；
+    //    当前覆盖范围仅含 BMP 内字符（U+0000–U+FEFF），不加 u 在现有代码路径下无实际 bug，
+    //    但加 u 是最佳实践，便于将来扩展覆盖范围时无需回头补加。
+    const _SANITIZE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/gu;
     function sanitizeName(name) {
         if (typeof name !== "string") return "";
         if (!name) return "";  // 短路返回，省去对空字符串的无意义正则调用
@@ -587,9 +590,21 @@ function main(config) {
     //    生成格式合法但语义非法的规则（如 DOMAIN-SUFFIX,null,REJECT），Mihomo 不报错但该规则永远不会命中。
     //    当前所有调用方均使用字符串字面量数组，无此风险；若将来从外部数据源动态填充，须在调用前校验元素类型。
 
-    const pushSuffix  = (domains, action, pool) => domains.forEach(d => pool.push(`DOMAIN-SUFFIX,${d},${action}`));
-    const pushDomain  = (domains, action, pool) => domains.forEach(d => pool.push(`DOMAIN,${d},${action}`));
-    const pushKeyword = (words,   action, pool) => words.forEach(w   => pool.push(`DOMAIN-KEYWORD,${w},${action}`));
+    // ⚠️ 类型守卫：过滤非字符串或空元素，防止 null/undefined/数字被模板字符串静默转换为
+    //    DOMAIN-SUFFIX,null,REJECT 等语义非法规则（Mihomo 不报错但规则永远不命中）。
+    //    当前所有调用方均使用字符串字面量数组，守卫仅为将来动态数据源预防。
+    const pushSuffix  = (domains, action, pool) => domains.forEach(d => {
+        if (typeof d === "string" && d.length > 0) pool.push(`DOMAIN-SUFFIX,${d},${action}`);
+        else console.warn(`[Script] pushSuffix: 非法条目已跳过`, d);
+    });
+    const pushDomain  = (domains, action, pool) => domains.forEach(d => {
+        if (typeof d === "string" && d.length > 0) pool.push(`DOMAIN,${d},${action}`);
+        else console.warn(`[Script] pushDomain: 非法条目已跳过`, d);
+    });
+    const pushKeyword = (words,   action, pool) => words.forEach(w => {
+        if (typeof w === "string" && w.length > 0) pool.push(`DOMAIN-KEYWORD,${w},${action}`);
+        else console.warn(`[Script] pushKeyword: 非法条目已跳过`, w);
+    });
 
     // ──── Adobe Firefly 依赖端点集（统一引用源：所有用到该集合的地方均引用此数组，修改时无需同步多处）────
     // adobeFireflyOnly 独立成数组（而非并入 adobeSuffix），是因为两者路由动作不同：
@@ -636,8 +651,8 @@ function main(config) {
         // ⚠️ 设计取舍：优先可用性（Firefly 正常运行），而非最小权限拦截原则。以下域名尚无公开抓包资料确认其确切功能，但 Firefly 在实测中依赖这些端点，故默认放行。
         //    若追求最严格的拦截策略，可手动将其移至 adobeSuffix（改为 REJECT）并重新测试 Firefly 功能是否正常，确认后再决定是否从本数组移除。
         "scdown.adobe.io",                        // 【推断·放行风险低、漏拦截风险可接受】基于行为推断，未经抓包验证；Firefly 在实测中依赖此端点（即使功能定义不明）
-        "lcs-cops.adobe.io",                      // 【推断】云端授权策略，推断为 Firefly 订阅鉴权；社区有 2024+ PS 版本产生鉴权流量的反馈，但无公开抓包资料支撑，维持待确认。
-                                                  //  若此域实为 CC 激活验证端点（非 Firefly 专属），isFireflyActive=true 时将被错误放行，激活拦截防线出现缺口。
+        // lcs-cops.adobe.io 已移出：注释原文承认"若此域实为 CC 激活验证端点，isFireflyActive=true 时将被错误放行，激活拦截防线出现缺口"。
+        // 为消除该缺口，改为固定注入 adobeSuffix（始终 REJECT），待抓包确认其为 Firefly 专属后可移回此数组。
     ];
 
     // 🚫 ─────────────────────── Adobe 激活 / 遥测核心拦截 ───────────────────────
@@ -676,6 +691,8 @@ function main(config) {
         "entitlementauthz.adobe.com",             // 授权（Authorization）验证服务（authz 为 authorization 缩写，2025 年新增）
         "assets.entitlement.adobe.com",           // 授权资产校验（2025 年新增）
         "telemetry.adobe.com",                    // Adobe 遥测的另一入口，在部分 CC 版本抓包中出现
+        "lcs-cops.adobe.io",                      // 云端授权策略端点（待抓包确认 Firefly 专属性）。原位于 adobeSharedDeps（isFireflyActive=true 时走代理），
+                                                  // 因存在激活拦截缺口风险，改为固定 REJECT。若抓包确认其仅服务 Firefly 而非 CC 激活验证，可将其移回 adobeSharedDeps。
     ];
 
     // ──── 随机子域正则（统一引用源），adobeRegex 与 adobeUdpBlock 均引用此变量，禁止各自硬编码，修改只需改此处 ────
@@ -859,7 +876,7 @@ function main(config) {
         "966v26.com",                            // 非官方修改补丁后门主域（回传设备信息）
         "vposy.com",                             // 知名非官方修改补丁作者域名（Adobe/Office）
         "api.pzz.cn",                            // 国内非官方修改补丁回传接口
-        "cc-cdn.com",                            // 【推断】命名形似 Adobe CC CDN，无抓包证据，保守纳入；可信度低于前三条
+        "cc-cdn.com",                            // 【待观测】命名形似 Adobe CC CDN，无抓包证据，保守纳入；可信度低于前三条。若误命中合法 CDN，会导致启动卡顿
     ];
     // 关键词兜底：覆盖 966v26.net / cdn.966v26.org 等非 .com TLD（顶级域名，Top-Level Domain）变种，REJECT-DROP 策略与 backdoorSuffix 一致。
     // ⚠️ 误命中风险评估："966v26" 为高特异性域名特征字符串（抓包来源），在已知合法域名中无任何同名子串，实际误命中概率极低。
@@ -1113,8 +1130,8 @@ function main(config) {
         "optimizationguide-pa.googleapis.com",   // Chrome 优化提示遥测
     ];
     // ⚠️【副作用】SafeBrowsing（安全浏览）API 是 Chrome/Chromium 用于检测钓鱼网站、恶意软件分发页面的安全机制。
-    //    拦截后 Chrome 将无法实时获取恶意网站列表，用户访问钓鱼/恶意页面时不再弹出红色安全警告。
-    //    若安全性优先于隐私，可考虑将此关键词从拦截列表中移除。
+    //    拦截后 Chrome 将无法实时获取恶意网站列表，用户访问钓鱼/恶意页面时不再弹出红色安全警告。若安全性优先于隐私，可考虑将此关键词从拦截列表中移除。
+    // ❗ SafeBrowsing 对多数用户而言是安全机制而非隐私威胁，误伤风险明显。如需禁用将下行数组清空即可。
     const googleTrackKeyword = ["safebrowsing.google"]; // 安全浏览接口；含隐私影响：向 Google 上报访问 URL 哈希。⚠️ 拦截后 Chrome 失去钓鱼/恶意网站检测防护，见上方说明
 
     // ──────────────────── YouTube 遥测（不影响正常播放）────────────────────
@@ -1167,13 +1184,15 @@ function main(config) {
         "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 端口条件可能加快匹配（内核短路求值）
         "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP",
         "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证（最重要）
-        "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",       // 进程间通信代理，CC 各组件通过此进程转发激活验证请求，在 CC 2023+ 版本中承担部分鉴权通信，基于架构推断而非抓包
         "PROCESS-NAME,AdskLicensingService.exe,REJECT-DROP", // Autodesk 许可验证
         "PROCESS-NAME,AdskAccess.exe,REJECT-DROP",           // Autodesk 访问控制服务
         "PROCESS-NAME,AdskIdentityManager.exe,REJECT-DROP",  // Autodesk 身份认证管理器
         // 适用 CorelDRAW 2017+（进程名 CorelDRW.exe，非 CorelDRAW.exe；2017 以前版本进程结构不同，请通过任务管理器核对）
         // ⚠️ 部分请求经 msedgewebview2.exe 发出（系统共享进程，不可拦截），已由 corelSuffix 域名层覆盖。
         "PROCESS-NAME,CorelDRW.exe,REJECT-DROP",
+        // "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",    // 进程间通信代理，CC 各组件通过此进程转发激活验证请求，在 CC 2023+ 版本中承担部分鉴权通信，基于架构推断而非抓包
+        //   误伤风险：拦截可能导致 Photoshop / Illustrator 等 CC 应用启动失败或功能异常。若确认 AdobeIPCBroker.exe 存在激活验证流量，可取消注释以启用拦截。
+        
         // ──── 国产流氓软件：改用 REJECT（快速拒绝，用户感知更好，不卡死软件）────
         "PROCESS-NAME,360sd.exe,REJECT-DROP",                // 360 杀毒主进程，可能导致 360 反复弹窗报告"网络异常"，改用 REJECT-DROP 让 360 静默超时反而更好。
         "PROCESS-NAME,360tray.exe,REJECT",                   // 360 系统托盘弹窗进程
@@ -1186,6 +1205,7 @@ function main(config) {
         "PROCESS-NAME,DriverGenius.exe,REJECT",              // 驱动精灵。⚠️ 慎用：拦截后驱动下载功能失效（进程无法联网），驱动更新将中断
         // "PROCESS-NAME,Wps.exe,REJECT",                    // WPS 办公软件。⚠️ 慎用：WPS 主进程，拦截后全部联网功能失效（包括文档云同步）
     ];
+
     const processProxyRules = [ // 进程代理（当前为空占位，示例见下方）
         // 示例：修改进程名后取消注释即可——策略组名由脚本自动填入（proxyGroupName），
         // 依赖前提：proxyGroupName 已通过代理组排除断言、Token 断言与存在性断言，此处取值为合法代理出口组名。
@@ -1292,7 +1312,7 @@ function main(config) {
         // 多平台共用域（Zapier/Notion/GitHub Actions 也在用，慎用）
         "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP",
         // ⚠️ 激进：多服务共用内容托管域（Google Cloud Workflows / Colab / AppSheet / Adobe / Zapier / Notion / GitHub Actions 等）；
-        //    拦截后所有依赖此域的服务均受影响——Colab 输出渲染、AppSheet 内容、Adobe 工作流等可能同时中断，影响面超出 Adobe 范畴。建议查阅实际流量再决定是否启用。
+        //    拦截后所有依赖此域的服务均受影响——Colab 输出渲染、AppSheet 内容、Adobe 工作流等可能同时中断，影响面超出 Adobe 范畴。建议审查实际流量再决定是否启用。
         "DOMAIN-SUFFIX,adsk.com,REJECT-DROP",                // ⚠️ 激进：Autodesk 旧版遥测（影响官网/插件商店访问）
         "DOMAIN-KEYWORD,officecdn,REJECT-DROP",              // ⚠️ 激进：Office CDN（内容分发网络）关键词规则（影响 Office 更新/模板下载）
         "DOMAIN,geo.adobe.com,REJECT-DROP",                  // ⚠️ 激进：地理区域识别（影响 CC 登录）
@@ -1652,36 +1672,44 @@ function main(config) {
             if (!Array.isArray(config.dns["fake-ip-filter"])) {
                 config.dns["fake-ip-filter"] = [];
             }
+            // ❗❗【脚本历史条目全量注册表】用于清理旧版 hijackDomains 残留条目。❗❗
+            // 设计：fake-ip-filter 采用数组追加模式，直接删除不再使用的条目需要知道"曾注入过哪些"。此集合记录本脚本历史上所有注入过的 fake-ip-filter 条目（含已删除的旧条目）。
+            // ⚠️❗ 维护规范：向 hijackDomains 新增条目时，须同时在此 Set 追加（防旧版残留无法清理）；从 hijackDomains 删除条目时，对应项留在此 Set，不得移除（保证清理能力）。
+            const _SCRIPT_MANAGED_HIJACK = new Set([
+                // 当前 hijackDomains 的全量覆盖（含主域、兼容旧版内核注释条目）
+                "+.966v26.com", "966v26.com", "*.966v26.com", "api.966v26.com", "status.966v26.com",
+                "+.vposy.com",  "vposy.com",  "*.vposy.com",
+                "+.api.pzz.cn", "api.pzz.cn", "*.api.pzz.cn",
+                "+.cc-cdn.com", "cc-cdn.com", "*.cc-cdn.com",
+            ].map(d => d.toLowerCase()));
+
             // 【性能优化】单次遍历同时完成归一化、去重与分类，避免双重 Set 构造开销。先 trim 归一化（消除首尾空白），过滤非法条目，再用 existingSet 去重并写入 cleanExisting。
             // hosts 字段采用对象展开覆写，而 fake-ip-filter 采用数组追加，两者生命周期管理策略不一致，fake-ip-filter 具有累加性，如需清理请重置 CVR 的 DNS 设置或重置订阅。
             const existingSet   = new Set();
             const cleanExisting = [];
             for (const entry of config.dns["fake-ip-filter"]) {
-                const s = typeof entry === "string" ? entry.trim() : "";
+                const s  = typeof entry === "string" ? entry.trim() : "";
                 const sl = s.toLowerCase();
-                if (s && !existingSet.has(sl)) {
+                // 跳过：空值 / 重复项 / 属于本脚本历史管理的条目（下方重新注入当前 hijackDomains）
+                if (s && !existingSet.has(sl) && !_SCRIPT_MANAGED_HIJACK.has(sl)) {
                     existingSet.add(sl);
                     cleanExisting.push(s);
                 }
             }
             // 域名大小写不敏感（RFC 4343），比较时统一 toLowerCase，防止 "Steam.com" 与 "steam.com" 被视为不同条目。
             const newEntries    = hijackDomains.filter(d => !existingSet.has(d.toLowerCase())).sort();
-            config.dns["fake-ip-filter"] = [...cleanExisting, ...newEntries];            
+            config.dns["fake-ip-filter"] = [...cleanExisting, ...newEntries];
             // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
             console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可！");
-            // console.warn("❗ 前提1：CVR › DNS 覆写 → 必须开启「启用 DNS」（关闭则 dns 块整体失效）");
-            // console.warn("❗ 前提2：CVR › DNS 覆写 → 必须开启「使用 Hosts」");
             console.warn("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
         
             const targetStr = Array.isArray(target) ? target.join(" / ") : target;
             console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条，`
                 + ` | 模式: [${HOSTS_MODE}] → ${targetStr}`
                 + ` | 但需 CVR 开启「启用 DNS」与「使用 Hosts」才能生效。`);
-            // 区分"本脚本条目已存在数"与"原列表总条目数"两个不同统计维度。
-            // existingSet.size = 原 fake-ip-filter 所有条目总数（含订阅自带的非脚本条目）；
-            // 本脚本条目已存在数 = hijackDomains.length - newEntries.length。
+            // existingSet.size：剔除脚本历史管理条目后，订阅原有条目数（非脚本条目总数）。本脚本条目已存在数 = hijackDomains.length - newEntries.length。
             const _alreadyIn = hijackDomains.length - newEntries.length;
-            console.log(`   fake-ip-filter 去重后新增: ${newEntries.length} 条（注入前已有 ${_alreadyIn} 条脚本条目重合，原列表去重后共 ${existingSet.size} 条）`);
+            console.log(`   fake-ip-filter 去重后新增: ${newEntries.length} 条（注入前已有 ${_alreadyIn} 条脚本条目重合，订阅原有非脚本条目共 ${existingSet.size} 条）`);
             if (existingSet.size === 0) {
                 console.log("（fake-ip-filter 此前为空或已被 CVR UI 清空，已完整重新写入）");
             }
