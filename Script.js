@@ -988,7 +988,7 @@ function main(config) {
         // "api.sogoucloud.com",                 // ⚠️ 已注释：搜狗输入法云端接口，域名拼写无公开抓包资料确认，待验证后启用
         // 腾讯 Bugly 崩溃上报 SDK（Software Development Kit，软件开发工具包；大量国产软件集成，含设备指纹）
         "bugly.qq.com",                          // 腾讯 Bugly 崩溃上报 SDK
-        "bugly.gtimg.com",                          // 腾讯 Bugly 管理后台使用的静态资源 CDN（未覆盖）
+        "bugly.gtimg.com",                          // 腾讯 Bugly 管理后台使用的静态资源 CDN
         // 字节跳动系（抖音/剪映/头条/西瓜共用）
         "log.snssdk.com",                        // 字节系客户端日志上报（头条/西瓜等）
         "i.snssdk.com",                          // 字节跳动国内 SDK 主接口域（⚠️ 非单纯遥测：含账号认证、功能 API 等，拦截后可能导致字节系 APP 功能性断连，非仅屏蔽上报）
@@ -1175,7 +1175,7 @@ function main(config) {
     // ⚠️ PROCESS-NAME 规则直接通过系统 Socket 获取进程信息，不依赖 SNI 嗅探，在路径B（应用绕过 Mihomo DNS 且开启 ECH，DOMAIN 类规则全部失效）下，
     //    是唯一有效的域名无关进程级拦截手段（路径A 下 DOMAIN 规则仍生效，此为附加纵深）。
     const processBlockRules = [ // 进程拦截
-        // ──── 正版验证类：保留 REJECT-DROP（让软件超时等待，不快速切换备用链路）────
+        // ──── 软件鉴权与遥测类：方案 REJECT-DROP（让软件超时等待，不快速切换备用链路）────
         // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核能够尽早排除低代价条件后跳过高代价求值）：
         // NETWORK（读包头）→ DST-PORT（整数比较）→ PROCESS-NAME（查系统进程表）。实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
         // first-match 语义下：
@@ -1193,8 +1193,8 @@ function main(config) {
         // "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",    // 进程间通信代理，CC 各组件通过此进程转发激活验证请求，在 CC 2023+ 版本中承担部分鉴权通信，基于架构推断而非抓包
         //   误伤风险：拦截可能导致 Photoshop / Illustrator 等 CC 应用启动失败或功能异常。若确认 AdobeIPCBroker.exe 存在激活验证流量，可取消注释以启用拦截。
         
-        // ──── 国产流氓软件：改用 REJECT（快速拒绝，用户感知更好，不卡死软件）────
-        "PROCESS-NAME,360sd.exe,REJECT-DROP",                // 360 杀毒主进程，可能导致 360 反复弹窗报告"网络异常"，改用 REJECT-DROP 让 360 静默超时反而更好。
+        // ──── 恶意软件类：方案 REJECT（快速拒绝，用户感知更好，不卡死软件）────
+        "PROCESS-NAME,360sd.exe,REJECT-DROP",                // 360 杀毒主进程，可能导致 360 反复弹窗报告"网络异常"，改用 REJECT-DROP 让 360 静默超时反而更好
         "PROCESS-NAME,360tray.exe,REJECT",                   // 360 系统托盘弹窗进程
         "PROCESS-NAME,2345Mini.exe,REJECT",                  // 2345 迷你窗口/弹窗进程
         "PROCESS-NAME,2345Helper.exe,REJECT",                // 2345 后台辅助进程
@@ -1309,10 +1309,9 @@ function main(config) {
         //    如无上述分层需求，可安全删除 REGEX 而零覆盖损失（SUFFIX 完全兜底）。
         "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",        // ⚠️ 激进：所有 adobe.io 子域；覆盖范围已被下方 SUFFIX 包含，保留意图为将来独立调整子域与裸域动作
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // ⚠️ 激进：adobe.io 裸域+全部子域（SUFFIX 为 REGEX 的严格超集，此条为功能必要条目）
-        // 多平台共用域（Zapier/Notion/GitHub Actions 也在用，慎用）
-        // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP",
+        // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP", // 多平台共用域（Zapier/Notion/GitHub Actions 也在用），建议审查实际流量再决定是否启用。
         // ⚠️ 激进：多服务共用内容托管域（Google Cloud Workflows / Colab / AppSheet / Adobe / Zapier / Notion / GitHub Actions 等）；
-        //    拦截后所有依赖此域的服务均受影响——Colab 输出渲染、AppSheet 内容、Adobe 工作流等可能同时中断，影响面超出 Adobe 范畴。建议审查实际流量再决定是否启用。
+        //    拦截后所有依赖此域的服务均受影响——Colab 输出渲染、AppSheet 内容、Adobe 工作流等可能同时中断，影响面超出 Adobe 范畴。
         "DOMAIN-SUFFIX,adsk.com,REJECT-DROP",                // ⚠️ 激进：Autodesk 旧版遥测（影响官网/插件商店访问）
         "DOMAIN-KEYWORD,officecdn,REJECT-DROP",              // ⚠️ 激进：Office CDN（内容分发网络）关键词规则（影响 Office 更新/模板下载）
         "DOMAIN,geo.adobe.com,REJECT-DROP",                  // ⚠️ 激进：地理区域识别（影响 CC 登录）
@@ -1411,8 +1410,8 @@ function main(config) {
             pushSuffix(youtubeSuffix, "REJECT", layerPools.block);
             pushDomain(youtubeDomain, "REJECT", layerPools.block);
             pushKeyword(youtubeKeyword, "REJECT", layerPools.block); // 该行注释状态必须与被调用的数据层变量对应行一致（两处必须同步）；
-                                                                        // 或直接将调用的该变量的数组赋值清空：const youtubeKeyword = []
-            // 通用广告联盟。
+                                                                     // 或直接将调用的该变量的数组赋值清空：const youtubeKeyword = []
+            // 通用广告联盟
             pushSuffix(genericAdSuffix, "REJECT", layerPools.block);
             pushKeyword(globalKeyword, "REJECT", layerPools.block);
         }

@@ -52,7 +52,7 @@ geox-url:                       # ⚙️ geodata 下载地址。未声明时 Mih
   # ℹ️ mmdb 字段说明：geodata-mode: true 时，geoip.dat / geosite.dat 优先，mmdb 字段不参与 GEOIP 查询；geodata-mode: false 时，mmdb 为唯一生效数据库路径。
   # mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb" # 当前 geodata-mode: true，注释掉省去每日一次下载。
   # ℹ️ ASN（自治系统号）数据库用于 Mihomo 的 GEOASN 规则匹配指令（格式：GEOASN,<AS号>,<动作>），当前配置未声明 GEOASN 规则，该字段仅为预留。
-  asn:     "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb"
+  # asn:     "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb"
 
 profile:
   store-selected: true          # ⚙️ 策略组节点选择状态持久化：将节点选择写入 cache.db（本地持久化缓存数据库），防止重启或订阅更新、配置重载时导致节点选择状态重置。
@@ -63,7 +63,7 @@ profile:
                                 # ⚠️ 仅 DNS 模式为 fake-ip 时有效，redir-host（真实 IP 重定向模式）下无意义。
                                 # ⚠️ 隐私审计：启用时 cache.db 将记录域名与 Fake-IP 的映射表，极端隐私需求可定期清理。
 
-# ⚠️ [deprecated] 此字段已被 Mihomo 标记为废弃，未来可能被内核移除。届时需迁移至节点级 `client-fingerprint` 或移除。
+# ⚠️ [deprecated] 此字段已被 Mihomo 标记为废弃，未来可能被内核移除。届时需迁移至节点级 client-fingerprint 或移除。
 # 可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random。💡 random：启动时从指纹库随机抽取一个值并固定使用，非每连接随机切换。
 # 模拟指定客户端的 TLS 握手特征；实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
 # 优先级：协议特定指纹（如 Reality）> 节点级 client-fingerprint > 全局（本字段）。仅在节点未声明 client-fingerprint 时生效，为最低优先级的全局兜底。
@@ -72,7 +72,7 @@ profile:
 
 # # ⚠️ sniffer 配置是保障注入的 UDP/QUIC 域名类规则在纯 IP 直连路径下仍能命中的关键前提，
 # # 禁用 sniffer 将导致这些规则在纯 IP 直连路径（应用绕过 DNS、直接以 IP 建立 UDP/QUIC 连接）下失效。
-# # force-dns-mapping: true：使 Script.js 注入的 DOMAIN 类及 AND（多条件组合）类规则能通过 DNS 映射缓存识别域名。
+# # force-dns-mapping: true：使 Script.js 注入的 DOMAIN 类及 AND（多条件组合）类规则能通过内核的连接-域名映射表识别域名。
 # # parse-pure-ip: true：使绕过 DNS 的纯 IP 流量也能触发嗅探，提升 Script.js 规则集的命中率。
 sniffer:
   enable: true                  # ⚙️ 启用流量嗅探：在协议握手或请求阶段提取目标域名，使内核在无 DNS 解析的情况下也能获取域名，用于域名规则匹配。
@@ -107,10 +107,10 @@ sniffer:
 # #  · include-all: true 为 Mihomo 内核支持字段，各客户端 UI 兼容性不一。部分采用原版 Clash (Premium/FOSS) 内核的客户端静默跳过（即该策略组不包含任何节点，成为空组）。
 # #    设为：true 配置加载时将订阅内所有 outbound proxies（底层代理节点）及 proxy sets（proxy-providers 的节点集合）引入本组（proxy groups 及嵌套策略组均不在继承范围内），
 # #    切换订阅后无需手动维护节点列表。大多数机场提供的均为裸节点，"不含 proxy groups"这条限制在常见场景下影响极小。
-# #  ⚠️ 隐式前提：订阅须包含 outbound proxies（底层代理节点）。以下两种情况均会导致未能继承任何节点，锚点策略组成为空组：
-# #     机场仅提供策略分组，不对外提供裸节点。订阅仅提供 relay / url-test / fallback 等策略组，且未将原始节点对外提供。
+# #  ⚠️ 隐式前提：订阅须包含 outbound proxies（底层代理节点）。若机场仅提供策略组（select / url-test / fallback / relay 等任意类型），
+# #     不暴露底层裸节点，include-all 无节点可继承，锚点策略组成为空组。
 # #  ⚠️ 若订阅源返回空节点，本配置将整体不可用，Fail-Fast 会将外部错误显式暴露为全局连接失败。遇此情况须检查订阅源，或改用硬编码订阅组名方案。
-# #  ⚠️ 若不声明此块，切换订阅时一旦订阅不含该组名，Mihomo（代理内核）启动即报错 proxy XXX not found，rules 中所有指向该组的条目失效。
+# #  ⚠️ 若不声明此块，切换订阅时一旦订阅不含该组名，Mihomo 启动即报错 proxy XXX not found，并拒绝加载整个配置，所有规则均不生效（非局部失效）。
 # #
 # # 【已知代价】
 # #  proxy-groups 为 Array 类型（有序列表），声明即触发全量替换，订阅原有所有策略组被丢弃。
@@ -127,7 +127,7 @@ proxy-groups:
     interval: 600     # 健康检查间隔，如不为 0 则启用定时测试，默认值 300，单位：秒。设为每 10 分钟最多换一次节点，有意控制 IP 变动频率。可根据实际情况动态调整。
     tolerance: 50     # 节点切换容差，单位：毫秒。只有当备选节点延迟比当前节点延迟低超过 50ms 时，内核才触发切换。
     lazy: true        # 惰性模式（按需探测）：仅在当前组被实际使用时才触发健康检查，减少无效后台流量。
-    url: http://www.gstatic.com/generate_204 # 延迟测试链接
+    url: http://www.gstatic.com/generate_204 # 延迟测试链接（使用 HTTP 而非 HTTPS，避免 TLS 握手开销影响延迟测量精度）
     # url: http://cp.cloudflare.com/generate_204 # 备用延迟测试链接
     expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用。默认值为 *，表示对响应状态不做要求。可使用 / 匹配多个状态码、- 匹配状态范围，可混合书写。
     filter: '^(?!.*(剩余|到期|官网|套餐|重置|群|客服)).+$'  # 正则表达式过滤，需单引号包裹。排除"流量剩余""套餐到期""官网"等非代理节点。
@@ -138,7 +138,7 @@ proxy-groups:
     interval: 1800    # 健康检查间隔，如不为 0 则启用定时测试，默认值 300，单位：秒。为避免 IP 频繁变动触发风控，暂设半小时（不一定能规避风控），可根据实际情况动态调整。
     tolerance: 50     # 节点切换容差，单位：毫秒。只有当备选节点延迟比当前节点延迟低超过 50ms 时，内核才触发切换。
     lazy: true        # 惰性模式（按需探测）：仅在当前组被实际使用时才触发健康检查，减少无效后台流量。
-    url: http://www.gstatic.com/generate_204 # 延迟测试链接
+    url: http://www.gstatic.com/generate_204 # 延迟测试链接（使用 HTTP 而非 HTTPS，避免 TLS 握手开销影响延迟测量精度）
     # url: http://cp.cloudflare.com/generate_204 # 备用延迟测试链接
     expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用。默认值为 *，表示对响应状态不做要求。可使用 / 匹配多个状态码、- 匹配状态范围，可混合书写。
     filter: '^(?i)(?!.*(香港|HK|Hong\s*Kong|🇭🇰))(?!.*(剩余|到期|官网|套餐|重置|群|客服)).+$' # 正则过滤。内联标志对大小写不敏感，过滤香港节点及订阅信息的非代理节点。
@@ -190,10 +190,10 @@ proxy-groups:
 # #  ⚠️ 规则集失效退化路径：
 # #  加载失败 → 优先使用缓存；首次启动且下载失败 → 该规则集条目数为 0。
 # #  当综合拦截集与域名分流集均为 0 条时，规则链穿透路径为：本地放行集 → 归属地映射 → 无条件兜底（MATCH）。
-# #  ℹ️ 当 MATCH 设置为代理出口时效果：几乎全部流量进入代理出口（回退为近似全局代理模式），用户无明显提示。建议通过日志或 CVR「规则集」界面定期检查规则集加载状态。
+# #  ℹ️ 当 MATCH 设置为代理出口时效果：几乎全部流量进入代理出口（退化为近似全局代理模式），用户无明显提示。建议通过日志或 CVR「规则集」界面定期检查规则集加载状态。
 # #
 # #  使用说明：
-# #  ⚠️ 强联动约束（双向同步）：启用或禁用须同步注释 rule-providers 块与 rules 段的对应规则行的注释状态。两者互为前置依赖，仅注释其中一处，内核启动即报错，整个配置加载失败。
+# #  ⚠️ 单向约束：若注释 rule-providers 中的规则集条目，必须同步注释 rules 中对应的 RULE-SET 引用行；反向（注释 rules 引用而保留 rule-providers 条目）不会报错，属合法配置。
 
 rule-providers:
 
