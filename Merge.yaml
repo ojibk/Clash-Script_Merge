@@ -212,16 +212,16 @@ rule-providers:
                       #    来源仓库：https://github.com/DustinWin/ruleset_geodata/blob/mihomo-ruleset/private.list
                       #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/private.mrs
 
-  # lan_cidr: # 🔓 局域网私有 IP 段直连集
+  # lan-cidr: # 🔓 局域网私有 IP 段直连集
   #   # 💡 设计说明：private 仅收录私有/保留域名（依据 RFC 2606 / RFC 6761 等定义的特殊用途域名），不覆盖 192.168.x.x、10.x.x.x、172.16.x.x 等私有 IP 段。
   #   #    本条目以 IP 维度，与 private（域名维度）互为补充，共同构成完整的局域网直连防线。
   #   #    缺失时，内网 IP 直连规则层失效，内网请求将穿透至代理出口；但 GEOIP,PRIVATE 仍可在 IP 维度兜底覆盖私有/保留地址段，并非绝对失效。
   #   #    数据源与 Loyalsoldier lancidr.txt 语义接近，由 MetaCubeX 自动构建并以 MRS 格式分发。
-  #   #    远程源文件名：private.mrs（来自 geoip/private.mrs）。本地缓存因与 geosite/private.mrs 同名冲突，故重命名为 lan_cidr.mrs。
+  #   #    远程源文件名：private.mrs（来自 geoip/private.mrs）。本地缓存因与 geosite/private.mrs 同名冲突，故重命名为 lan-cidr.mrs。
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
   #   behavior: ipcidr  # ℹ️ 行为：IP 网段模式，MRS 直接内存映射已构建的前缀匹配树（CIDR Trie），与 domain 模式不可互换。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建阶段。
-  #   path: "./ruleset/providers/lan_cidr.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
+  #   path: "./ruleset/providers/lan-cidr.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
   #   interval: 604800  # ⏱️ 更新间隔：604800 秒 = 7 天（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
   #                     #    列表内容基于 RFC 1918 / RFC 1122（回环） / RFC 6598（CGNAT）等私有/保留地址标准，结构极低频变动，设 7 天以减少不必要的远程拉取请求。
   #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
@@ -330,9 +330,9 @@ rule-providers:
 # # 【规则分层设计】
 # #  规则链按误判风险由低到高排列：
 # #
-# #  ▌本地放行集：   私有/保留域名与局域网 IP 段，命中后动作绝对确定（DIRECT），无误判风险。注意：private / lan_cidr 同为远程规则集，首次加载失败时条目数为 0；
+# #  ▌本地放行集：   私有/保留域名与局域网 IP 段，命中后动作绝对确定（DIRECT），无误判风险。注意：private / lan-cidr 同为远程规则集，首次加载失败时条目数为 0；
 # #                 GEOIP,PRIVATE 作为 IP 层兜底，在规则集失效时仍可确定性覆盖私有网段。本地放行集以域名与 IP 段双维度精确匹配，归属地映射为 IP 维度作统计性补充，
-# #                 其中 lan_cidr 与 GEOIP,PRIVATE 在私有/保留地址段（含 RFC 1918 及回环、链路本地、CGNAT 等）存在重叠，两者互为补充属有意冗余。
+# #                 其中 lan-cidr 与 GEOIP,PRIVATE 在私有/保留地址段（含 RFC 1918 及回环、链路本地、CGNAT 等）存在重叠，两者互为补充属有意冗余。
 # #  ▌综合拦截集：   远程规则集 REJECT，依赖加载状态，加载失败静默跳过。
 # #                 💡 REJECT vs REJECT-DROP 选型原则：
 # #                 REJECT      → 主动拒绝连接（连接立即失败），客户端立刻感知错误并终止连接尝试，无启动卡顿。
@@ -365,7 +365,7 @@ rules:
   
   # ▌本地放行 — 命中后动作绝对确定（DIRECT），无统计性误判风险
   - RULE-SET,private,DIRECT             # 🔓 私有/保留域名 → 直连，匹配 localhost / .local / router.asus.com 等，不经代理。
-  # - RULE-SET,lan_cidr,DIRECT,no-resolve # 🔓 局域网私有 IP 段 → 直连，private 的 IP 层补丁，覆盖 IPv4 私有网段及 IPv6 ULA 等保留地址。
+  # - RULE-SET,lan-cidr,DIRECT,no-resolve # 🔓 局域网私有 IP 段 → 直连，private 的 IP 层补丁，覆盖 IPv4 私有网段及 IPv6 ULA 等保留地址。
 
   # ▌综合拦截 — 拦截广告、遥测、恶意类流量
   - RULE-SET,ads,REJECT                 # 🚫 综合拦截域名 → 拒绝
