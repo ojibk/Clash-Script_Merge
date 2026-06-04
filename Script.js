@@ -876,7 +876,7 @@ function main(config) {
         "966v26.com",                            // 非官方修改补丁后门主域（回传设备信息）
         "vposy.com",                             // 知名非官方修改补丁作者域名（Adobe/Office）
         "api.pzz.cn",                            // 国内非官方修改补丁回传接口
-        "cc-cdn.com",                            // 【待观测】命名形似 Adobe CC CDN，无抓包证据，保守纳入；可信度低于前三条。若误命中合法 CDN，会导致启动卡顿
+        // "cc-cdn.com",                            // 【待观测】命名形似 Adobe CC CDN，无抓包证据，保守纳入；可信度低于前三条。若误命中合法 CDN，会导致启动卡顿
     ];
     // 关键词兜底：覆盖 966v26.net / cdn.966v26.org 等非 .com TLD（顶级域名，Top-Level Domain）变种，REJECT-DROP 策略与 backdoorSuffix 一致。
     // ⚠️ 误命中风险评估："966v26" 为高特异性域名特征字符串（抓包来源），在已知合法域名中无任何同名子串，实际误命中概率极低。
@@ -886,7 +886,7 @@ function main(config) {
     // ──────────── IDM / Bandicam / Wondershare 等其他软件激活拦截 ────────────
     const idmSuffix = [
         "registeridm.com",                       // IDM 注册验证域
-        // "internetdownloadmanager.com",        // ⚠️ 已注释：主域误伤官网，改用下方精确子域
+        // "internetdownloadmanager.com",        // ⚠️ 已注释：拦截主域误伤官网，改用下方精确子域
         "secure.internetdownloadmanager.com",    // 序列号验证接口
         "mirror.internetdownloadmanager.com",    // 更新镜像服务器
         "mirror2.internetdownloadmanager.com",   // 更新镜像服务器
@@ -1310,7 +1310,7 @@ function main(config) {
         "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",        // ⚠️ 激进：所有 adobe.io 子域；覆盖范围已被下方 SUFFIX 包含，保留意图为将来独立调整子域与裸域动作
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // ⚠️ 激进：adobe.io 裸域+全部子域（SUFFIX 为 REGEX 的严格超集，此条为功能必要条目）
         // 多平台共用域（Zapier/Notion/GitHub Actions 也在用，慎用）
-        "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP",
+        // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP",
         // ⚠️ 激进：多服务共用内容托管域（Google Cloud Workflows / Colab / AppSheet / Adobe / Zapier / Notion / GitHub Actions 等）；
         //    拦截后所有依赖此域的服务均受影响——Colab 输出渲染、AppSheet 内容、Adobe 工作流等可能同时中断，影响面超出 Adobe 范畴。建议审查实际流量再决定是否启用。
         "DOMAIN-SUFFIX,adsk.com,REJECT-DROP",                // ⚠️ 激进：Autodesk 旧版遥测（影响官网/插件商店访问）
@@ -1609,7 +1609,7 @@ function main(config) {
             //   精确项是为兼容旧版内核：旧版不识别 +. 语法时，*.XXX.com 覆盖单级子域，如使用旧版内核请自行取消下方对应规则条目的注释以使之生效。
             //   XXX.com 保障主域本身。代价：内核 hosts 树略有冗余，无功能影响。
             //
-            // hijackDomains 覆盖 backdoorSuffix 全部四个域名，与 rules 层的 REJECT-DROP 规则保持覆盖对称，形成 DNS 层 + rules 层双重纵深防御。
+            // hijackDomains 覆盖 backdoorSuffix 全部域名，与 rules 层的 REJECT-DROP 规则保持覆盖对称，形成 DNS 层 + rules 层双重纵深防御。
             const hijackDomains = [
                 // ──── 966v26.com（有明确社区记录）────
                 "+.966v26.com",              // 全量覆盖主域 + 所有多级子域
@@ -1624,7 +1624,7 @@ function main(config) {
                 "+.api.pzz.cn",
                 // "api.pzz.cn",
                 // ──── cc-cdn.com（【推断】可信度低于前三条，无公开抓包资料，保守纳入 DNS 层）────
-                "+.cc-cdn.com",
+                // "+.cc-cdn.com",
                 // "cc-cdn.com",
             ];
 
