@@ -717,7 +717,7 @@ rules:
 # #  原选用 AdvertisingLite 精简版的原因：完整版条目数量庞大，text 格式加载时 IPC 可能超时。
 # #  改用 MRS 格式后，加载直接内存映射，主线程同步阻塞（I/O + Trie 构建）导致内核无法响应前端 RPC 查询的超时风险消除，改为完整版以备用。
 # #  若需自定义域名集，参考格式：以记事本创建域名列表，每行一个域名后缀（如+.a.com），然后在终端中切换至 Clash Verge 安装目录：cd "<安装目录>"
-# #  执行转换命令：.\verge-mihomo convert-ruleset domain text your_list.txt your_list.mrs
+# #  执行转换命令：./verge-mihomo convert-ruleset domain text your_list.txt your_list.mrs
 # #
 # # 【geodata-mode: true — GeoIP 数据库格式切换（统一归属判定基准）+ geox-url 落地】
 # #  切换内置 GeoIP 数据库为 dat 格式（MetaCubeX 自维护）。同时配置 geo-auto-update: true / geo-update-interval: 24 / geox-url（jsDelivr CF 节点）；
