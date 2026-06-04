@@ -99,7 +99,7 @@ function main(config) {
     //    两者最终效果相同（节点无 client-fingerprint 字段），可根据需要选择。
     const ENABLE_CLIENT_FINGERPRINT = true;
     // 默认指纹，仅在 ENABLE_CLIENT_FINGERPRINT 为 true 时生效。可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random / none
-    // 💡 random：启动时从指纹库按 Cloudflare Radar 数据概率生成一个现代浏览器指纹并固定使用，非每连接随机切换。概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
+    // 💡 random：启动时从指纹库（按 Cloudflare Radar 数据概率）生成一个浏览器指纹并固定使用，非每连接随机切换。概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
     const DEFAULT_FINGERPRINT = "chrome";
     // 指纹注入黑名单：名称中包含这些关键词的节点，即使没有指纹也不会被注入。用途：保护特殊节点（如专用 IP 节点、特定落地机）不被意外修改指纹。
     const FINGERPRINT_BLACKLIST = [
@@ -169,8 +169,8 @@ function main(config) {
     //    清理算法依赖精确等值（===）匹配；若确需修改哨兵格式，须同步更新清理逻辑。null/undefined 也不会意外匹配哨兵字符串，严格等值天然防御。
     // 💡 TLD 选型：使用 RFC 6761 明确保留的 .invalid（无效域），而非 .local（RFC 6762 mDNS 保留域）。
     //    local 在部分系统级 mDNS 配置下可能触发 DNS 多播查询；invalid 作为保留域，标准 DNS 实现不应对其解析，产生额外 DNS 流量的风险极低，更为安全。
-    const _SENTINEL_START = "DOMAIN,start-rule-injection-sentinel.invalid,REJECT";
-    const _SENTINEL_END   = "DOMAIN,end-rule-injection-sentinel.invalid,REJECT";
+    const _SENTINEL_START = "DOMAIN,START-rule-injection-sentinel.invalid,REJECT";
+    const _SENTINEL_END   = "DOMAIN,END-rule-injection-sentinel.invalid,REJECT";
     {
         // 栈重建：单次遍历，O(N) 时间，O(N) 空间。
         // START 压栈时记录 newRules.length 快照；END 匹配时回退 length 至快照值，等效删除整段旧注入区块。
@@ -261,7 +261,7 @@ function main(config) {
     const _ts = [_now.getHours(), _now.getMinutes(), _now.getSeconds()]
         .map(n => String(n).padStart(2, "0"))
         .join(":");
-    console.log(`📊 脚本执行开始 [${_ts}]`);
+    console.log(`📊 规则注入开始 [${_ts}]`);
     console.log("=".repeat(28));
 
     // ════════════════ 1. 智能识别代理策略组 ════════════════
@@ -310,9 +310,13 @@ function main(config) {
     //      → 「拒绝垃圾流量」含「拒绝」，保守排除：含「拒绝」的组名通常指向 REJECT 出口，用作路由出口将导致流量被拒绝。命名模糊时仍保守排除以防路由失效。
     //   ⚠️ "全局"已从此正则移出，由独立的 FALLBACK_CN_RE 负责识别（原因见下方 FALLBACK_CN_RE 及 isEligibleGroup 防回归说明）。
     //   ⚠️ 已知局限：后半段无位置锚点，采用子串匹配。若代理组命名为「非直连节点」、「不拒绝广告」等包含否定前缀的复合词，会因包含「直连」或「拒绝」子串而被错误排除。
-    //   ⚠️ 「默认节点」等含「默认」的复合词组名不触发（精确词加 $ 锚定为设计取舍）此类指向 DIRECT 的订阅极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。
-    //   ⚠️ 已知限制：组名恰为「全球」（仅两字，无修饰词）时被精确匹配排除（^全球$），无警告日志，注入将进入容错路径或触发代理组排除断言中止。
-    //      含「全球」的复合词（如「全球节点」）因含「节点」关键词，可进入优选策略正常被选中。纯「全球」命名极为罕见；若遇到，可手动将 proxyGroupName 默认值改为正确组名。
+    //   ⚠️ 「默认节点」等含「默认」的复合词组名不触发（精确词加 $ 锚定为设计取舍）此类指向 DIRECT 的订阅极为罕见；此取舍可最大化保障通用订阅的兼容性。
+    //   ⚠️ 极端边界（两字排除）：组名恰为「全球」（仅两字，无修饰词）时被精确匹配排除（^全球$），无警告日志，注入将进入容错路径或触发代理组排除断言中止。
+    //      含「全球」的复合词（如「全球节点」）因含「节点」关键词，可进入优选策略正常被选中。
+    //   ℹ️ 针对极端特例的避坑指南，若订阅唯一组名恰为「全球」，有两种解法：
+    //      1. 直接在订阅转换前端或本地 Profile 覆写层将该代理组重命名（推荐，零代码侵入）；
+    //      2. 在 EXCLUDED_CN_RE 中移除 "全球" 的匹配项，并将 FALLBACK_CN_RE 改为 /^(?:全局|全球)$/（同时更新 FALLBACK_NAMES ∩ EXCLUDED_NAMES 断言的测试词列表）。
+    //  
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|用|球)|所有|默认)$|(?:直连|拒绝)/;
 
     // 中文兜底组：「全局」对应 FALLBACK_NAMES 中的 GLOBAL，语义与行为均对称。
@@ -337,10 +341,10 @@ function main(config) {
 
     // 合法代理出口类型白名单（统一引用源：关键词优选/正则优选/类型优选各轮均引用此常量，新增类型只需改此处）。
     // ⚠️ 最终容错策略（第五轮）改用 _UNSUITABLE_TYPES 黑名单方式，不引用此常量；
-    //    两者从正反两面描述同一批被排除类型（relay / url-latency-benchmark / smart），
+    //    两者从正反两面描述同一批被排除类型（relay / url-latency-benchmark），
     //    修改此处须同步检查 _UNSUITABLE_TYPES，反之亦然，两者描述同一批被排除类型的正反两面，当前已知类型空间内互补，新增类型须同步检查两处。
     // load-balance 为动态路由策略，与 url-test 同级，具备合法出口语义，纳入白名单。
-    // 被排除的三类类型，原因各异：
+    // 被排除的类型（在此两个 Set 中均体现为排除）：
     //   relay：固定节点链路转发，强制指定出口，无用户可切换的节点选择语义。
     //   url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。
     //   smart：Mihomo v1.18+ 正式稳定类型，自适应出口选择，具备合法出口语义，已纳入白名单。旧版对 smart 行为不保证，若遇路由异常可回退：将 smart 从本 Set 移除。
@@ -455,7 +459,7 @@ function main(config) {
 
         // [兜底降级] 降级选取（GLOBAL/"全局" 等，优选策略全部失败时才触发）
         // ⚠️ 不能直接取首个元素，订阅第一个组可能是 DIRECT，导致本脚本注入的代理规则失效（流量直连）
-        // 保留类型过滤（与前三轮优选策略一致），防止选中固定链路、测速专用或实验性自适应类型（relay / url-latency-benchmark / smart）。
+        // 保留类型过滤（与前三轮优选策略一致），防止选中固定链路（relay）和测速专用（url-latency-benchmark）；smart 已纳入 VALID_PROXY_TYPES，可被选中。
         if (!_mainEntry) {
             _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
                 _isFallbackGroupCore(cleanName) &&
@@ -471,7 +475,7 @@ function main(config) {
         // [最终容错选取] 安全兜底（全部前置策略失败时的最后屏障）────────────────
         // 优选层策略（关键词/正则/类型）与兜底层降级策略全部失效时进入此分支。
         // 目的：在显式 return config 中止注入之前，尽力寻找可用组。
-        // 策略：仅排除出口语义不适合的类型（relay / url-latency-benchmark / smart），其他类型均允许；
+        // 策略：仅排除出口语义不适合的类型（relay / url-latency-benchmark），其他类型均允许；smart 已移入 VALID_PROXY_TYPES，此处不再排除。
         //   为减少用户干预成本，在无理想出口组时优先选取次优组而非中止注入；用户若发现路由异常，可通过添加关键词或调整组名来引导识别。
         //   注：load-balance 已纳入 VALID_PROXY_TYPES，不在 _UNSUITABLE_TYPES 排除列表中。
         if (!_mainEntry) {
@@ -485,7 +489,7 @@ function main(config) {
             );
             if (_mainEntry) {
                 console.warn(`🚨 严重警告：关键词/正则/类型优选 + 兜底组降级全部失败，触发最终容错选取`);
-                console.warn(`   已排除固定链路 / 测速专用 / 实验性自适应类型（relay / url-latency-benchmark / smart），`
+                console.warn(`   已排除固定链路（relay）/ 测速专用（url-latency-benchmark）；smart 已纳入白名单，可被选中；`
                 + `选取首个可用组 [${_mainEntry.g.name}] (type: ${_mainEntry.g.type ?? "未知"})`);
                 console.warn(`   建议检查订阅结构是否符合关键词列表`);
             }
@@ -551,7 +555,7 @@ function main(config) {
     //   两者不是冗余，是刻意的"宽进严出（识别阶段宽容，注入阶段严格）"纵深防御：识别尽量不漏选，注入绝对不破坏语法。
     // proxyGroupName 存储原始值（mainGroup.name），sanitizeName 的清洗结果不用于此处。清洗结果仅用于排除词汇匹配，注入时仍使用原始值。
     // 四类拒绝维度（不同攻击向量），详细字符集见附录特殊字符集说明。
-    // 注：注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
+    // 注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
     // 💡 两层覆盖范围的完整差异说明见 _SANITIZE_RE 注释（权威定义源）；
     //    本断言为注入层权威说明：仅覆盖 Clash/YAML 语法破坏字符，不覆盖 Bidi 控制符（Bidi 视觉欺骗问题由识别层处理，注入层不需要重复防御）。
     if (/[,\u0000-\u001F\u007F\u0085\u2028\u2029]/.test(proxyGroupName)) {
@@ -1778,7 +1782,7 @@ function main(config) {
  *     [优选·正则]   正则宽松匹配           ← 次选，排除兜底组
  *     [优选·类型]   类型约束              ← 放宽数量约束
  *     [兜底降级]    兜底组选取             ← GLOBAL/"全局" 等
- *     [最终容错选取] 排除固定链路、测速专用或实验性自适应类型（relay / url-latency-benchmark / smart），最低限度类型语义过滤
+ *     [最终容错选取] 排除固定链路（relay）/ 测速专用（url-latency-benchmark）；smart 已纳入白名单，不再排除
  *     全部失败 → 直接 return config（显式中止注入，网络退回订阅原始规则）
  *   ──────────────────────────────────────────────────────────────
  *
