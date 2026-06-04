@@ -1,4 +1,4 @@
-# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链（智能路由锁区受限网络服务） v260603
+# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链（智能路由锁区受限网络服务） v260604
 # # --------------------------------------------------------------------------------------
 # # 存储路径参考：
 # #   Windows : %APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles
@@ -9,7 +9,7 @@
 # #  本文件基于锚点组架构，负责静态路由规则链（本地放行集 → 综合拦截集 → 域名分流集 → 归属地映射 → 无条件兜底）。
 # #  本配置支持独立运行；若同时启用扩展脚本，由动态注入层在覆写配置合并完成后、内核执行规则前注入规则覆盖修改，注入规则的匹配优先级高于本文件的静态规则链，最终合并入生效配置。
 # #  配置处理流：订阅 → Merge Config 合并 → Script 修改 → 最终配置 YAML → CVR 二次注入覆盖 dns/tun → Mihomo 执行
-# #  🇭🇰 智能路由锁区受限网络服务 → 走非香港节点，应用场景示例：指定某些对香港 IP 极为敏感的 AI、流媒体等网络服务（含 OpenAI、Claude、Gemini、TikTok）的路由策略。
+# #  🇭🇰 智能路由锁区受限网络服务 → 走非香港节点，应用场景示例：指定某些对香港 IP 极为敏感的 AI、流媒体等网络服务（含 ChatGPT、Claude、Gemini、TikTok）的路由策略。
 # #
 # # 【订阅须满足的最低前提】
 # #  · 订阅须声明 dns 字段（fake-ip 或 redir-host，影响 sniffer / store-fake-ip 行为）
@@ -89,7 +89,7 @@ sniffer:
                                 #    系统代理（System Proxy）模式下，纯 IP 直连流量不经过 Mihomo 接管，此字段对其无效。
   sniff:
     TLS:
-      ports: [443, 8443, 2053, 2083, 2087, 2096]        # ℹ️ 标准 HTTPS 端口 + Cloudflare 备用 HTTPS 端口全集
+      ports: [443, 8443, 2053, 2083, 2087, 2096]        # ℹ️ 标准 HTTPS 端口 + Cloudflare 备用 HTTPS 端口全集。
     HTTP:
       ports: [80, 8080, 8880, 2052, 2082, 2086, 2095]   # ℹ️ 标准 HTTP 端口 + Cloudflare 常用 HTTP 备用端口组合。
     QUIC:
@@ -130,7 +130,7 @@ proxy-groups:
     url: http://www.gstatic.com/generate_204 # 延迟测试链接
     # url: http://cp.cloudflare.com/generate_204 # 备用延迟测试链接
     expected-status: 204 # 当健康检查返回状态码与期望值不符时，认为节点不可用。默认值为 *，表示对响应状态不做要求。可使用 / 匹配多个状态码、- 匹配状态范围，可混合书写。
-    filter: '^(?!.*(剩余|到期|官网|套餐|重置|群|客服)).+$'  # 正则表达式过滤，需引号包裹。排除"流量剩余""套餐到期""官网"等非代理节点。
+    filter: '^(?!.*(剩余|到期|官网|套餐|重置|群|客服)).+$'  # 正则表达式过滤，需单引号包裹。排除"流量剩余""套餐到期""官网"等非代理节点。
     
   - name: 🔀 绕港优选 # 声明策略组名称，优选除香港外的低延迟节点。🇭🇰 专属港区网络服务受限场景：对香港 IP 敏感的 AI、流媒体等（如 ChatGPT、Claude、Gemini、TikTok）。
     include-all: true # ⚙️ 引入所有出站代理以及代理集合（proxy groups 及嵌套策略组均不在继承范围内），切换订阅无需手动维护 proxies 数组。
@@ -231,8 +231,8 @@ rule-providers:
   #                     #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs
 
   # 拦截类规则集数据来源分别由 DustinWin 基于 privacy-protection-tools/anti-AD、peiyingyao 基于 blackmatrix7/EasyPrivacy 自动构建并以 MRS 格式分发。
-  # 规则集选用范围类型：广告 / 营销追踪 / 隐私收集 / 统计遥测上报 / 劫持 / 挖矿 / 恶意域名 / C2 命令与控制域名
-  # 💡 各规则集条目内容可能有重合，互为补充，非替代关系，可按需启用。目的：→ 隐私保护 → 安全防护 → 体验优化
+  # 规则集选用类型范围：广告 / 营销追踪 / 隐私收集 / 统计遥测上报 / 劫持 / 挖矿 / 恶意域名 / C2 命令与控制域名
+  # 💡 各规则集条目可能有重合，互为补充，非替代关系，可按需启用。目的：→ 隐私保护 → 安全防护 → 体验优化
   # advertising: # 🚫 广告拦截集
   #   # 💡 数据源说明：基于 blackmatrix7/Advertising 完整广告域名集（非精简版），由 peiyingyao 自动构建并以 MRS 格式分发。
   #   #    原选用精简版时，主线程同步阻塞（I/O + Trie 构建）会导致内核无法响应前端 RPC 查询，这一超时风险在改用 MRS 格式后已消除，故直接使用完整版。
@@ -257,13 +257,13 @@ rule-providers:
                       #    来源仓库：https://github.com/DustinWin/ruleset_geodata/tree/mihomo-ruleset
                       #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs
 
-  # threat: # 🚫 威胁阻断集（暂无理想规则集合）
+  # threat: # 🚫 威胁阻断集（暂无全面覆盖恶意域名/C2 的理想来源；当前备用源覆盖范围有限）
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
   #   behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
   #   path: "./ruleset/providers/threat.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
   #   interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
-  #   # 💡 备用：基于 blackmatrix7/EasyPrivacy 转换，由 peiyingyao 自动构建并以 MRS 格式分发（AdBlock Plus EasyPrivacy，仅抽取DOMAIN-SUFFIX类型）。
+  #   # 💡 备用：基于 blackmatrix7/EasyPrivacy 转换，由 peiyingyao 自动构建并以 MRS 格式分发（AdBlock Plus EasyPrivacy，仅抽取 DOMAIN-SUFFIX类型）。
   #   #    覆盖范围：广告、跟踪器、隐私收集。
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
   #                     #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/EasyPrivacy
@@ -295,7 +295,7 @@ rule-providers:
                       #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
                       #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs
 
-  hk-restricted: # 🇭🇰 港区受限网络服务专项规则集（含 OpenAI、Claude、Gemini 精准子域、TikTok 全球资源）
+  hk-restricted: # 🇭🇰 港区受限网络服务专项规则集（含 ChatGPT、Claude、Gemini 精准子域、TikTok 全球资源）
     type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
@@ -308,7 +308,6 @@ rule-providers:
     # 💡 收录亚马逊全球零售站点 + 静态图片资产 + 广告与前端组件库 + 卖家及物流体系规则集（不含 AWS 基础云，防止 AWS 流量被误送入代理出口）。
     #    规则集中收录的广告与前端组件域名，可能已被前置的综合拦截集以 REJECT 动作优先命中，属于预期行为。
     # 🔍 若发现购物车/结账流程异常，检查连接日志中 Amazon 域名是否被 REJECT；可在 rules 前添加精确放行规则。
-    #    该文件已由上游仓库预转换；若需本地生成，可将原文件置于内核目录下，在终端中执行转换命令：.\verge-mihomo convert-ruleset domain text amazon.txt amazon.mrs
     type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
@@ -379,8 +378,8 @@ rules:
   # ▌域名分流 — cn 规则集在前确保国内域名优先命中
   - RULE-SET,cn,DIRECT                  # 🔓 国内主流域名 → 直连。精确域名匹配无需经过 GeoIP 推断，自然规避 CDN 误判归属地；小众域名盲区由归属地映射层（GEOIP,CN）补盲覆盖。
   - RULE-SET,hk-restricted,🔀 绕港优选  # 🇭🇰 专属港区受限网络服务高可用路由规则 → 走非港节点代理。需确保位置靠前避免被代理规则抢先命中而误走其他节点。
-                                        # 应用场景示例：指定某些对香港 IP 极为敏感的 AI、流媒体等网络服务（含 OpenAI、Claude、Gemini、TikTok）的路由策略。
-  - RULE-SET,amazon,DIRECT              # 🔓 个人扩展：亚马逊购物常用域名集 → 直连，基于 Domain Trie 极速命中。置于分流集的前列是为便于切换到代理时先于直连规则命中。
+                                        # 应用场景示例：指定某些对香港 IP 极为敏感的 AI、流媒体等网络服务（含 ChatGPT、Claude、Gemini、TikTok）的路由策略。
+  - RULE-SET,amazon,DIRECT              # 🔓 个人扩展：亚马逊购物常用域名集 → 直连，基于 Domain Trie 极速命中。若切为代理出口需调整位置至直连规则之前。
   - RULE-SET,non-cn,🎛️ 动态选择         # 🛡️ 境外代理域名 → 送入锚点组 [🎛️ 动态选择]，经用户所选代理节点出站。
 
   # ▌归属地映射 — GeoIP 库基于静态 IP 注册数据进行归属地查询推断，不代表实际物理位置，在 CDN / Anycast（任播）调度下存在不可避免的归属地误差。
@@ -406,7 +405,7 @@ rules:
 # #    此外，在 DNS（域名解析系统）被污染或劫持的网络环境下，经由 UDP/TCP 53 端口获取的解析结果可能不可信。
 # #    MATCH 确保流量总是被定向至一个确定的策略组（锚点），不依赖外部 fallback；但若该策略组内无任何可用节点，则按 Fail-Fast 机制直接暴露连接失败，不会静默降级或回退。
 # #  · 总体取向：容错优先，而非精确优先。
-# #    兜底 = 确定性终点，流量必达；回退 = 降级策略，当主路径失败时切换备用路径。本配置的 MATCH 是兜底而非回退——它不是在主路径失败后出现，而是规则链的永久终点。
+# #    兜底 = 确定性的出口锚点，出口必然存在；回退 = 降级策略，当主路径失败时切换备用路径。本配置的 MATCH 是兜底而非回退——它不是在主路径失败后出现，而是规则链的永久终点。
 # #    兜底是常态路径的终点，回退是异常路径的救生艇。本配置只有兜底，没有回退。
 # #
 # # 【覆写机制总览】
@@ -463,8 +462,8 @@ rules:
 # # ──────────────────────────────────────────────────────────────────────────────────────
 # #
 # # Merge Config（覆写配置）
-# #   Clash Verge Rev 的配置叠加机制。不替换订阅原始配置，而是按字段类型执行
-# #   Map 合并（rule-providers）或 Array 全量替换（proxy-groups / rules）。
+# #   Clash Verge Rev 以叠加方式覆盖订阅配置：Map 字段执行键值合并（同名键本文件优先），
+# #   Map 合并（rule-providers）或 Array 全量替换（proxy-groups / rules），订阅原始文件不被物理替换。
 # #   本文件即为一份 Merge Config。
 # #
 # # 锚点组架构（Anchor Group Architecture）
@@ -511,7 +510,7 @@ rules:
 # #
 # # Rule Provider（规则集提供者，社区常译外部规则集）
 # #   通过 rule-providers 字段声明的外部规则集来源，支持 http / file 两种类型。
-# #   Map 类型合并，不覆盖订阅原有规则集键名。
+# #   Map 类型合并：同名键以本文件覆写订阅原值；订阅独有的键名保留不变。
 # #
 # # 静默容错机制（Silent Fault Tolerance）
 # #   Mihomo 对远程规则集加载失败的处理策略：优先使用本地缓存；首次失败则该集合条目数为 0，
@@ -530,7 +529,8 @@ rules:
 # # GEOIP（IP 地理归属匹配）
 # #   ⚠️ GeoIP ≠ 真实地理位置。GeoIP 基于 IP 区块注册数据推断地理归属，而非检测流量实际经过的物理节点位置，在 CDN / Anycast（任播）调度下存在不可避免的归属地误差。
 # #   在 CDN / Anycast 跨区调度场景下可能出现"境外服务命中 CN"或反之。
-# #   GeoIP 以二进制格式存储，无法以文本编辑器直接查看；可借助专用工具（如 mmdbinspect）审计内容，但操作成本远高于文本列表。出现误判可通过行为观测定位。
+# #   GeoIP 以二进制格式存储，当前 geodata-mode: true 使用 dat 格式，无通用文本工具可查看；可通过 Mihomo 运行时日志或将该数据库转换为 mmdb 格式后，
+# #   借助专用工具（如 mmdbinspect）审计；但操作成本远高于文本列表。出现误判优先通过行为观测（诊断方法见外部诊断方法段落）定位。
 # #   当前配置启用 geodata-mode: true，数据库来源为 MetaCubeX dat 格式，由 geo-auto-update 自动更新。默认 mmdb 模式下来源通常为 MaxMind 或社区分发版。
 # #
 # # MATCH（无条件兜底指令）
@@ -550,7 +550,8 @@ rules:
 # #    ⚠️ 此逻辑在 redir-host 模式下同样生效：no-resolve 禁止的是规则匹配阶段内核的追加 DNS 解析，redir-host 自身的 DNS 解析过程不受影响；未命中 GeoIP 的域名流量仍滑落至 MATCH。
 # #  ℹ️ Fake-IP 模式说明：Fake-IP 连接携带的是 198.18.x.x 保留段伪 IP（默认范围，可通过 dns.fake-ip-range 调整）；
 # #    映射表还原成功时走域名规则，不命中 GEOIP；若映射表未命中（极端情况），伪 IP 可能命中 GEOIP,PRIVATE。
-# #    内核通过映射表逆向还原为域名后走域名规则匹配，不会直接命中 GEOIP 类规则。GEOIP 规则的 IP 比对仅对真实 IP 有效。
+# #    GEOIP 规则对 Fake-IP（198.18.x.x）同样有效，命中 GEOIP,PRIVATE；但正常情况下内核在规则评估前已通过映射表将 Fake-IP 还原为域名，不经 GEOIP 层直接走域名规则。
+
 # #
 # # REJECT（连接重置拦截）
 # #   TCP 场景下向客户端返回 RST 报文，UDP 场景下返回 ICMP 不可达报文，客户端立刻感知连接失败。
@@ -683,7 +684,7 @@ rules:
 # #
 # # jsDelivr Cloudflare 节点（testingcf.jsdelivr.net）
 # #   jsDelivr CDN 的 Cloudflare 边缘节点，testingcf.jsdelivr.net 可直连，相比 fastly 节点在国内可达性更稳定，无需代理中转即可直接访问 GitHub 托管的规则集文件。
-# #   ⚠️ 但 CDN 边缘节点缓存与源文件非实时同步（内容更新有 24 小时延迟，排查错误请使用 github 直链检查源文件）。
+# #   ⚠️ 但 CDN 边缘节点缓存与源文件非实时同步（延迟可能数小时至数天，具体取决于 CDN 缓存状态，排查错误请使用 GitHub 直链检查源文件）。
 # #   ⚠️ 若 @master 或 @main 分支文件超过 jsDelivr 50 MB 限制，将无法分发，须使用 @release 分支 URL。
 # #
 # # ──────────────────────────────────────────────────────────────────────────────────────
@@ -697,8 +698,8 @@ rules:
 # #   TLS 握手协议扩展字段，在 ClientHello 阶段由客户端明文发出，携带目标域名。由于该字段在握手阶段未加密，sniffer 可直接读取，无需解密 TLS 内容。
 # #   HTTP 嗅探通过读取请求头 Host 字段提取域名；QUIC 嗅探读取 CRYPTO 帧中的 SNI，两者与 TLS 场景略有差异。
 # #
-# # force-dns-mapping（嗅探域名映射缓存写入）
-# #   sniffer 子字段。启用后将嗅探到的域名写入内核 DNS 映射缓存，后续规则匹配阶段以该域名进行查询，不再依赖可能被污染的 DNS 解析结果。
+# # force-dns-mapping（嗅探域名映射表写入）
+# #   sniffer 子字段。启用后将嗅探到的域名写入内核的连接-域名映射表，后续规则匹配阶段以该域名进行查询，不再依赖可能被污染的 DNS 解析结果。
 # #
 # # parse-pure-ip（纯 IP 连接嗅探）
 # #   sniffer 子字段。启用后对全程无 DNS 过程的纯 IP 直连连接也启动嗅探。仅在 TUN 模式下能完整截获纯 IP 流量；系统代理模式下纯 IP 连接不经 Mihomo 接管，此字段对其无效。
@@ -718,8 +719,9 @@ rules:
 # #
 # # 【广告拦截规则集选型：ads（anti-AD）或者 Advertising.mrs】
 # #  原选用 AdvertisingLite 精简版的原因：完整版条目数量庞大，text 格式加载时 IPC 可能超时。
-# #  改用 MRS 格式后，加载直接内存映射，主线程同步阻塞（I/O + Trie 构建）导致内核无法响应前端 RPC 查询的超时风险消除，故升级为完整版 Advertising.mrs。
-# #  如需还原为精简版语义，可自行转换：verge-mihomo convert-ruleset domain text AdvertisingLite_Domain.txt AdvertisingLite_Domain.mrs
+# #  改用 MRS 格式后，加载直接内存映射，主线程同步阻塞（I/O + Trie 构建）导致内核无法响应前端 RPC 查询的超时风险消除，改为完整版以备用。
+# #  若需自定义域名集，参考格式：以记事本创建域名列表，每行一个域名后缀（如+.a.com）， 然后在终端中执行：cd "D:\Program Files\Clash Verge"
+# #  转换命令：./verge-mihomo convert-ruleset domain text your_list.txt your_list.mrs
 # #
 # # 【geodata-mode: true — GeoIP 数据库格式切换（统一归属判定基准）+ geox-url 落地】
 # #  切换内置 GeoIP 数据库为 dat 格式（MetaCubeX 自维护）。同时配置 geo-auto-update: true / geo-update-interval: 24 / geox-url（jsDelivr CF 节点）；
