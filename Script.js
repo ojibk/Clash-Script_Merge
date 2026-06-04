@@ -911,7 +911,7 @@ function main(config) {
         "www.xmind.app",        // XMind 2020+ 授权验证主接口（Electron 版）
         "www.xmind.net",        // XMind 8 授权验证接口（Java 版）/ 更新检查
         "www.xmind.cn",         // XMind 中文站授权验证 / 国内更新检查
-        "dl2.xmind.cn",         // XMind 8 更新安装包下载 CDN（版本检查由 www.xmind.net 触发，此域仅承载安装包分发
+        "dl2.xmind.cn",         // XMind 8 更新安装包下载 CDN（版本检查由 www.xmind.net 触发，此域仅承载安装包分发）
         // ⚠️ 扩展提醒：如需追加其他 XMind 子域，请注意 api.xmind.net / api.xmind.app 等 API 端点可能承载功能性请求（而非仅授权验证），拦截前应抓包确认，避免影响正常使用。
 
         // ──────────────────────────── Listary ────────────────────────────

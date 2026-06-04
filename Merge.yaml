@@ -185,7 +185,7 @@ proxy-groups:
 # #
 # # 【下载源说明】
 # #  规则集使用 testingcf.jsdelivr.net（jsDelivr 官方 Cloudflare 节点），相比 fastly.jsdelivr.net 在国内可达性更稳定，无需依赖第三方代理中转。
-# #  MRS 文件来源：MetaCubeX、peiyingyao、DustinWin，每日自动构建，覆盖 geosite / geoip 两大类别。
+# #  MRS 文件来源：MetaCubeX、peiyingyao、DustinWin，每日自动构建。MetaCubeX 按 geo/geosite 与 geo/geoip 分类组织。其他源详见各自维护目录结构。
 # #
 # #  ⚠️ 规则集失效退化路径：
 # #  加载失败 → 优先使用缓存；首次启动且下载失败 → 该规则集条目数为 0。
@@ -197,8 +197,7 @@ proxy-groups:
 
 rule-providers:
 
-  # 覆盖订阅中可能存在的空键 rule-provider（消除 '' has unset fields 错误）
-  # '':                # ⚠️ 调试（消除 '' has unset fields 错误）
+  # '':                # ⚠️ 调试，覆盖订阅中可能存在的空键 rule-provider（消除 '' has unset fields 错误）
   private: # 🔓 私有/保留域名直连集
     # 💡 收录范围：localhost / .local / .localdomain / .internal 等系统保留域名，以及 router.asus.com 等常见厂商的设备管理域名，不限于局域网范畴。
     #    源采用 v2fly/domain-list-community/private 和 blackmatrix7/ios_rule_script/Lan（仅域名）组合，并添加主流 Dashboard 在线面板域名，由 DustinWin 构建并以 MRS 格式分发。
@@ -263,15 +262,15 @@ rule-providers:
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
   #   path: "./ruleset/providers/threat.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
   #   interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
-  #   # 💡 备用：基于 blackmatrix7/EasyPrivacy 转换，由 peiyingyao 自动构建并以 MRS 格式分发（AdBlock Plus EasyPrivacy，仅抽取 DOMAIN-SUFFIX类型）。
+  #   # 💡 备用：基于 blackmatrix7/EasyPrivacy 转换，由 peiyingyao 自动构建并以 MRS 格式分发（AdBlock Plus EasyPrivacy，仅抽取 DOMAIN-SUFFIX 类型）。
   #   #    覆盖范围：广告、跟踪器、隐私收集。
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
   #                     #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/EasyPrivacy
   #                     #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs
 
-
   cn: # 🔓 国内域名直连集
     # 💡 收录国内主流及长尾域名，覆盖局限：小众 / 地区性 / 企业内部域名仍可能不在列表内，由后续归属地映射（GEOIP,CN,DIRECT,no-resolve）以 IP 维度补盲。
+    #    直连规则置于代理规则之前，国内域名优先命中直连出口，不会滑落至后续代理规则。
     type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
@@ -284,7 +283,6 @@ rule-providers:
   non-cn: # 🛡️ 境外域名代理集
     # 💡 收录 Google / GitHub / Telegram / Twitter (X) / YouTube 等高频境外服务域名。
     #    命中此规则集的流量送入锚点组 [🎛️ 动态选择]，经用户所选代理节点出站。
-    #    rules 中直连规则置于代理规则之前，国内域名优先命中直连出口，不会滑落至 non-cn。
     #    远程源文件名：geolocation-!cn.mrs（来自 MetaCubeX 基于 Loyalsoldier 等社区规则集整理），本地缓存重命名为 non-cn.mrs。
     type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
     behavior: domain  # ℹ️ 行为：域名模式，MRS 直接内存映射已构建的后缀匹配树（Domain Trie）。
@@ -347,7 +345,7 @@ rule-providers:
 # #                 ⚠️ GeoIP ≠ 真实地理位置。基于 IP 归属数据库，不代表物理位置；在 CDN / Anycast 跨区调度场景下可能出现"境外服务命中 CN"或反之。
 # #                 💡 层内顺序遵循确定性优先：PRIVATE（绝对确定）在 CN（统计性集合）之前。
 # #                 ℹ️ 附加 no-resolve 修饰符时，仅有域名的流量无 IP 可比对，匹配失败后滑落至无条件兜底层，此为预期行为。
-# #                 该层为"弥补长尾域名盲区"，非强保证，存在数据库滞后与 CDN 多归属调度导致的 GeoIP 误判风险。
+# #                 该层为弥补长尾域名盲区，非强保证，存在数据库滞后与 CDN 多归属调度导致的 GeoIP 误判风险。
 # #  ▌无条件兜底：   MATCH 确保规则链始终有明确出口，承接所有未命中流量。
 # #
 # # 【策略动作来源】
@@ -355,8 +353,7 @@ rule-providers:
 # #
 # # 【外部诊断方法（无需修改配置）】
 # #  🔍 验证规则集加载状态：CVR「规则集」界面查看条目数，无需改配置。
-# #  🔍 验证域名路径覆盖：在怀疑被遮蔽的规则集之前临时插入精确匹配条目，
-# #     观察是否命中，可判断上层是否存在遮蔽，用后注释掉即可。
+# #  🔍 验证域名路径覆盖：在怀疑被遮蔽的规则集之前临时插入精确匹配条目，观察是否命中，可判断上层是否存在遮蔽，用后注释掉即可。
 # #  🔍 验证 GeoIP 误判：临时将 GEOIP,CN 出口改为代理出口（如节点选择），观察命中流量的连接日志，即可判断 GeoIP 是否将境外 IP 误判为 CN；
 # #     GeoIP 为内置不可审查数据库，这是唯一有效的运行时观测手段。
 # #  🔍 常规定位：修改规则 → 重载 → 查看 CVR 连接日志，无需内置调试系统。
@@ -430,7 +427,7 @@ rules:
 # #
 # # 【注释语义与 emoji 规范】
 # #  本文件 emoji 是语义编码系统（非装饰），每个 emoji 对应固定语义标签，禁止新增未在此处定义的 emoji。
-# #  ⚠️ 引入"视觉类 emoji"（如 🌐）会破坏语义编码体系；新增须先在此处定义并写入版本演进。
+# #  ⚠️ 引入"视觉类 emoji"（如 🌐）会破坏语义编码体系；新增须先在此处定义。
 # #  ℹ️ U+2139 基础字符属窄宽，但 emoji 渲染模式下多数终端将其显示为宽字符（2 列），
 # #     双空格对齐仅在按窄字符渲染的等宽环境下生效（视觉对齐效果受终端字体渲染影响）；其余渲染环境下可能错位。
 # #
@@ -462,16 +459,15 @@ rules:
 # # ──────────────────────────────────────────────────────────────────────────────────────
 # #
 # # Merge Config（覆写配置）
-# #   Clash Verge Rev 以叠加方式覆盖订阅配置：Map 字段执行键值合并（同名键本文件优先），
-# #   Map 合并（rule-providers）或 Array 全量替换（proxy-groups / rules），订阅原始文件不被物理替换。
-# #   本文件即为一份 Merge Config。
+# #   Clash Verge Rev 以叠加方式覆盖订阅配置，Map 类型（键值映射表）：键值对合并——同名键以本文件为准覆写，其余键保留订阅原值；
+# #   Array 类型（有序列表，proxy-groups / rules）：全量替换，本文件内容为唯一来源，须自完备。订阅原始文件不被物理替换。本文件即为一份 Merge Config。
 # #
 # # 锚点组架构（Anchor Group Architecture）
 # #   在 Merge Config 中声明固定名称的策略组，rules 段硬编码指向该组名。
 # #   目的：切换任意订阅时，组名由本文件保证必然存在，避免内核因找不到出口组名而报错。
 # #
 # # 动态注入层（Dynamic Injection Layer）
-# #   由扩展脚本实现的前置规则注入机制，在本文件静态规则链之前执行，优先级更高。负责特例拦截与运行时逻辑判断。可选启用，本文件可独立运行。
+# #   由扩展脚本实现的前置规则注入机制，在本文件静态规则链之前执行，优先级更高。负责特殊场景的拦截与放行和运行时逻辑判断。可选启用，本文件可独立运行。
 # #
 # # 静态路由规则链（Static Routing Rule Chain）
 # #   本文件（Merge Config）实现的规则链，由固定配置描述，无运行时动态逻辑。
@@ -493,9 +489,9 @@ rules:
 # #   基于 Mihomo 内核的桌面客户端，提供规则集管理、连接日志、节点切换等功能。
 # #
 # # include-all（代理资源全量继承）
-# #   Mihomo 内核支持字段，各客户端 UI 兼容性不一，部分采用原版 Clash (Premium/FOSS) 内核的客户端静默跳过（即该策略组不包含任何节点，成为空组）。
+# #   Mihomo 内核支持字段，各客户端 UI 兼容性不一。⚠️ 部分采用原版 Clash (Premium/FOSS) 内核的客户端静默跳过（即该策略组不包含任何节点，成为空组）。
 # #   设为 true 时，内核将订阅内所有 outbound proxies（底层代理节点）及 proxy-providers（代理提供者/订阅源）声明的节点集合（proxy sets）引入当前策略组
-# #   （proxy groups 及嵌套策略组均不在继承范围内），切换订阅无需手动维护节点列表。⚠️ 在不支持该字段的客户端中静默跳过，即该策略组成为空组。
+# #   （proxy groups 及嵌套策略组均不在继承范围内），切换订阅无需手动维护节点列表。
 # #
 # # TUN（虚拟隧道网卡，Tunnel Network Interface）
 # #   操作系统级虚拟网卡，使内核可以接管系统全局流量（包括非 HTTP/SOCKS 流量）。
@@ -527,10 +523,10 @@ rules:
 # #   加载失败不中止启动流程，规则集条目数为 0，会在日志中产生警告。
 # #
 # # GEOIP（IP 地理归属匹配）
-# #   ⚠️ GeoIP ≠ 真实地理位置。GeoIP 基于 IP 区块注册数据推断地理归属，而非检测流量实际经过的物理节点位置，在 CDN / Anycast（任播）调度下存在不可避免的归属地误差。
-# #   在 CDN / Anycast 跨区调度场景下可能出现"境外服务命中 CN"或反之。
-# #   GeoIP 以二进制格式存储，当前 geodata-mode: true 使用 dat 格式，无通用文本工具可查看；可通过 Mihomo 运行时日志或将该数据库转换为 mmdb 格式后，
-# #   借助专用工具（如 mmdbinspect）审计；但操作成本远高于文本列表。出现误判优先通过行为观测（诊断方法见外部诊断方法段落）定位。
+# #   ⚠️ GeoIP ≠ 真实地理位置。GeoIP 基于 IP 区块注册数据推断地理归属，而非检测流量实际经过的物理节点位置，在 CDN / Anycast（任播）跨区调度场景下，
+# #   存在不可避免的归属地误差，可能出现"境外服务命中 CN"或反之。
+# #   GeoIP 以二进制格式存储，当前 geodata-mode: true 使用 dat 格式，无通用文本工具可查看；可通过 Mihomo 运行时日志定位误判；若需直接审计数据库内容，
+# #   可寻求 Mihomo 社区帮助，将 dat 数据库转为 mmdb 格式后，借助专用工具（如 mmdbinspect）审计；但操作成本远高于文本列表。优先通过行为观测（见外部诊断方法段落）定位。
 # #   当前配置启用 geodata-mode: true，数据库来源为 MetaCubeX dat 格式，由 geo-auto-update 自动更新。默认 mmdb 模式下来源通常为 MaxMind 或社区分发版。
 # #
 # # MATCH（无条件兜底指令）
@@ -542,7 +538,7 @@ rules:
 # # no-resolve（禁止主动 DNS 解析修饰符）
 # #   统一附加于 GEOIP 规则后，禁止内核为仅有域名的流量主动触发 DNS 解析以获取 IP。
 # #   两种场景：DNS 污染 → 返回虚假 CN IP、CDN GeoDNS → 正常返回但 IP 归属为 CN；因此，强制解析可能将 DNS 污染和 CDN 多归属 IP 误判为国内而错误直连；
-# #   常见路径：流量已有 IP → 直接比对 GeoIP 库；仅有域名且上方未命中 → 因无 IP 可比对时 GEOIP 规则不命中，流量滑落至 MATCH 兜底，这是规则链拓扑的必然结果，
+# #   常见路径：流量已有 IP → 直接比对 GeoIP 库；仅有域名且上方未命中 → 因无 IP 可比对，GEOIP 规则不命中，流量滑落至 MATCH 兜底，这是规则链拓扑的必然结果，
 # #   符合 no-resolve 的预期行为（若将 MATCH 指向代理出口，则实现了 Unknown → Proxy 立场）。
 # #  ℹ️ 边界条件：no-resolve 跳过的是内核主动发起的 DNS 解析；已有真实 IP 的流量仍可正常命中 GeoIP 规则。
 # #    性能效益：减少规则匹配阶段的 DNS 查询等待，降低延迟。
@@ -672,10 +668,10 @@ rules:
 # # ──────────────────────────────────────────────────────────────────────────────────────
 # #
 # # MetaCubeX、peiyingyao、DustinWin 源（当前主力来源）
-# #   基于各规则集数据源的 mrs 分支，通常每日自动构建。通过 jsDelivr CF 节点分发。提供 MRS 二进制格式（format: mrs），覆盖 geo/geosite 与 geo/geoip 两大类别。
+# #   基于各规则集数据源，以 MRS （format: mrs）二进制格式分发，通常每日自动构建。MetaCubeX 按 geo/geosite 与 geo/geoip 分类组织。其他源详见各自维护目录结构。
 # #
 # # Loyalsoldier 源（已迁移，仅作历史参考）
-# #   github.com/Loyalsoldier/clash-rules @release 分支。原提供 yaml 格式（首行 `payload:`），用于 private / lancidr / reject。
+# #   github.com/Loyalsoldier/clash-rules @release 分支。原提供 yaml 格式（首行 payload:），用于 private / lancidr / reject。
 # #   已由 MetaCubeX mrs 数据源部分替代，不再直接引用。
 # #
 # # Blackmatrix7 源（已迁移，仅作历史参考）
@@ -720,8 +716,8 @@ rules:
 # # 【广告拦截规则集选型：ads（anti-AD）或者 Advertising.mrs】
 # #  原选用 AdvertisingLite 精简版的原因：完整版条目数量庞大，text 格式加载时 IPC 可能超时。
 # #  改用 MRS 格式后，加载直接内存映射，主线程同步阻塞（I/O + Trie 构建）导致内核无法响应前端 RPC 查询的超时风险消除，改为完整版以备用。
-# #  若需自定义域名集，参考格式：以记事本创建域名列表，每行一个域名后缀（如+.a.com）， 然后在终端中执行：cd "D:\Program Files\Clash Verge"
-# #  转换命令：./verge-mihomo convert-ruleset domain text your_list.txt your_list.mrs
+# #  若需自定义域名集，参考格式：以记事本创建域名列表，每行一个域名后缀（如+.a.com），然后在终端中切换至 Clash Verge 安装目录：cd "<安装目录>"
+# #  执行转换命令：.\verge-mihomo convert-ruleset domain text your_list.txt your_list.mrs
 # #
 # # 【geodata-mode: true — GeoIP 数据库格式切换（统一归属判定基准）+ geox-url 落地】
 # #  切换内置 GeoIP 数据库为 dat 格式（MetaCubeX 自维护）。同时配置 geo-auto-update: true / geo-update-interval: 24 / geox-url（jsDelivr CF 节点）；
