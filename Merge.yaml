@@ -50,7 +50,7 @@ geox-url:                       # ⚙️ geodata 下载地址。未声明时 Mih
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
   # ℹ️ mmdb 字段说明：geodata-mode: true 时，geoip.dat / geosite.dat 优先，mmdb 字段不参与 GEOIP 查询；geodata-mode: false 时，mmdb 为唯一生效数据库路径。
-  # mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb" # 当前 geodata-mode: true，注释掉省去同步下载。
+  # mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb" # 当前 geodata-mode: true，注释掉省去下载请求。
   # ℹ️ ASN（自治系统号）数据库用于 Mihomo 的 GEOASN 规则匹配指令（格式：IP-ASN,<AS号>,<动作>[,no-resolve]），当前配置未声明 GEOASN 规则，该字段仅为预留。
   # asn:     "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb"
 
@@ -73,7 +73,7 @@ profile:
 # # ⚠️ sniffer 配置是保障注入的 UDP/QUIC 域名类规则在纯 IP 直连路径下仍能命中的关键前提，
 # # 禁用 sniffer 将导致这些规则在纯 IP 直连路径（应用绕过 DNS、直接以 IP 建立 UDP/QUIC 连接）下失效。
 # # force-dns-mapping: true：使 DOMAIN 类及 AND（多条件组合）类规则能通过内核的连接-域名映射表识别域名。
-# # parse-pure-ip: true：使绕过 DNS 的纯 IP 流量也能触发嗅探，提升 Script.js 规则集的命中率。
+# # parse-pure-ip: true：使绕过 DNS 的纯 IP 流量也能触发嗅探，提升全部域名类规则集在纯 IP 直连路径下的命中率。
 sniffer:
   enable: true                  # ⚙️ 启用流量嗅探：在协议握手或请求阶段提取目标域名，使内核在无 DNS 解析的情况下也能获取域名，用于域名规则匹配。
                                 # ℹ️ 核心价值：应用若直接以 IP 建立连接（绕过 DNS 解析），内核无域名可用，
@@ -105,7 +105,7 @@ sniffer:
 # # 【proxy-groups 锚点组设计逻辑】
 # #  · 在本文件中定义固定组名，rules 段固定引用的代理出口指向此名称。该组由本文件保证必然存在，切换任意订阅均不会因找不到组名而触发启动报错。
 # #  · include-all: true 为 Mihomo 内核支持字段，各客户端 UI 兼容性不一。部分采用原版 Clash (Premium/FOSS) 内核的客户端静默跳过（即该策略组不包含任何节点，成为空组）。
-# #    设为：true 配置加载时将订阅内所有 outbound proxies（底层代理节点）及 proxy sets（proxy-providers 的节点集合）引入本组（proxy groups 及嵌套策略组均不在继承范围内），
+# #    设为 true 时，配置加载时将订阅内所有 outbound proxies（底层代理节点）及 proxy sets（proxy-providers 的节点集合）引入本组（proxy groups 及嵌套策略组均不在继承范围内），
 # #    切换订阅后无需手动维护节点列表。大多数服务商提供的均为裸节点，"不含 proxy groups"这条限制在常见场景下影响极小。
 # #  ⚠️ 隐式前提：订阅须包含 outbound proxies（底层代理节点）。若服务商仅提供策略组（select / url-test / fallback / relay 等任意类型），
 # #     不暴露底层裸节点，include-all 无节点可继承，锚点策略组成为空组。
@@ -403,9 +403,8 @@ rules:
 # #    此外，在 DNS（域名解析系统）被污染或劫持的网络环境下，经由 UDP/TCP 53 端口获取的解析结果可能不可信。
 # #    MATCH 确保流量总是被定向至一个确定的策略组（锚点），不依赖外部 fallback；但若该策略组内无任何可用节点，则按 Fail-Fast 机制直接暴露连接失败，不会静默降级或回退。
 # #  · 总体取向：容错优先，而非精确优先。
-# #    兜底 = 确定性的出口锚点，出口必然存在；回退 = 降级策略，当主路径失败时切换备用路径。本配置的 MATCH 是兜底而非回退——它不是在主路径失败后出现，而是规则链的永久终点。
+# #    兜底 = 确定性的出口锚点，出口必然存在；回退 = 降级策略，当主路径失败时切换备用路径。MATCH 是所有路径的终点，它并非在其他路径失败后才出现，而是始终存在于规则链末尾。
 # #    兜底是常态路径的终点，回退是异常路径的救生艇。本配置只有兜底，没有回退。此处"回退"特指：主路径失败→自动切换备用路径；
-# #    MATCH 是所有路径的终点，它并非在其他路径失败后才出现，而是始终存在于规则链末尾。
 # #
 # # 【覆写机制总览】
 # #  ● Map 类型（键值映射表）：键值对合并——同名键以本文件为准覆写，其余键保留订阅原值
@@ -594,13 +593,11 @@ rules:
 # #   搭配 no-resolve + MATCH 代理兜底可规避污染环境下的 GeoIP 误判（适用于 Unknown → Proxy 立场）。
 # #
 # # Fake-IP（虚假 IP DNS 模式）
-# #   DNS 模式之一。内核对域名请求立即返回一个虚假本地 IP，应用程序连接该虚假 IP 后，
-# #   内核截获并将真实域名通过代理协议传递给出口节点，无需等待真实 DNS 响应。
+# #   DNS 模式之一。内核对域名请求立即返回一个虚假 IP，应用程序连接该虚假 IP 后，内核截获并将真实域名通过代理协议传递给出口节点，无需等待真实 DNS 响应。
 # #   加速连接建立，减少 DNS 延迟，但 cache.db 中会保留域名映射记录。
 # #
 # # redir-host（真实 IP 重定向模式）
-# #   DNS 模式之一。内核先完成真实 DNS 解析，再基于解析后的 IP 进行规则匹配和路由。
-# #   store-fake-ip 字段在此模式下无意义。
+# #   DNS 模式之一。内核先完成真实 DNS 解析，再基于解析后的 IP 进行规则匹配和路由。store-fake-ip 字段在此模式下无意义。
 # #
 # # ──────────────────────────────────────────────────────────────────────────────────────
 # # 【F】网络协议与标准
@@ -633,7 +630,7 @@ rules:
 # #   通过网络交付的软件服务模式。企业私有 SaaS 域名往往未被公共规则集收录。
 # #
 # # RST（TCP 连接重置报文，TCP Reset）
-# #   TCP 协议信号，强制重置连接（对端无法拒绝，连接立即失效，区别于 FIN 的协商关闭）。
+# #   TCP 协议信号，强制重置连接（对端无法拒绝，连接立即失效，区别于 FIN 的优雅关闭）。
 # #   REJECT 动作在 TCP 场景下通过发送 RST 实现即时拦截；在 UDP 场景下通过返回 ICMP 不可达报文实现。
 # #
 # # IPC（进程间通信，Inter-Process Communication）
@@ -646,14 +643,14 @@ rules:
 # #
 # # Fail-Fast（快速失败机制）
 # #   系统检测到关键依赖（如节点组）缺失时，不自动降级或容错，直接暴露失败状态（通常表现为连接失败，可能伴随日志错误信息）。
-# #   本配置中特指：include-all 未能继承任何节点时，[🎛️ 动态选择] 成为空组，连接立即失败，问题可被立刻感知，而非尝试回退到其他出口后静默掩盖。
+# #   本配置中特指：include-all 未能继承任何节点时，所有策略组成为空组，连接立即失败，问题可被立刻感知，而非尝试回退到其他出口后静默掩盖。
 # #   ⚠️ 外部系统风险：订阅源返回空节点时同样触发此机制，属于外部错误被直接暴露的场景，需区分"配置错误"与"订阅源故障"两种根因。
 # #
 # # 容错优先（Fault Tolerance First）
 # #   本配置的总体设计取向：允许规则匹配出错（规则集失效、GeoIP 误判），但保证流量出口始终存在（MATCH 兜底，规则链有锚点）。
 # #   已知取舍：部分流量路径可能非最优，但系统不因局部失效而整体中断。
 # #
-# # trade-off（设计取舍）
+# # 设计取舍（trade-off）
 # #   在两个互相制约的目标之间做出的有意识权衡。本配置的核心取舍：安全优先 vs 最优路径优先，容错优先 vs 精确优先。
 # #
 # # 注释漂移（Comment Drift）
@@ -670,7 +667,7 @@ rules:
 # # ──────────────────────────────────────────────────────────────────────────────────────
 # #
 # # MetaCubeX、peiyingyao、DustinWin 源（当前主力来源）
-# #   基于各规则集数据源，以 MRS （format: mrs）二进制格式分发，通常每日自动构建。MetaCubeX 按 geo/geosite 与 geo/geoip 分类组织。其他源详见各自维护目录结构。
+# #   基于各规则集数据源，以 MRS（format: mrs）二进制格式分发，通常每日自动构建。MetaCubeX 按 geo/geosite 与 geo/geoip 分类组织。其他源详见各自维护目录结构。
 # #
 # # Loyalsoldier 源（已迁移，仅作历史参考）
 # #   github.com/Loyalsoldier/clash-rules @release 分支。原提供 yaml 格式（首行 payload:），用于 private / lancidr / reject。
@@ -718,7 +715,7 @@ rules:
 # # 【广告拦截规则集选型：ads（anti-AD）或者 Advertising.mrs】
 # #  原选用 AdvertisingLite 精简版的原因：完整版条目数量庞大，text 格式加载时 IPC 可能超时。
 # #  改用 MRS 格式后，加载直接内存映射，主线程同步阻塞（I/O + Trie 构建）导致内核无法响应前端 RPC 查询的超时风险消除，改为完整版以备用。
-# #  若需自定义域名集，参考格式：以记事本创建域名列表，每行一个域名后缀（如+.a.com），然后在终端中切换至 Clash Verge 安装目录：cd "<安装目录>"
+# #  若需自定义域名集，参考格式：以文本编辑器创建域名列表，每行一个域名后缀（如+.a.com），然后在终端中切换至 Clash Verge 安装目录：cd "<安装目录>"
 # #  执行转换命令：./verge-mihomo convert-ruleset domain text your_list.txt your_list.mrs
 # #
 # # 【geodata-mode: true — GeoIP 数据库格式切换（统一归属判定基准）+ geox-url 落地】
