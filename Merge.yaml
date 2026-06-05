@@ -85,8 +85,8 @@ sniffer:
   force-dns-mapping: true       # ⚙️ 将嗅探到的域名写入内核的连接-域名映射表（仅在该连接 IP 尚无对应域名记录时写入），使规则匹配可用嗅探域名进行查询，
                                 #    而非仅凭连接 IP，显著提升域名规则集的命中率。
   parse-pure-ip: true           # ⚙️ 对纯 IP 直连连接（全程无 DNS 解析过程，仅有目标 IP）也启动嗅探，覆盖完全绕过 DNS 的应用（如部分视频 / 游戏客户端硬编码 IP 直连场景）。
-                                # ⚠️ TUN 模式前提：parse-pure-ip 仅在 TUN（虚拟隧道网卡）模式下能完整截获纯 IP 流量；
-                                #    此字段在系统代理模式下对纯 IP 直连流量无效（纯 IP 直连流量不经过 Mihomo 接管）。
+                                # ⚠️ TUN 模式前提：parse-pure-ip 仅在 TUN（虚拟隧道网卡）模式下能完整截获纯 IP 流量；此字段在系统代理模式下对纯 IP 直连流量无效。
+                                # ⚡ ECH 局限：Cloudflare 等站点 SNI 不可读，hk-restricted 在纯 IP 路径下失效；DNS 拦截路径（主路径）不受影响。
   sniff:
     TLS:
       ports: [443, 8443, 2053, 2083, 2087, 2096]        # ℹ️ 标准 HTTPS 端口 + Cloudflare 当前已知备用 HTTPS 端口。
@@ -690,7 +690,8 @@ rules:
 # #   Mihomo 内核功能模块，在协议握手或请求阶段提取目标域名，使内核在无 DNS 解析的情况下也能获取域名，从而命中域名类规则集。
 # #
 # # SNI（Server Name Indication，服务器名称指示）
-# #   TLS 握手协议扩展字段，在 ClientHello 阶段由客户端明文发出，携带目标域名。由于该字段在握手阶段未加密，sniffer 可直接读取，无需解密 TLS 内容。
+# #   TLS 握手协议扩展字段，在 ClientHello 阶段由客户端明文发出，携带目标域名。该字段在标准握手中明文可读；
+# #   ECH（Cloudflare 已全量部署，Chrome/Firefox 默认启用）将其加密，sniffer 仅能读取占位域名，真实 SNI 不可见。
 # #   HTTP 嗅探通过读取请求头 Host 字段提取域名；QUIC 嗅探读取 CRYPTO 帧中的 SNI，两者与 TLS 场景略有差异。
 # #
 # # force-dns-mapping（嗅探域名映射表写入）
