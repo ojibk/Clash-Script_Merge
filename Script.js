@@ -23,7 +23,7 @@
  *   - 进程规则（需管理员权限 + TUN 模式，即 Mihomo 创建虚拟网卡接管全部流量）
  *   - 激进阻断模块（默认关闭，需谨慎开启）
  *   - Hosts 级 DNS 覆写（四种映射子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
- *   - 基于哨兵标记的幂等性（即无论执行多少次，结果相同）规则清理与注入（栈重建算法，O(N) 时间 / O(N) 空间，单次遍历，防止用户多次重新加载订阅导致本脚本注入的规则块重复追加）
+ *   - 基于哨兵标记的幂等性（即无论执行多少次，结果相同）规则清理与注入（栈重建算法，O(N) 时间 / O(N) 空间，单次遍历，防止每次重新加载订阅时本脚本注入的规则块被重复追加）
  *   - 异常降级保护，详细运行日志
  *
  * ══════════════════════════ ░░ 使用说明 ░░ ══════════════════════════
@@ -53,9 +53,9 @@ function main(config) {
     //      · ENABLE_GLOBAL_KEYWORD_BLOCK 属 block 层子开关，因说明篇幅较长集中声明于配置区末尾
     //      · ENABLE_SCRIPT、ENABLE_HOSTS_OVERRIDE 独立于此六层结构之外
     const ENABLE_BLOCK        = true;            // 拦截模块（规则优先级高，仅次于 allow 层，isFireflyActive=true 时 Firefly 放行先于拦截命中，见 LAYER_ORDER）
-                                                 // 关闭拦截模块同时意味着 Firefly 放行规则也不注入。流量既无 REJECT 也无代理覆盖，被进程规则或 MATCH 兜底策略接管。
+                                                 // 关闭拦截模块还意味着 Firefly 放行规则也不注入。流量既无 REJECT 也无代理覆盖，被进程规则或 MATCH 兜底策略接管。
     const ENABLE_FIREFLY      = true;            // 精确放行 Adobe Firefly AI 生成式请求。启用放行规则需（ENABLE_BLOCK=true）对应拦截层以供豁免。
-                                                 // ⚠️ 注意：此开关的放行规则注入状态由 isFireflyActive 唯一决定。见下方声明
+                                                 // ⚠️ 注意：此开关的放行规则注入状态由 isFireflyActive 唯一决定。见 isFireflyActive 声明。
                                                  // ⚠️ Firefly 放行出口为 proxyGroupName，该值由下方智能识别逻辑自动确定；若识别失败（全部策略均告失败），
                                                  //    脚本直接 return config 中止注入，Firefly 请求将回退至订阅原始策略。必要妥协：auth/cc-api 等鉴权端点同时放行。
                                                  // 最后防线为 AdobeGCClient.exe → REJECT-DROP（仅 ENABLE_PROCESS_RULE=true + TUN 模式下有效）
@@ -205,7 +205,7 @@ function main(config) {
         //      (2) 在规则头部插入新的 debug-script-disabled 标记（供外部识别脚本禁用状态）
         //    因此返回的 config 与订阅原始状态有微小差异（多一条标记规则）。如需零修改直接返回（Passthrough 直通模式），将此 if 分支体改为 return config; 即可。
         //    如需保留 Hosts DNS 覆写但关闭规则注入，请保持 ENABLE_SCRIPT=true，并将 ENABLE_BLOCK / ENABLE_PROXY / ENABLE_DIRECT 等各子模块开关设为 false。
-        //    等值匹配策略一致；避免宽泛子串误删合法规则此处用 filter 而非栈重建，因调试标记为单条平铺，无嵌套清理需求。
+        //    此处用 filter 而非栈重建，因调试标记为单条平铺，无嵌套清理需求；使用 !== 等值匹配（与哨兵清理策略一致），避免宽泛子串误删合法规则。
         config.rules = config.rules.filter(r => r !== "DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         return config;
@@ -280,10 +280,10 @@ function main(config) {
         "REJECT",
         "COMPATIBLE",  // Clash Premium 兼容模式保留关键字，Mihomo 不使用此类型；保留以防订阅包含 Clash Premium 格式策略组导致误选
         "DEFAULT",     // Mihomo 内部保留词，用于 Fallback 策略默认出口表达，防御性排除
-        "MATCH",       // Mihomo 内置动作关键字（兜底策略）；正常订阅格式下极不可能出现同名代理组，保留以阻止未来误用
+        "MATCH",       // Mihomo 内置动作关键字（兜底策略）；正常订阅格式下极不可能出现同名代理组，保留以防万一订阅中存在同名代理组时被错误选为出口
         "PASS",        // 防止将 Mihomo 的 PASS（透传）策略错误选为代理出口
     ]);
-    const FALLBACK_NAMES = new Set(["GLOBAL"]);  // 兜底组：降级才选
+    const FALLBACK_NAMES = new Set(["GLOBAL"]);  // 兜底组：前三轮优选策略全部失败时，第四轮降级才触发
     // ❗ 运行时配置断言：FALLBACK_NAMES ∩ EXCLUDED_NAMES 必须为空集。
     //    若修改 FALLBACK_NAMES 或 EXCLUDED_NAMES，务必确保两者互斥。
     //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroupCore 中的提前 return true 会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
@@ -557,7 +557,7 @@ function main(config) {
     // 注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
     // 💡 两层覆盖范围的完整差异说明见 _SANITIZE_RE 注释（权威定义源）；
     //    本断言为注入层权威说明：仅覆盖 Clash/YAML 语法破坏字符，不覆盖 Bidi 控制符（Bidi 视觉欺骗问题由识别层处理，注入层不需要重复防御）。
-    if (/[,\u0000-\u001F\u007F\u0085\u2028\u2029]/.test(proxyGroupName)) {
+    if (/[,\u0000-\u001F\u007F\u0085\u2028\u2029]/u.test(proxyGroupName)) { // u 标志确保按完整 Unicode 码点解析，与 _SANITIZE_RE 保持一致，便于将来扩展
         console.error(`❌ Token 断言触发：proxyGroupName [${JSON.stringify(proxyGroupName)}] 含非法字符`);
         console.error(`   逗号截断规则语义；C0 控制字符（U+0000–U+001F，含 \t/\n/\r）及 NEL（U+0085，C1 控制字符，等效换行）——均破坏 Clash 规则语法，脚本中止注入`);
         return config;
@@ -1137,7 +1137,7 @@ function main(config) {
     const youtubeDomain  = ["s.youtube.com"];               // 观看历史 + 遥测上报（⚠️ 拦截后观看历史失效）
     // ⚠️ youtubei.googleapis.com 不仅是遥测：/youtubei/v1/player 是播放器视频元数据 API，
     //    拦截后可能导致码率切换、字幕加载、下一集预加载出现异常，不仅限于隐私影响。评估副作用后再决定是否保留此关键词规则。
-    const youtubeKeyword = []; // YouTube 内部 API（含遥测及播放器元数据）。💡 当前已禁用（空数组）；启用方式：改为 ['youtubei.googleapis']。 
+    const youtubeKeyword = []; // YouTube 内部 API（含遥测及播放器元数据）。💡 当前已禁用（空数组）；启用方式：改为 ['youtubei.googleapis']。
 
     // ──────────────── 全球主流广告联盟（REJECT 立即终止连接） ────────────────
     const genericAdSuffix = [
@@ -1152,7 +1152,7 @@ function main(config) {
         "mc.yandex.com",                         // Yandex Metrica 备用域
     ];
 
-    // ─────── 关键词兜底（⚠️ 默认关闭：误伤面较大，2025-2026 年特征已严重泛化）───────
+    // ─────── 关键词兜底（⚠️ 默认关闭：误伤面较大，随着互联网基础设施演进，这些关键词已严重泛化）───────
     // telemetry/analytics/stats/metrics 已出现在大量合法 CDN 和第三方服务域名中。例：video-stats.video.google.com / metrics.cloudflare.com / cdn.telemetry-static.com
     // 如需启用，建议仅保留最精确的词并放到所有具体规则之后。启用：将顶部配置区 ENABLE_GLOBAL_KEYWORD_BLOCK 改为 true；
     // 关闭时：三元表达式直接赋值空数组 []，pushKeyword([], ...) 为零次迭代（no-op），不向 layerPools 写入任何条目，行为等同于未调用。
@@ -1263,7 +1263,7 @@ function main(config) {
         "DOMAIN-SUFFIX,color.adobe.com,DIRECT",            // Adobe Color 配色工具
         "DOMAIN,assets.adobe.com,DIRECT",                  // Adobe 静态资源 CDN（内容分发网络），精确匹配以防过度放行（若实测需要子域可改 DOMAIN-SUFFIX）
         // 官网放行
-        "DOMAIN-SUFFIX,autodesk.com,DIRECT",               // Autodesk 官网放行（下载/账户/论坛）
+        "DOMAIN-SUFFIX,autodesk.com,DIRECT",               // Autodesk 官网放行（下载/论坛；账户端点 accounts.autodesk.com 在激进模式下被前置 REJECT-DROP 覆盖）
         "DOMAIN-SUFFIX,corel.com,DIRECT",                  // 父域放行（主域即官网，精确子域拦截见 corelSuffix）
         // 常用直连
         // "DST-PORT,123,DIRECT",                 // ⚠️ 旧版 Mihomo 兼容写法，同时匹配 TCP/UDP；NTP（Network Time Protocol，网络时间协议）仅使用 UDP 123
@@ -1450,7 +1450,8 @@ function main(config) {
 
         // 规则池完整性断言：双向一致性检查，验证 LAYER_ORDER 与 layerPools 键名一致性
         const _orderSet = new Set(LAYER_ORDER);
-        // 原向检查：LAYER_ORDER → layerPools（防止 LAYER_ORDER 有键但 layerPools 无对应键）
+        // 正向检查：LAYER_ORDER → layerPools。说明：当前代码路径下，所有层均通过 pushLayer 写入，其内部已存在相同的键存在性校验，
+        // 故此检查在当前实现中不会触发；保留目的在于防范未来直接操作 layerPools 键的重构风险，作为二次保障。
         for (const k of LAYER_ORDER) {
             if (!(k in layerPools))
                 throw new Error(`[Script] LAYER_ORDER 键 '${k}' 在 layerPools 中不存在`);
@@ -1696,12 +1697,12 @@ function main(config) {
             config.dns["fake-ip-filter"] = [...cleanExisting, ...newEntries];
             // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
             console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可！");
-            console.warn("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
+            console.log("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
         
             const targetStr = Array.isArray(target) ? target.join(" / ") : target;
             console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条，`
-                + ` | 模式: [${HOSTS_MODE}] → ${targetStr}`
-                + ` | 但需 CVR 开启「启用 DNS」与「使用 Hosts」才能生效。`);
+                + ` 模式: [${HOSTS_MODE}] → ${targetStr}`
+                + ` ，但需 CVR 开启「启用 DNS」与「使用 Hosts」才能生效。`);
             // existingSet.size：剔除脚本历史管理条目后，订阅原有条目数（非脚本条目总数）。本脚本条目已存在数 = hijackDomains.length - newEntries.length。
             const _alreadyIn = hijackDomains.length - newEntries.length;
             console.log(`   fake-ip-filter 去重后新增: ${newEntries.length} 条（注入前已有 ${_alreadyIn} 条脚本条目重合，订阅原有非脚本条目共 ${existingSet.size} 条）`);
@@ -1811,7 +1812,7 @@ function main(config) {
  *   ── 哨兵清理算法（栈重建，O(N) 单次遍历，处理任意数量堆叠）──
  *     原理：单次遍历原数组，重建新数组 newRules，用栈记录每个 START 被压入时 newRules 的长度（注入区间在 newRules 中的起始快照）；
  *           遇 END 时弹出栈顶快照，将 newRules.length 设为快照值（O(1) 截断，length= 无 splice 的数组拷贝开销）；孤儿 END（栈为空）静默跳过（不 break，继续处理后续规则）；
- *           孤儿 START 本身不写入 newRules（continue 跳过），但其长度快照压栈；其后的规则正常推入 newRules，最终保留在输出中（旧注入规则与新注入共存）。
+ *           孤儿 START 本身不写入 newRules（continue 跳过），但其长度快照压栈；其后的规则正常推入 newRules，最终保留在输出中（旧注入规则与新注入共存一个周期）。
  *           循环结束后自然保留，无需额外处理；最坏情形：孤儿 START 是上次注入区间开头（崩溃导致 END 未写入），其后旧注入规则不被截断，
  *           但孤儿之后的完整配对仍可正确处理。此情形仅在上次 finalPool.concat 赋值未完成时出现，正常路径不产生孤儿。
  *
@@ -1854,7 +1855,7 @@ function main(config) {
  * 
  * 特殊字符集说明：
  *   ⚠️ 攻击场景：
- *       · 不可见字符（如 \u200B、\u2060、\u00AD）：视觉上与合法组名无法区分，但字符串比较失配。
+ *      · 不可见字符（如 \u200B、\u2060、\u00AD）：视觉上与合法组名无法区分，但字符串比较失配。
  *         典型形如 "D\u2060IRECT"、"\u200B默认"、"DIR\u00ADECT"
  *      · Bidi 覆盖控制符（如 \u202E RLO）：使组名在渲染时以 RTL（从右向左）方向排列，字符序列本身不变，仅渲染方向被反转，
  *         造成视觉欺骗（如 "DIRECT" 显示为 "TCERID"），也绕过比较。典型形如 "\u202EDIRECT"，支持 Bidi 渲染时显示为 TCERID
@@ -1870,9 +1871,10 @@ function main(config) {
  *      \u2066-\u2069   Bidi 隔离控制符（连续 4 个码点：LRI 左隔离/RLI 右隔离/FSI 强起始隔离/PDI 弹出隔离，Unicode 6.3+）
  *      \uFEFF          BOM（Byte Order Mark，字节顺序标记）/ 零宽不换行空格。
  *      \u0000-\u001F   C0 控制字符（NUL 至 US，含通讯控制与格式控制符）：YAML 规范明文禁止（\t/\n/\r 除外），不可打印，无合法组名用途。
- *                      · \u0000-\u0008  NUL 至 BS（含通讯控制 SOH/STX/ETX/EOT/ENQ/ACK/BEL）\u000B-\u000C  VT（垂直制表符）/ FF（换页符）
+ *                      · \u0000-\u0008  NUL 至 BS（含通讯控制 SOH/STX/ETX/EOT/ENQ/ACK/BEL）
+ *                      · \u000B-\u000C  VT（垂直制表符）/ FF（换页符）
  *                      · \u000E-\u001F  SO 至 US（共 18 个格式/通讯控制符）
- *      \u007F          DEL（删除符）：C0 集末位，无合法用途。
+ *      \u007F          DEL（删除符）：C1 集前的独立控制字符（U+007F），无合法组名用途。
  *      ⚠️ \u0085（NEL，Next Line）未列入：C1 控制字符，YAML 1.2 规范认定的换行符，
  *         Token 断言（注入出口）已独立覆盖（见 Token 断言 \u0085 条目）。sanitizeName 遵循「宽进」策略，刻意不剥离此字符；
  *         识别阶段宽容（防止遗漏合法组名），注入阶段严格（防止破坏 YAML/Clash 语法），两层严格度有意分级，属纵深防御设计。
