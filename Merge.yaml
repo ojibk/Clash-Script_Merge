@@ -208,10 +208,9 @@ rule-providers:
     path: "./ruleset/providers/private.mrs" # 规则集文件命名与存储路径。
     interval: 604800  # ⏱️ 更新间隔：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
                       #    私有/保留域名（如 localhost）列表，内容基于 IETF 标准，属极低频变动项，设 7 天以减少不必要的远程拉取请求。
-    url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/private.mrs"
-                      # ℹ️ 远程地址：jsDelivr 官方 Cloudflare 节点，国内可达性优于 fastly 节点。
-                      #    来源仓库：https://github.com/DustinWin/ruleset_geodata/blob/mihomo-ruleset/private.list
-                      #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/private.mrs
+    #    来源仓库：https://github.com/DustinWin/ruleset_geodata/blob/mihomo-ruleset/private.list
+    url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/private.mrs" # 远程地址，jsDelivr 加速节点。
+    # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/private.mrs"  # 备用直链（jsDelivr 失效时）
 
   # lan-cidr: # 🔓 局域网私有 IP 段直连集
   #   # 💡 设计说明：private 仅收录私有/保留域名（依据 RFC 2606 / RFC 6761 等定义的特殊用途域名），不覆盖 192.168.x.x、10.x.x.x、172.16.x.x 等私有 IP 段。
@@ -225,10 +224,9 @@ rule-providers:
   #   path: "./ruleset/providers/lan-cidr.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
   #   interval: 604800  # ⏱️ 更新间隔：604800 秒 = 7 天（内核运行时按 interval 周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
   #                     #    列表内容基于 RFC 1918 / RFC 1122（回环） / RFC 6598（CGNAT）等私有/保留地址标准，结构极低频变动，设 7 天以减少不必要的远程拉取请求。
-  #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
-  #                     # ℹ️ 远程地址：jsDelivr 官方 Cloudflare 节点，国内可达性优于 fastly 节点。
-  #                     #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geoip
-  #                     #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs
+  #   #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geoip
+  #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs" # 远程地址，jsDelivr 加速节点。
+  #   # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs" # 备用直链（jsDelivr 失效时）
 
   # 拦截类规则集数据来源分别由 DustinWin 基于 privacy-protection-tools/anti-AD、peiyingyao 基于 blackmatrix7/EasyPrivacy 自动构建并以 MRS 格式分发。
   # 规则集选用类型范围：广告 / 营销追踪 / 隐私收集 / 统计遥测上报 / 劫持 / 挖矿 / 恶意域名 / C2 命令与控制域名
@@ -241,9 +239,9 @@ rule-providers:
   #   format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
   #   path: "./ruleset/providers/advertising.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
   #   interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
-  #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs"
-  #                     #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/Advertising
-  #                     #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs
+  #   #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/Advertising
+  #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs" # 远程地址，jsDelivr 加速节点。
+  #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs" # 备用直链（jsDelivr 失效时）
 
   ads: # 🚫 综合拦截集（广告 / 跟踪 / 隐私 / 恶意域名 / 挖矿）
     # 💡 主用：基于 privacy-protection-tools/anti-AD 转换，由 DustinWin 自动构建并以 MRS 格式分发。
@@ -253,9 +251,9 @@ rule-providers:
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
     path: "./ruleset/providers/ads.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
     interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
-    url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.mrs"
-                      #    来源仓库：https://github.com/DustinWin/ruleset_geodata/tree/mihomo-ruleset
-                      #    备用直链：https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs
+    #    来源仓库：https://github.com/DustinWin/ruleset_geodata/tree/mihomo-ruleset
+    url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.mrs" # 远程地址，jsDelivr 加速节点。
+    # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs" # 备用直链（jsDelivr 失效时）
 
   # threat: # 🚫 威胁阻断集（暂无全面覆盖恶意域名/C2 的理想来源；当前备用源覆盖范围有限）
   #   type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
@@ -265,9 +263,9 @@ rule-providers:
   #   interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
   #   # 💡 备用：基于 blackmatrix7/EasyPrivacy 转换，由 peiyingyao 自动构建并以 MRS 格式分发（AdBlock Plus EasyPrivacy，仅抽取 DOMAIN-SUFFIX 类型）。
   #   #    覆盖范围：广告、跟踪器、隐私收集。
-  #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
-  #                     #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/EasyPrivacy
-  #                     #    备用直链：https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs
+  #   #    来源仓库：https://github.com/peiyingyao/Rule-for-OCD/tree/master/rule/Clash/EasyPrivacy
+  #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs" # 远程地址，jsDelivr 加速节点。
+  #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs" # 备用直链（jsDelivr 失效时）
 
   cn: # 🔓 国内域名直连集
     # 💡 收录国内主流及长尾域名，覆盖局限：小众 / 地区性 / 企业内部域名仍可能不在列表内，由后续归属地映射（GEOIP,CN,DIRECT,no-resolve）以 IP 维度补盲。
@@ -277,9 +275,9 @@ rule-providers:
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
     path: "./ruleset/providers/cn.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
     interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。上游规则集变动较频繁，设较短缓存周期以跟进更新。
-    url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
-                      #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
-                      #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs
+    #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
+    url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs" # 远程地址，jsDelivr 加速节点。
+    # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs" # 备用直链（jsDelivr 失效时）
 
   non-cn: # 🛡️ 境外域名代理集
     # 💡 收录 Google / GitHub / Telegram / Twitter (X) / YouTube 等高频境外服务域名。
@@ -290,9 +288,9 @@ rule-providers:
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
     path: "./ruleset/providers/non-cn.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
     interval: 86400   # ⏱️ 更新间隔：86400 秒 = 24 小时（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取）。境外域名列表变动较频繁，设较短缓存周期以跟进更新。
-    url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs"
-                      #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
-                      #    备用直链（jsDelivr 失效时）：https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs
+    #    来源仓库：https://github.com/MetaCubeX/meta-rules-dat/tree/meta/geo/geosite
+    url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs" # 远程地址，jsDelivr 加速节点。
+    # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs" # 备用直链（jsDelivr 失效时）
 
   hk-restricted: # 🇭🇰 港区受限网络服务专项规则集（含 ChatGPT、Claude、Gemini 精准子域、TikTok 全球资源）
     type: http        # ℹ️ 类型：远程 HTTP 资源。按 interval 定期拉取并缓存至 path 字段指定的本地路径。
@@ -300,8 +298,8 @@ rule-providers:
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
     path: "./ruleset/providers/hk-restricted.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
     interval: 604800  # ⏱️ 更新间隔：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
-    url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/hk-restricted.mrs"
-                      #    备用直链：https://raw.githubusercontent.com/ojibk/rules/main/hk-restricted.mrs
+    url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/hk-restricted.mrs" # 远程地址，jsDelivr 加速节点。
+    # url: "https://raw.githubusercontent.com/ojibk/rules/main/hk-restricted.mrs" # 备用直链（jsDelivr 失效时）
 
   amazon: # 🔓 亚马逊购物常用域名集
     # 💡 收录亚马逊全球零售站点 + 静态图片资产 + 广告与前端组件库 + 卖家及物流体系规则集（不含 AWS 基础云，防止 AWS 流量被误送入代理出口）。
@@ -312,8 +310,8 @@ rule-providers:
     format: mrs       # ℹ️ 格式：MRS 二进制格式，加载时直接映射，跳过 YAML/Text 反序列化与 Trie 构建，二进制解析开销极低。
     path: "./ruleset/providers/amazon.mrs" # 存储路径。规则集文件命名与规则集声明键值解耦。
     interval: 604800  # ⏱️ 更新间隔：604800 秒 = 7 天（内核运行时按该周期后台定时拉取；重启后亦检测缓存是否过期并重新拉取，不保证实时同步）。
-    url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
-                      #    备用直链：https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs
+    url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs" # 远程地址，jsDelivr 加速节点。
+    # url: "https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs" # 备用直链（jsDelivr 失效时）
 
 # # ======================================================================================
 # # ░░ 路由规则 (Rules) — 自完备规则链（Array 类型，全量替换）
