@@ -52,12 +52,12 @@ function main(config) {
     //      · ENABLE_BLOCK 与 ENABLE_FIREFLY 相邻声明便于阅读（两者分属 block/allow 层，语义紧密关联）
     //      · ENABLE_GLOBAL_KEYWORD_BLOCK 属 block 层子开关，因说明篇幅较长集中声明于配置区末尾
     //      · ENABLE_SCRIPT、ENABLE_HOSTS_OVERRIDE 独立于此六层结构之外
-    const ENABLE_BLOCK        = true;            // 拦截模块（规则优先级高，仅次于 allow 层，isFireflyActive=true 时 Firefly 放行先于拦截执行，见 LAYER_ORDER）
+    const ENABLE_BLOCK        = true;            // 拦截模块（规则优先级高，仅次于 allow 层，isFireflyActive=true 时 Firefly 放行先于拦截命中，见 LAYER_ORDER）
                                                  // 关闭拦截模块同时意味着 Firefly 放行规则也不注入。流量既无 REJECT 也无代理覆盖，被进程规则或 MATCH 兜底策略接管。
     const ENABLE_FIREFLY      = true;            // 精确放行 Adobe Firefly AI 生成式请求。启用放行规则需（ENABLE_BLOCK=true）对应拦截层以供豁免。
                                                  // ⚠️ 注意：此开关的放行规则注入状态由 isFireflyActive 唯一决定。见下方声明
                                                  // ⚠️ Firefly 放行出口为 proxyGroupName，该值由下方智能识别逻辑自动确定；若识别失败（全部策略均告失败），
-                                                 //    脚本直接 return config 中止注入，Firefly 请求将退回订阅原始策略。必要妥协：auth/cc-api 等鉴权端点同时放行。
+                                                 //    脚本直接 return config 中止注入，Firefly 请求将回退至订阅原始策略。必要妥协：auth/cc-api 等鉴权端点同时放行。
                                                  // 最后防线为 AdobeGCClient.exe → REJECT-DROP（仅 ENABLE_PROCESS_RULE=true + TUN 模式下有效）
     const ENABLE_PROCESS_RULE = true;            // 进程规则模块（需 TUN 模式 + 管理员权限；另还需配置文件的 find-process-mode 参数启用获取进程信息）。
     const ENABLE_PROXY        = true;            // 指定域名走代理模块
@@ -82,9 +82,9 @@ function main(config) {
     //
     // 各模式连接失败类型（来源：Mihomo wiki + OS 网络栈行为）：
     //   ipv4-loopback  → 127.0.0.1          → 本地 TCP 栈返回 RST（无监听端口），应用层收到 ECONNREFUSED，回环模拟拦截，更温和
-    //   ipv4-blackhole → 0.0.0.0            → 错误码取决于操作系统：无论哪种错误码，TCP SYN 都不会发出，阻断速度最快。但部分应用可能将此错误误判为断网状态
+    //   ipv4-blackhole → 0.0.0.0            → 具体错误码因 OS 而异：无论哪种错误码，TCP SYN 都不会发出，阻断速度最快。但部分应用可能将此错误误判为断网状态
     //   dual-loopback  → 127.0.0.1 + ::1    → 同 ipv4-loopback，IPv4/IPv6 双栈回环模拟拦截
-    //   dual-blackhole → 0.0.0.0 + ::       → 同 ipv4-blackhole，IPv4/IPv6 双栈黑洞拦截（慎用：向 :: 发起连接的 OS 级行为因平台而异，可能导致应用异常）
+    //   dual-blackhole → 0.0.0.0 + ::       → 同 ipv4-blackhole，IPv4/IPv6 双栈黑洞拦截（慎用：连接至 :: 时的 OS 层行为因平台而异，可能导致应用异常）
     //
     // 双栈黑洞模式（dual-blackhole）因 IPv6 的 :: 行为更激进，存在非预期的连接错误或应用异常；ipv4-blackhole 单栈版风险较低。
     const HOSTS_MODE = "ipv4-loopback";
@@ -200,15 +200,12 @@ function main(config) {
     }
 
     if (!ENABLE_SCRIPT) {
-        // ⚠️ 注意：ENABLE_SCRIPT=false 是「带调试标记的受控禁用」，不是零修改的原样返回。
-        //    此分支仍会执行两个操作：
+        // ⚠️ 注意：ENABLE_SCRIPT=false 是「带调试标记的受控禁用」，不是零修改的原样返回。此分支仍会执行两个操作：
         //      (1) 清除上次遗留的 debug-script-disabled 标记（防标记重复追加）
         //      (2) 在规则头部插入新的 debug-script-disabled 标记（供外部识别脚本禁用状态）
-        //    因此返回的 config 与订阅原始状态有微小差异（多一条标记规则）。
-        //    如需零修改直接返回（Passthrough 直通模式），将此 if 分支体改为 return config; 即可。
-        //    如需保留 Hosts DNS 覆写但关闭规则注入，请保持 ENABLE_SCRIPT=true，
-        //    并将 ENABLE_BLOCK / ENABLE_PROXY / ENABLE_DIRECT 等各子模块开关设为 false。
-        // 等值匹配策略一致；避免宽泛子串误删合法规则此处用 filter 而非栈重建，因调试标记为单条平铺，无嵌套清理需求。
+        //    因此返回的 config 与订阅原始状态有微小差异（多一条标记规则）。如需零修改直接返回（Passthrough 直通模式），将此 if 分支体改为 return config; 即可。
+        //    如需保留 Hosts DNS 覆写但关闭规则注入，请保持 ENABLE_SCRIPT=true，并将 ENABLE_BLOCK / ENABLE_PROXY / ENABLE_DIRECT 等各子模块开关设为 false。
+        //    等值匹配策略一致；避免宽泛子串误删合法规则此处用 filter 而非栈重建，因调试标记为单条平铺，无嵌套清理需求。
         config.rules = config.rules.filter(r => r !== "DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         return config;
@@ -266,14 +263,14 @@ function main(config) {
 
     // ════════════════ 1. 智能识别代理策略组 ════════════════
     //
-    // 逻辑：多级降级，兼容大多数订阅格式。无可用组时终止注入，防止 Mihomo 内核崩溃（见容错选取策略及代理组排除断言）。
+    // 逻辑：多级降级，兼容大多数订阅格式。无可用组时终止注入，防止 Mihomo 内核因策略组不存在而启动失败（见容错选取策略及代理组排除断言）。
 
     let proxyGroupName = null; // 初始为 null，强制要求下游所有赋值路径全覆盖；任何未赋值路径均会触发代理组排除断言安全拦截。
-    // 注意：当前路径：null 不到达断言（识别失败已 return config）;防御路径（仅在未来分支遗漏赋值时触发）：sanitizeName(null) →""→ 断言拦截;
+    // 注意：当前路径：null 不到达断言（识别失败已 return config）；防御路径（仅在未来分支遗漏赋值时触发）：sanitizeName(null) →""→ 断言拦截;
     //   所有真实执行路径均会在策略链结束前显式赋值（成功时为 mainGroup.name）；识别失败时直接 return config。
     // 若将来新增分支遗漏赋值，sanitizeName(null) 返回 ""，断言 !_sanitizedProxy 为 true 并安全拦截。
     // 💡 当前实现中识别成功时 proxyGroupName 必定被赋值为组名；若将来新增代码分支，须确保也对其显式赋值，否则 null 会到达代理组排除断言并触发安全兜底（中止注入）。
-    // 💡 出口控制说明：识别逻辑通过 EXCLUDED_NAMES 明确排除了绝大多数不适合的出口；极端情况下（全部策略均失败）代码直接 return config，使网络退回订阅原始规则，防止内核崩溃。
+    // 💡 出口控制说明：识别逻辑通过 EXCLUDED_NAMES 明确排除了绝大多数不适合的出口；极端情况下（全部策略均失败）代码直接 return config，使网络回退至订阅原始规则。
 
     // 策略组分三类：
     //   排除组（EXCLUDED）：绝对不能用作代理出口，会导致代理规则失效（流量不经过任何代理节点）
@@ -291,7 +288,7 @@ function main(config) {
     // ❗ 运行时配置断言：FALLBACK_NAMES ∩ EXCLUDED_NAMES 必须为空集。
     //    若修改 FALLBACK_NAMES 或 EXCLUDED_NAMES，务必确保两者互斥。
     //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroupCore 中的提前 return true 会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
-    // ⚠️ 触发则说明常量集被误修改：改用 return config 而非 throw，保证用户网络不中断（退回订阅原始规则），错误仍通过 console.error 明确输出。
+    // ⚠️ 触发则说明常量集被误修改：改用 return config 而非 throw，保证用户网络不中断（回退至订阅原始规则），错误仍通过 console.error 明确输出。
     {
         const _overlap = [...FALLBACK_NAMES].filter(n => EXCLUDED_NAMES.has(n));
         if (_overlap.length > 0) {
@@ -526,7 +523,7 @@ function main(config) {
     } else {
         // 此 else 仅在 proxy-groups 为空（length === 0）时执行。
         // 注意：即使 if 块内五轮策略全部失败，也不会到达此处，if/else 的判断条件是 proxy-groups.length，而非策略是否成功。
-        // 直接返回 config，中止规则注入，防止 Mihomo 内核因找不到策略组而崩溃，使网络退回订阅原始规则。
+        // 直接返回 config，中止规则注入，防止 Mihomo 内核因找不到策略组而崩溃，使网络回退至订阅原始规则。
         console.error("❌ 致命：proxy-groups 为空，中止规则注入");
         console.error("   网络将走订阅原始规则，不注入任何自定义规则，防止 Mihomo 内核启动失败");
         return config;
@@ -552,7 +549,7 @@ function main(config) {
 
     // ❗ 规则字段注入安全断言：proxyGroupName（原始值）不得含破坏 Clash 规则语法或 YAML 结构的字符。
     // 💡【设计意图：容错识别 vs 安全注入分离】
-    //   sanitizeName 在"识别阶段"清洗组名，目的是宽容匹配，因编辑器或复制粘贴意外引入不可见控制符的代理组（如名称带 BOM 的组），
+    //   sanitizeName 在"识别阶段"清洗组名，目的是宽容匹配，以兼容因编辑器或复制粘贴意外引入不可见控制符的代理组（如名称带 BOM 的组）。
     //   用户设置该组的本意是合法代理出口，不应因组名中意外混入的不可见字符导致识别阶段漏选。此断言在"注入阶段"对原始值实施一票否决，Mihomo 内核按原始名称匹配策略组，
     //   注入只能使用原始名；若原始名含控制符，会破坏 Clash 规则行语法，危及整个规则文件解析。
     //   两者不是冗余，是刻意的"宽进严出（识别阶段宽容，注入阶段严格）"纵深防御：识别尽量不漏选，注入绝对不破坏语法。
@@ -780,8 +777,8 @@ function main(config) {
     //           其余未覆盖进程详见 adobeSharedDeps 注释中的 Firefly 必要妥协。
     // 关于 adobeUdpBlock 与 Firefly .adobe.io 域名的 QUIC 豁免机制：
     //   最终规则池展开顺序（由 LAYER_ORDER 决定，allow → block，与 push 调用书写顺序无关）：
-    //   adobeSharedDeps+adobeFireflyOnly（allow 层）→ adobeSuffix → adobeRegex → adobeUdpBlock（block 层）isFireflyActive=true 时，
-    //   allow 层的精确 DOMAIN-SUFFIX 规则（如 firefly-api.adobe.io / clio.adobe.io 等）已在 adobeUdpBlock 之前入 pool。
+    //   allow 层规则先于 adobeUdpBlock 入 pool（LAYER_ORDER: allow > block）；Firefly 域名的 UDP 流量先命中 allow 层走代理；
+    //   adobeUdpBlock 的 adobe.io 通配不再参与匹配；前提：Mihomo 能识别 SNI 或存在 Fake-IP 映射（见路径A/B分析）。
     //   Mihomo first-match（首条命中生效）：Firefly 域名的 UDP 流量先命中 allow 层走代理，adobeUdpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)) 不再执行。
     //   → 豁免效果由注入顺序自动保证（allow 层先于 adobeUdpBlock 入 pool，先命中即生效），无需额外处理。⚠️ 前提：此豁免仅在 Mihomo 能识别 SNI 或存在 Fake-IP 映射时成立。
     //   ⚠️ ECH 路径分析同上，详见 adobeSharedDeps 注释。
@@ -988,7 +985,7 @@ function main(config) {
         // "api.sogoucloud.com",                 // ⚠️ 已注释：搜狗输入法云端接口，域名拼写无公开抓包资料确认，待验证后启用
         // 腾讯 Bugly 崩溃上报 SDK（Software Development Kit，软件开发工具包；大量国产软件集成，含设备指纹）
         "bugly.qq.com",                          // 腾讯 Bugly 崩溃上报 SDK
-        "bugly.gtimg.com",                          // 腾讯 Bugly 管理后台使用的静态资源 CDN
+        "bugly.gtimg.com",                       // 腾讯 Bugly 管理后台使用的静态资源 CDN
         // 字节跳动系（抖音/剪映/头条/西瓜共用）
         "log.snssdk.com",                        // 字节系客户端日志上报（头条/西瓜等）
         "i.snssdk.com",                          // 字节跳动国内 SDK 主接口域（⚠️ 非单纯遥测：含账号认证、功能 API 等，拦截后可能导致字节系 APP 功能性断连，非仅屏蔽上报）
@@ -1193,7 +1190,7 @@ function main(config) {
         // "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",    // 进程间通信代理，CC 各组件通过此进程转发激活验证请求，在 CC 2023+ 版本中承担部分鉴权通信，基于架构推断而非抓包
         //   误伤风险：拦截可能导致 Photoshop / Illustrator 等 CC 应用启动失败或功能异常。若确认 AdobeIPCBroker.exe 存在激活验证流量，可取消注释以启用拦截。
         
-        // ──── 恶意软件类：方案 REJECT（快速拒绝，用户感知更好，不卡死软件）────
+        // ──── 恶意软件类：方案多数使用 REJECT（快速拒绝，用户感知更好，不卡死软件）────
         "PROCESS-NAME,360sd.exe,REJECT-DROP",                // 360 杀毒主进程，可能导致 360 反复弹窗报告"网络异常"，改用 REJECT-DROP 让 360 静默超时反而更好
         "PROCESS-NAME,360tray.exe,REJECT",                   // 360 系统托盘弹窗进程
         "PROCESS-NAME,2345Mini.exe,REJECT",                  // 2345 迷你窗口/弹窗进程
@@ -1520,7 +1517,7 @@ function main(config) {
 
         console.log(`   注入规则数: ${finalPool.length} 条（上述分项之和 + 首尾 2 条哨兵）`);
         console.log(`   总规则数:   ${config.rules.length} 条`);
-        console.log(`   规则注入耗时: ${Date.now() - _startTime} ms（非 Hosts 覆写耗时）`);
+        console.log(`   脚本执行耗时: ${Date.now() - _startTime} ms（不含 Hosts 覆写）`);
         console.log("=".repeat(28));
 
     } catch (err) {
@@ -1546,7 +1543,7 @@ function main(config) {
     //     3. Fake-IP（虚假 IP，Mihomo 分配的 198.18.x.x 虚拟地址）生成 → 不在列表则分配虚拟 IP
     //     → 结论：hosts 优先级高于 fake-ip-filter
     //   Hosts 覆写生效前提：Mihomo 必须拦截到 DNS 查询才能返回拦截地址。
-    //   系统代理模式：app → Mihomo DNS → hosts → 返回拦截地址（黑洞/欺骗，取决于 HOSTS_MODE）→ app 连接立即失败
+    //   系统代理模式：app → Mihomo DNS（先检查内置 hosts 表，命中则直接返回拦截地址：黑洞/欺骗，取决于 HOSTS_MODE）→ app 连接立即失败
     //   TUN 模式（需满足前提：dns-hijack: any:53）：
     //     app → TUN → DNS 接管 → hosts → 返回拦截地址（黑洞/欺骗，取决于 HOSTS_MODE）→ app 连接立即失败
     //     ⚠️ 若 TUN 未配置 dns-hijack，app 可绕过 Mihomo DNS 直接查询外部 DNS，hosts 将不生效。
@@ -1783,7 +1780,6 @@ function main(config) {
  *        CoreSync.exe       ← CC 同步守护进程（必要豁免）
  *      取舍依据：非官方激活环境中，补丁修改了 AdobeGCClient.exe 的本地验证逻辑（本地返回激活成功，无需真实网络应答）；本脚本在此基础上阻断其出站连接，
  *      作为额外网络层防线，防止激活状态回报和设备信息上传。其余进程的心跳即便放行也不会触发重新验证；TUN 进程规则本身不可靠，扩展覆盖成本高于收益。
- *      
  *
  *   💡 KEYWORD "entitlement.autodesk" 与 "api.entitlements.autodesk.com" 无重叠：
  *      DOMAIN-KEYWORD 为子串匹配，"entitlement.autodesk"（entitlement 后紧跟点）
@@ -1810,7 +1806,7 @@ function main(config) {
  *     [优选·类型]   类型约束              ← 放宽数量约束
  *     [兜底降级]    兜底组选取             ← GLOBAL/"全局" 等
  *     [最终容错选取] 排除固定链路（relay）/ 测速专用（url-latency-benchmark）；smart 已纳入白名单，不再排除
- *     全部失败 → 直接 return config（显式中止注入，网络退回订阅原始规则）
+ *     全部失败 → 直接 return config（显式中止注入，网络回退至订阅原始规则）
  *   ──────────────────────────────────────────────────────────────
  *
  *   ── 哨兵清理算法（栈重建，O(N) 单次遍历，处理任意数量堆叠）──
