@@ -1,4 +1,4 @@
-# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链（智能路由锁区受限网络服务） v260604
+# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链（智能路由锁区受限网络服务） v260605
 # # --------------------------------------------------------------------------------------
 # # 存储路径参考：
 # #   Windows : %APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles
@@ -720,7 +720,7 @@ rules:
 # #  执行转换命令：./verge-mihomo convert-ruleset domain text your_list.txt your_list.mrs
 # #
 # # 【geodata-mode: true — GeoIP 数据库格式切换（统一归属判定基准）+ geox-url 落地】
-# #  切换内置 GeoIP 数据库为 dat 格式（MetaCubeX 自维护）。同时配置 geo-auto-update: true / geo-update-interval: 24 / geox-url（jsDelivr CF 节点）；
+# #  切换内置 GeoIP 数据库为 dat 格式（MetaCubeX 自维护）。同时配置 geo-auto-update: true / geo-update-interval: 见实际配置 / geox-url（jsDelivr CF 节点）；
 # #  缺少这三项时，dat 文件停留在内核捆绑的出厂版本，统一归属判定基准目的在运行中无法兑现。
 # #  注意：MetaCubeX 同时维护 mmdb 与 dat，通常均为每日构建；切换理由仅为统一归属判定基准，无更新频率收益。
 # #
