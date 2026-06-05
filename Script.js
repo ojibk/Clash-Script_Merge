@@ -212,9 +212,14 @@ function main(config) {
     }
 
     // ═══════════════ client-fingerprint 注入逻辑 ═══════════════
-    if (ENABLE_CLIENT_FINGERPRINT && DEFAULT_FINGERPRINT !== "none" && Array.isArray(config.proxies)) {
-        const blacklistSet = new Set(FINGERPRINT_BLACKLIST.map(s => s.toLowerCase()));
-        const blacklistArr = [...blacklistSet];
+    if (!ENABLE_CLIENT_FINGERPRINT) {
+        console.log("ℹ️ TLS 指纹注入已禁用 (ENABLE_CLIENT_FINGERPRINT = false)。");
+    } else if (DEFAULT_FINGERPRINT === "none") {
+        console.log("ℹ️ TLS 指纹注入已启用，但默认指纹为 'none'，不执行注入。");
+    } else if (!Array.isArray(config.proxies)) {
+        console.log("ℹ️ TLS 指纹注入已启用，但 config.proxies 不是数组（订阅可能仅含 proxy-providers），跳过注入。");
+    } else {
+        const _blacklistLower = FINGERPRINT_BLACKLIST.map(s => s.toLowerCase());
         let injectedCount = 0;
         let skippedCount = 0;
         let preExistingCount = 0;
@@ -229,7 +234,7 @@ function main(config) {
 
             // 2. 检查黑名单：节点名包含黑名单关键词则跳过
             const nodeName = (p.name || "").toLowerCase();
-            const isBlacklisted = blacklistArr.some(keyword => nodeName.includes(keyword));
+            const isBlacklisted = _blacklistLower.some(keyword => nodeName.includes(keyword));
             if (isBlacklisted) {
                 skippedCount++;
                 return p;
@@ -243,12 +248,6 @@ function main(config) {
         console.log(`✅ TLS 指纹注入完成: 新增注入 ${injectedCount} 个，`
                 + `跳过黑名单 ${skippedCount} 个，`
                 + `保留原有指纹 ${preExistingCount} 个 (默认指纹: ${DEFAULT_FINGERPRINT})`);
-    } else if (ENABLE_CLIENT_FINGERPRINT && DEFAULT_FINGERPRINT === "none") {
-        console.log("ℹ️ TLS 指纹注入已启用，但默认指纹为 'none'，不执行注入。");
-    } else if (ENABLE_CLIENT_FINGERPRINT && !Array.isArray(config.proxies)) {
-        console.log("ℹ️ TLS 指纹注入已启用，但 config.proxies 不是数组（订阅可能仅含 proxy-providers），跳过注入。");
-    } else {
-        console.log("ℹ️ TLS 指纹注入已禁用 (ENABLE_CLIENT_FINGERPRINT = false)。");
     }
     // ────────────────────────────────────────────────
 
