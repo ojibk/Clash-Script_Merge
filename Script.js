@@ -1,5 +1,5 @@
 /**
- *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260604
+ *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260605
  * 
  * ══════════════════════════ ░░ 脚本自述 ░░ ══════════════════════════
  *
@@ -674,7 +674,7 @@ function main(config) {
         "na1e.services.adobe.com",                // Genuine 服务备用
         // "adobedtm.com",                           // Adobe DTM 旧版遥测域（DTM 已于 2021 年停止维护，新版 CC 不再依赖此域），可能仍有旧版 CC 存量实例使用
         "crs.cr.adobe.com",                       // License check（许可证检查）
-        "cclibraries-defaults-cdn.adobe.com",     // CC Libraries 默认资源 CDN（内容分发网络），截后会导致跨 CC 应用的共享资源库无法加载默认资源，影响正版用户。
+        "cclibraries-defaults-cdn.adobe.com",     // CC Libraries 默认资源 CDN（内容分发网络），拦截后会导致跨 CC 应用的共享资源库无法加载默认资源，影响正版用户。
         "adobesearch.adobe.io",                   // 搜索遥测
         "p13n.adobe.io",                          // 个性化遥测（p13n = personalization 字符数缩写）
         "ic.adobe.io",                            // Insight Collector（洞察收集器）
