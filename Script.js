@@ -254,7 +254,7 @@ function main(config) {
     // 逻辑：多级降级，兼容大多数订阅格式。无可用组时终止注入，防止 Mihomo 内核因策略组不存在而启动失败（见容错选取策略及代理组排除断言）。
 
     let proxyGroupName = null; // 初始为 null，强制要求下游所有赋值路径全覆盖；任何未赋值路径均会触发代理组排除断言安全拦截。
-    // 注意：当前路径：null 不到达断言（识别失败已 return config）；防御路径（仅在未来分支遗漏赋值时触发）：sanitizeName(null) →""→ 断言拦截;
+    // 注意：当前路径：null 不到达断言（识别失败已 return config）；防御路径（仅在未来分支遗漏赋值时触发）：sanitizeName(null) →""→ 断言拦截；
     //   所有真实执行路径均会在策略链结束前显式赋值（成功时为 mainGroup.name）；识别失败时直接 return config。
     // 若将来新增分支遗漏赋值，sanitizeName(null) 返回 ""，断言 !_sanitizedProxy 为 true 并安全拦截。
     // 💡 当前实现中识别成功时 proxyGroupName 必定被赋值为组名；若将来新增代码分支，须确保也对其显式赋值，否则 null 会到达代理组排除断言并触发安全兜底（中止注入）。
@@ -326,8 +326,8 @@ function main(config) {
 
     // 合法代理出口类型白名单（统一引用源：关键词优选/正则优选/类型优选各轮均引用此常量，新增类型只需改此处）。
     // ⚠️ 最终容错策略（第五轮）改用 _UNSUITABLE_TYPES 黑名单方式，不引用此常量；
-    //    两者从正反两面描述同一批被排除类型（relay / url-latency-benchmark），
-    //    修改此处须同步检查 _UNSUITABLE_TYPES，反之亦然，两者描述同一批被排除类型的正反两面，当前已知类型空间内互补，新增类型须同步检查两处。
+    //    两者从正反两面描述同一批被排除类型（relay / url-latency-benchmark），在现有已知类型集合内，两者从正反两侧描述同一批被排除类型（relay / url-latency-benchmark）；
+    //    未知新增类型不在两集合中，由第五轮容错策略（_UNSUITABLE_TYPES 黑名单）处理。修改任一处须同步检查另一处。
     // load-balance 为动态路由策略，与 url-test 同级，具备合法出口语义，纳入白名单。
     // 被排除的类型（在此两个 Set 中均体现为排除）：
     //   relay：固定节点链路转发，强制指定出口，无用户可切换的节点选择语义。
@@ -648,7 +648,7 @@ function main(config) {
     //                UDP 侧：数据包被无声丢弃，软件等待响应直至应用层超时；
     //      超时时长为估算值（非固定值），应用层 Socket 阻塞约 15–30s（含 TCP 重传轮次），实际取决于操作系统 TCP 重传配置（Windows 10 默认 TcpMaxSynRetransmissions=2，
     //      SYN 重传总时长约 21s；Windows 11 默认值已调整，实际超时可能有所不同）。仅用于非官方修改补丁后门（backdoorSuffix/backdoorKeyword）和进程规则，
-    //      以此拖延被拦截进程感知失败的时间（Socket 等待超时而非立即失败），阻碍恶意程序发现阻断并切换备用域名的速度。
+    //      以此拖延被拦截进程感知失败的时间（Socket 等待超时而非立即失败），阻碍恶意程序快速识别阻断并切换备用通信方式/域名，降低其自适应速度。
     //
     // adobeSharedDeps 条目已移出（路由动作由 isFireflyActive 决定），此处为非 Firefly 依赖的拦截域名。
     const adobeSuffix = [
@@ -1395,7 +1395,7 @@ function main(config) {
             pushSuffix(youtubeSuffix, "REJECT", layerPools.block);
             pushDomain(youtubeDomain, "REJECT", layerPools.block);
             pushKeyword(youtubeKeyword, "REJECT", layerPools.block); // 该行注释状态必须与被调用的数据层变量对应行一致（两处必须同步）；
-                                                                     // 或直接将调用的该变量的数组赋值清空：const youtubeKeyword = []
+                                                                     // 或直接将该变量的数组赋值清空：const youtubeKeyword = []
             // 通用广告联盟
             pushSuffix(genericAdSuffix, "REJECT", layerPools.block);
             pushKeyword(globalKeyword, "REJECT", layerPools.block);
@@ -1506,7 +1506,7 @@ function main(config) {
 
         console.log(`   注入规则数: ${finalPool.length} 条（上述分项之和 + 首尾 2 条哨兵）`);
         console.log(`   总规则数:   ${config.rules.length} 条`);
-        console.log(`   脚本执行耗时: ${Date.now() - _startTime} ms（不含 Hosts 覆写）`);
+        console.log(`   脚本执行耗时: ${Date.now() - _startTime} ms（含指纹注入，不含 Hosts 覆写）`);
         console.log("=".repeat(28));
 
     } catch (err) {
@@ -1672,31 +1672,39 @@ function main(config) {
             // hosts 字段采用对象展开覆写，而 fake-ip-filter 采用数组追加，两者生命周期管理策略不一致，fake-ip-filter 具有累加性，如需清理请重置 CVR 的 DNS 设置或重置订阅。
             const existingSet   = new Set();
             const cleanExisting = [];
+            let cleanedCount    = 0;   // 统计本次清理的旧脚本条目
             for (const entry of config.dns["fake-ip-filter"]) {
                 const s  = typeof entry === "string" ? entry.trim() : "";
                 const sl = s.toLowerCase();
-                // 跳过：空值 / 重复项 / 属于本脚本历史管理的条目（下方重新注入当前 hijackDomains）
-                if (s && !existingSet.has(sl) && !_SCRIPT_MANAGED_HIJACK.has(sl)) {
-                    existingSet.add(sl);
-                    cleanExisting.push(s);
+                if (!s) continue;
+                // 属于脚本历史管理的条目 → 清理并计数
+                if (_SCRIPT_MANAGED_HIJACK.has(sl)) {
+                    cleanedCount++;
+                    continue;
                 }
+                // 去重：保留订阅自带的首个出现
+                if (existingSet.has(sl)) continue;
+                existingSet.add(sl);
+                cleanExisting.push(s);
             }
-            // 域名大小写不敏感（RFC 4343），比较时统一 toLowerCase，防止 "Steam.com" 与 "steam.com" 被视为不同条目。
-            const newEntries    = hijackDomains.filter(d => !existingSet.has(d.toLowerCase())).sort();
+            // 域名大小写不敏感（RFC 4343）
+            const newEntries = hijackDomains.filter(d => !existingSet.has(d.toLowerCase())).sort();
             config.dns["fake-ip-filter"] = [...cleanExisting, ...newEntries];
-            // ⚠️ 此警告旨在提醒用户检查 CVR UI 设置。若已正确开启「启用 DNS」和「使用 Hosts」，可安全忽略。
+
+            // ⚠️ 以下为关键前置条件警告，必须保留 warn 级别
             console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可！");
             console.log("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
-        
+
             const targetStr = Array.isArray(target) ? target.join(" / ") : target;
-            console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条，`
-                + ` 模式: [${HOSTS_MODE}] → ${targetStr}`
-                + ` ，但需 CVR 开启「启用 DNS」与「使用 Hosts」才能生效。`);
-            // existingSet.size：剔除脚本历史管理条目后，订阅原有条目数（非脚本条目总数）。本脚本条目已存在数 = hijackDomains.length - newEntries.length。
-            const _alreadyIn = hijackDomains.length - newEntries.length;
-            console.log(`   fake-ip-filter 去重后新增: ${newEntries.length} 条（注入前已有 ${_alreadyIn} 条脚本条目重合，订阅原有非脚本条目共 ${existingSet.size} 条）`);
+            console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条`
+                + `，模式: [${HOSTS_MODE}] → ${targetStr}`
+                + `，但需 CVR 开启「启用 DNS」与「使用 Hosts」才能生效。`);
+
+            console.log(`   fake-ip-filter 本次清理旧脚本条目: ${cleanedCount} 条，`
+                + `新增注入: ${newEntries.length} 条`
+                + `（订阅原有非脚本条目共 ${existingSet.size} 条）`);
             if (existingSet.size === 0) {
-                console.log("（fake-ip-filter 此前为空或已被 CVR UI 清空，已完整重新写入）");
+                console.log("   （订阅 fake-ip-filter 此前为空或已被 CVR UI 清空，已完整重建）");
             }
         } catch (err) {
             console.error("❌ Hosts DNS 覆写注入失败:", err);
