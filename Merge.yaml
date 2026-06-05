@@ -50,7 +50,7 @@ geox-url:                       # ⚙️ geodata 下载地址。未声明时 Mih
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
   # ℹ️ mmdb 字段说明：geodata-mode: true 时，geoip.dat / geosite.dat 优先，mmdb 字段不参与 GEOIP 查询；geodata-mode: false 时，mmdb 为唯一生效数据库路径。
-  # mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb" # 当前 geodata-mode: true，注释掉省去下载请求。
+  # mmdb:    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb" # 当前 geodata-mode: true，注释掉省去周期性下载。
   # ℹ️ ASN（自治系统号）数据库用于 Mihomo 的 GEOASN 规则匹配指令（格式：IP-ASN,<AS号>,<动作>[,no-resolve]），当前配置未声明 GEOASN 规则，该字段仅为预留。
   # asn:     "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb"
 
