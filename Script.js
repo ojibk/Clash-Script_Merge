@@ -31,7 +31,6 @@
  *   1. 调整顶部配置区的功能开关（true / false）
  *   2. 在对应数组中增删域名即可，无需修改下方逻辑
  *   3. 保存后在 Clash Verge Rev 中重新加载配置文件即可生效，无需重启
- *
  */
 
 function main(config) {
@@ -102,7 +101,7 @@ function main(config) {
     // 💡 random：启动时从指纹库（按 Cloudflare Radar 数据概率）生成一个浏览器指纹并固定使用，非每连接随机切换。概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
     const DEFAULT_FINGERPRINT = "chrome";
     // 指纹注入关键词跳过名单：名称中包含这些关键词的节点，即使没有指纹也不会被注入。用途：保护特殊节点（如专用 IP 节点、特定落地机）不被意外修改指纹。
-    // ⚠️ CJK（中日韩）关键词使用子串匹配（includes），应避免可能包含在其他词组中的关键词（如 "香港" 会匹配 "非香港直连"）
+    // ⚠️ 含汉字（CJK 中日韩统一表意文字）的关键词使用子串匹配（includes），应避免可能包含在其他词组中的关键词（如 "香港" 会匹配 "非香港直连"）
     const FINGERPRINT_SKIP = [];  // 赋值示例：["原生", "game",]
 
     // ──── 典型配置组合参考（按需参照调整上方开关值；此处为说明性文字，无需操作）────
@@ -123,6 +122,8 @@ function main(config) {
     //
     // 【仅调试/禁用脚本】停用规则注入，保留调试标记，方便对比前后差异。
     //   ENABLE_SCRIPT=false   （其余开关无效）
+    // ⚠️ 极端组合：ENABLE_AGGRESSIVE=true 且 ENABLE_BLOCK=false 时，激进规则将单独注入（无 allow/block 层配合），
+    //   可能仅保留少量 REJECT-DROP 规则而缺少必要的放行或拦截规则，非预期使用，不推荐。
 
     // ──── Firefly 派生开关：isFireflyActive 是 Firefly 放行规则是否被注入的唯一决策变量 ────
     // 派生值，仅由 ENABLE_FIREFLY && ENABLE_BLOCK 决定，不可反向修改上游开关。
@@ -216,51 +217,67 @@ function main(config) {
     } else if (!Array.isArray(config.proxies)) {
         console.log("ℹ️ TLS 指纹注入已启用，但 config.proxies 不是数组（订阅可能仅含 proxy-providers），跳过注入。");
     } else {
-        // 预处理 SKIP 名单：按 CJK（中日韩）/ASCII（基础字符集）分轨，CJK 关键词直接子串匹配，ASCII 关键词预编译边界正则
-        const _skipKeywords = [];  // 含 CJK 字符的关键词，走 includes()
-        const _skipRegexes  = [];  // 纯 ASCII 关键词，走边界正则
-        for (const raw of FINGERPRINT_SKIP) {
-            const hasCJK = /\p{Unified_Ideograph}/u.test(raw);
-            if (hasCJK) {
-                // CJK 关键词使用子串匹配，统一转为小写以保证大小写不敏感
-                _skipKeywords.push(raw.toLowerCase());
-            } else {
-                // ASCII 关键词直接使用原始大小写构建边界正则（正则 'i' 标志负责忽略大小写）
-                const escaped = raw.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&');
-                _skipRegexes.push(new RegExp(`(^|[-_\\s（(])${escaped}([-_\\s）)]|$)`, 'i'));
+        // 校验默认指纹值合法性
+        const _VALID_FINGERPRINTS = new Set([
+            "chrome", "firefox", "safari", "iOS", "android", "edge", "360", "qq", "random"
+        ]);
+        if (!_VALID_FINGERPRINTS.has(DEFAULT_FINGERPRINT)) {
+            console.warn(`⚠️ 无效的 DEFAULT_FINGERPRINT: "${DEFAULT_FINGERPRINT}"，已降级为不注入指纹。`);
+            console.log("ℹ️ TLS 指纹注入已启用，但指纹值无效，不执行注入。");
+            // 直接跳过注入，不执行后续 map
+        } else {
+            // ── 以下为有效指纹的正常注入逻辑 ──
+            // 预处理 SKIP 名单：按 CJK（中日韩字符集）/ASCII（基础字符集）分轨，CJK 关键词直接子串匹配，ASCII 关键词预编译边界正则
+            const _skipKeywords = [];  // 含 CJK 字符的关键词，走 includes()
+            const _skipRegexes  = [];  // 纯 ASCII 关键词，走边界正则
+            for (const raw of FINGERPRINT_SKIP) {
+                if (typeof raw !== "string" || !raw) {
+                    console.warn(`[Script] FINGERPRINT_SKIP 中的非法条目已跳过:`, raw);
+                    continue;
+                }
+                const hasCJK = /\p{Unified_Ideograph}/u.test(raw);
+                if (hasCJK) {
+                    // CJK 关键词使用子串匹配，统一转为小写以保证大小写不敏感
+                    _skipKeywords.push(raw.toLowerCase());
+                } else {
+                    // ASCII 关键词直接使用原始大小写构建边界正则（正则 'i' 标志负责忽略大小写）
+                    const escaped = raw.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&');
+                    _skipRegexes.push(new RegExp(`(^|[-_\\s（）()\\[\\]])${escaped}([-_\\s（）()\\[\\]]|$)`, 'i'));
+                }
             }
+
+            let injectedCount = 0;
+            let skippedCount = 0;
+            let preExistingCount = 0;
+
+            config.proxies = config.proxies.map(p => {
+                // 1. 尊重节点已有配置：字段存在即保留（包括 null、false、""）
+                //    ⚠️ 变更 DEFAULT_FINGERPRINT 不会更新已有该字段的节点；如需强制覆盖，须先从订阅 YAML 删除节点的 client-fingerprint 字段后重新加载。
+                if (Object.prototype.hasOwnProperty.call(p, 'client-fingerprint')) {
+                    preExistingCount++;
+                    return p;
+                }
+
+                // 2. 检查 SKIP 名单：CJK（中日韩字符集）关键词用子串匹配，ASCII 关键词用边界正则
+                const nodeName = p.name || "";
+                const nodeNameLower = nodeName.toLowerCase();
+                const isSkipped = _skipKeywords.some(kw => nodeNameLower.includes(kw))
+                            || _skipRegexes.some(regex => regex.test(nodeName));
+
+                if (isSkipped) {
+                    skippedCount++;
+                    return p;
+                }
+
+                // 3. 注入默认指纹
+                injectedCount++;
+                return { ...p, 'client-fingerprint': DEFAULT_FINGERPRINT };
+            });
+
+            console.log(`✅ TLS 指纹注入完成: 新增注入 ${injectedCount} 个，`
+                    + `跳过（SKIP）${skippedCount} 个，`
+                    + `维持既有指纹 ${preExistingCount} 个。(指纹: ${DEFAULT_FINGERPRINT})`);
         }
-
-        let injectedCount = 0;
-        let skippedCount = 0;
-        let preExistingCount = 0;
-
-        config.proxies = config.proxies.map(p => {
-            // 1. 尊重节点已有配置：字段存在即保留（包括 null、false、""）
-            //    ⚠️ 变更 DEFAULT_FINGERPRINT 不会更新已有该字段的节点；如需强制覆盖，须先从订阅 YAML 删除节点的 client-fingerprint 字段后重新加载。
-            if (Object.prototype.hasOwnProperty.call(p, 'client-fingerprint')) {
-                preExistingCount++;
-                return p;
-            }
-
-            // 2. 检查 SKIP 名单：CJK 关键词用子串匹配，ASCII 关键词用边界正则
-            const nodeName = p.name || "";
-            const isSkipped = _skipKeywords.some(kw => nodeName.toLowerCase().includes(kw))
-                           || _skipRegexes.some(regex => regex.test(nodeName));
-
-            if (isSkipped) {
-                skippedCount++;
-                return p;
-            }
-
-            // 3. 注入默认指纹
-            injectedCount++;
-            return { ...p, 'client-fingerprint': DEFAULT_FINGERPRINT };
-        });
-
-        console.log(`✅ TLS 指纹注入完成: 新增注入 ${injectedCount} 个，`
-                + `跳过（SKIP）${skippedCount} 个，`
-                + `维持既有指纹 ${preExistingCount} 个。(指纹: ${DEFAULT_FINGERPRINT})`);
     }
     // ────────────────────────────────────────────────
 
@@ -290,7 +307,7 @@ function main(config) {
     const FALLBACK_NAMES = new Set(["GLOBAL"].map(s => s.toUpperCase()));  // 兜底组：前三轮优选策略全部失败时，第四轮降级才触发
     // ❗ 运行时配置断言：FALLBACK_NAMES ∩ EXCLUDED_NAMES 必须为空集。
     //    若修改 FALLBACK_NAMES 或 EXCLUDED_NAMES，务必确保两者互斥。
-    //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroupCore 中的提前 return true 会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
+    //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroup 中的提前 return true 会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
     // ⚠️ 触发则说明常量集被误修改：改用 return config 而非 throw，保证用户网络不中断（回退至订阅原始规则），错误仍通过 console.error 明确输出。
     {
         const _overlap = [...FALLBACK_NAMES].filter(n => EXCLUDED_NAMES.has(n));
@@ -308,7 +325,7 @@ function main(config) {
     //         保留的代价极低（精确词 $ 锚定，不会误伤含「全用」的复合组名如「全用节点」）
     //   后半段：无位置锚定，子串匹配，覆盖「直连国内」「全局直连」「拒绝广告」等任意位置变体。
     //      → 「拒绝垃圾流量」含「拒绝」，保守排除：含「拒绝」的组名通常指向 REJECT 出口，用作路由出口将导致流量被拒绝。命名模糊时仍保守排除以防路由失效。
-    //   ⚠️ "全局"已从此正则移出，由独立的 FALLBACK_CN_RE 负责识别（原因见下方 FALLBACK_CN_RE 及 isEligibleGroup 防回归说明）。
+    //   ⚠️ "全局"已从此正则移出，由独立的 FALLBACK_CN_RE 负责识别（原因见下方 FALLBACK_CN_RE 及 _isEligibleGroup 防回归说明）。
     //   ⚠️ 已知局限：后半段无位置锚点，采用子串匹配。若代理组命名为「非直连节点」、「不拒绝广告」等包含否定前缀的复合词，会因包含「直连」或「拒绝」子串而被错误排除。
     //   ⚠️ 「默认节点」等含「默认」的复合词组名不触发（精确词加 $ 锚定为设计取舍）此类指向 DIRECT 的订阅极为罕见；此取舍可最大化保障通用订阅的兼容性。
     //   ⚠️ 极端边界（两字排除）：组名恰为「全球」（仅两字，无修饰词）时被精确匹配排除（^全球$），无警告日志，注入将进入容错路径或触发代理组排除断言中止。
@@ -321,14 +338,14 @@ function main(config) {
 
     // 中文兜底组：「全局」对应 FALLBACK_NAMES 中的 GLOBAL，语义与行为均对称。
     // ⚠️ 防回归："全局"必须在此独立正则中识别，不得移入 EXCLUDED_CN_RE：
-    //   · 若移入 EXCLUDED_CN_RE → isEligibleGroup("全局")=false，"全局"被排除出所有策略；
-    //     而 GLOBAL 由第四轮兜底降级路径的 isFallbackGroup 直接选中（isEligibleGroup 不参与第四轮），两者应对称，故"全局"不可移入 EXCLUDED_CN_RE。
+    //   · 若移入 EXCLUDED_CN_RE → _isEligibleGroup("全局")=false，"全局"被排除出所有策略；
+    //     而 GLOBAL 由第四轮兜底降级路径的 _isFallbackGroup 直接选中（_isEligibleGroup 不参与第四轮），两者应对称，故"全局"不可移入 EXCLUDED_CN_RE。
     //   · （假设"全局"被移入 EXCLUDED_CN_RE 的情形下）即使兜底路径选中"全局"，代理组排除断言的 EXCLUDED_CN_RE.test("全局") 也会为 true，立即中止注入，
     //     净效果为零，两个条件同时满足才能正常工作，缺一不可。
     const FALLBACK_CN_RE = /^全局$/;
     // ❗ 运行时配置断言：FALLBACK_CN_RE 与 EXCLUDED_CN_RE 对兜底关键词"全局"的覆盖必须互斥。
     //    若修改 FALLBACK_CN_RE 或 EXCLUDED_CN_RE，务必确保两者互斥。若"全局"同时被两者匹配，第四轮兜底路径虽能选中它，
-    //    但随后代理组排除断言（EXCLUDED_CN_RE.test）会立即中止注入，净效果为零；同时 isEligibleGroupCore 也会将其排除，兜底路径失效。
+    //    但随后代理组排除断言（EXCLUDED_CN_RE.test）会立即中止注入，净效果为零；同时 _isEligibleGroup 也会将其排除，兜底路径失效。
     //    ⚠️ 注意：此时哨兵清理已经执行（旧注入规则已剥离），返回的是清理后但未注入新规则的配置；等效于"本轮脚本跳过注入"，用户仍有原始订阅规则托底，下次重载时恢复正常。
     {
         const _testWord = "全局";
@@ -355,14 +372,14 @@ function main(config) {
     // 当前排除：relay（固定链路）/ url-latency-benchmark（测速工具）。smart 已从本 Set 移除并纳入 VALID_PROXY_TYPES。
     const _UNSUITABLE_TYPES = new Set(["relay", "url-latency-benchmark"]);
 
-    // sanitizeName：统一不可见字符与 Bidi 控制符清理逻辑（完整列表见附录特殊字符集说明），防止视觉欺骗攻击与比较失配。
+    // sanitizeName：统一不可见字符与 Bidi 控制符清理逻辑（完整字符集即 _SANITIZE_RE 定义，覆盖所有 C0 控制字符及常见不可见字符），防止视觉欺骗攻击与比较失配。
     // @param {string} name - 原始组名，函数内部负责清洗；调用方无需预先清洗，传入原始字符串即可。
     // @returns {string} 清洗后的组名（已移除不可见控制符并 trim）；非字符串输入返回空字符串。
     // ⚠️ g 是功能必要条件：需要清除字符串中所有不可见字符，而非仅首次命中。
     // ⚠️ u 标志（Unicode 模式）：确保字符类 [] 按完整 Unicode 码点解析，避免代理对被拆分匹配，语义更严谨；
     //    当前覆盖范围仅含 BMP 内字符（U+0000–U+FEFF），不加 u 在现有代码路径下无实际 bug，
     //    但加 u 是最佳实践，便于将来扩展覆盖范围时无需回头补加。
-    const _SANITIZE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/gu;
+    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/gu;
     function sanitizeName(name) {
         if (typeof name !== "string") return "";
         if (!name) return "";  // 短路返回，省去对空字符串的无意义正则调用
@@ -370,34 +387,24 @@ function main(config) {
         return name.replace(_SANITIZE_RE, '').trim();
     }
 
-    // _isFallbackGroupCore / _isEligibleGroupCore：_Core 后缀约定（见附录命名准则）接受已清洗字符串，轻量版公开接口委托版，跳过二次 sanitizeName。
-    // 公开接口 isFallbackGroup / isEligibleGroup 负责清洗，再委托此二函数；_Core 变体仅供已预计算 cleanName 的内部路径使用。
-    //
-    // ⚠️ 调用顺序约束：_isEligibleGroupCore 中 _isFallbackGroupCore 必须先于 EXCLUDED_NAMES / EXCLUDED_CN_RE 检查执行，
-    //    兜底组（GLOBAL/全局）须通过 isEligibleGroup 初步关卡才能在第四轮降级路径中被选中；此顺序确保在互斥约束被意外违反时兜底路径仍有额外一层保障。
+    // _isFallbackGroup / _isEligibleGroup：内部判定函数，直接接受已清洗的组名字符串（由调用方保证已通过 sanitizeName 处理）。
+    // 所有调用者均使用预计算的 cleanName，无需在此二次清洗。
+    // ⚠️ 调用顺序约束：_isEligibleGroup 中 _isFallbackGroup 必须先于 EXCLUDED_NAMES / EXCLUDED_CN_RE 检查执行，
+    //    兜底组（GLOBAL/全局）须通过 _isEligibleGroup 初步关卡才能在第四轮降级路径中被选中；此顺序确保在互斥约束被意外违反时兜底路径仍有额外一层保障。
     // ⚠️ 集合互斥约束：FALLBACK_NAMES 中的值不应与 EXCLUDED_NAMES 重叠，若将 "REJECT" 等误加入 FALLBACK_NAMES，提前 return true 将旁路 EXCLUDED_NAMES 检查。
     //    上方运行时断言（FALLBACK_NAMES ∩ EXCLUDED_NAMES）从启动时保证此约束。
-    function _isFallbackGroupCore(trimmed) {
+    function _isFallbackGroup(trimmed) {
         if (!trimmed) return false;
         if (FALLBACK_NAMES.has(trimmed.toUpperCase())) return true;
         return FALLBACK_CN_RE.test(trimmed);
     }
 
-    function _isEligibleGroupCore(trimmed) {
+    function _isEligibleGroup(trimmed) {
         if (!trimmed) return false;
-        if (_isFallbackGroupCore(trimmed)) return true;
+        if (_isFallbackGroup(trimmed)) return true;
         if (EXCLUDED_NAMES.has(trimmed.toUpperCase())) return false;
         if (EXCLUDED_CN_RE.test(trimmed)) return false;
         return true;
-    }
-
-    // isEligibleGroup("全局") 返回 true（兜底组有入选资格），但前三轮优选策略以 !isFallbackGroup 二次过滤，"全局"须降至第四轮才被选中。"有资格"≠"优先选中"。
-    function isEligibleGroup(name) {
-        return _isEligibleGroupCore(sanitizeName(name));
-    }
-
-    function isFallbackGroup(name) {
-        return _isFallbackGroupCore(sanitizeName(name));
     }
 
     if (config["proxy-groups"].length > 0) {
@@ -415,19 +422,20 @@ function main(config) {
         // 预计算所有组的 cleanName，避免各轮 find 各自对同一组名重复调用 sanitizeName。
         // 对含 100+ 代理组的大型订阅，最坏情况下五轮各遍历一次，sanitizeName（_SANITIZE_RE.replace）被执行 1×N 次 sanitize + 5×N 次正则测试；
         // 预计算降为 1×N，后续各轮直接引用 cleanName。
-        const _groupsPrepped = config["proxy-groups"].map(g => ({
-            g,
-            cleanName: sanitizeName(g?.name)
-        }));
+        const _groupsPrepped = config["proxy-groups"].map(g => {
+            const cleanName  = sanitizeName(g?.name);
+            const isFallback = _isFallbackGroup(cleanName);
+            const isEligible = _isEligibleGroup(cleanName);
+            return { g, cleanName, isFallback, isEligible };
+        });
 
         // [优选·关键词] 关键词 / include-all / 多节点三路并联匹配（最优先，覆盖最广）
         // 各轮 find 统一返回完整条目 { g, cleanName }，由 _mainEntry 持有；不再拆解出 .g 后回头再次线性搜索 cleanName（双重 find 模式已消除）。
-        let _mainEntry = _groupsPrepped.find(({ g, cleanName }) => {
-            if (!_isEligibleGroupCore(cleanName)) return false;
-            if (_isFallbackGroupCore(cleanName))  return false;
-            const typeOk = VALID_PROXY_TYPES.has(g?.type);
-            const nameMatch  = _KW_RE.test(cleanName);
-            const hasMany    = Array.isArray(g?.proxies) && g.proxies.length > 3;
+        let _mainEntry = _groupsPrepped.find(({ g, cleanName, isFallback, isEligible }) => {
+            if (!isEligible || isFallback) return false;
+            const typeOk    = VALID_PROXY_TYPES.has(g?.type);
+            const nameMatch = _KW_RE.test(cleanName);
+            const hasMany   = Array.isArray(g?.proxies) && g.proxies.length > 3;
             // length > 3（即 ≥ 4）：排除 proxies 数组近乎为空的极简占位组，如：["节点1","节点2","节点3"]（length=3，被排除），
             // ["节点1","节点2","节点3","节点4"]（length=4，通过），优先选入条目数量充足的组。
             // ⚠️ 注意：proxies 数组可包含三类条目：底层节点名称、其他策略组名称、内置代理名称（DIRECT / REJECT）；
@@ -440,8 +448,8 @@ function main(config) {
 
         // [优选·正则] 正则宽松匹配（次选，排除兜底组）
         if (!_mainEntry) {
-            _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
-                _isEligibleGroupCore(cleanName) && !_isFallbackGroupCore(cleanName) &&
+            _mainEntry = _groupsPrepped.find(({ g, cleanName, isFallback, isEligible }) =>
+                isEligible && !isFallback &&
                 /代理|节点|选择|Proxy/i.test(cleanName) &&
                 VALID_PROXY_TYPES.has(g?.type) &&
                 Array.isArray(g?.proxies) && g.proxies.length > 3
@@ -453,8 +461,8 @@ function main(config) {
         //   各策略数量约束对比：关键词/正则策略要求 length > 3，本策略与兜底降级策略均要求 length > 0；
         //   本策略放宽数量约束（> 0 而非 > 3）以扩大覆盖范围，避免漏选小型节点池。
         if (!_mainEntry) {
-            _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
-                _isEligibleGroupCore(cleanName) && !_isFallbackGroupCore(cleanName) &&
+            _mainEntry = _groupsPrepped.find(({ g, cleanName, isFallback, isEligible }) =>
+                isEligible && !isFallback &&
                 VALID_PROXY_TYPES.has(g?.type) &&
                 Array.isArray(g?.proxies) && g.proxies.length > 0
             );
@@ -464,11 +472,10 @@ function main(config) {
         // ⚠️ 不能直接取首个元素，订阅第一个组可能是 DIRECT，导致本脚本注入的代理规则失效（流量直连）
         // 保留类型过滤（与前三轮优选策略一致），防止选中固定链路（relay）和测速专用（url-latency-benchmark）；smart 已纳入 VALID_PROXY_TYPES，可被选中。
         if (!_mainEntry) {
-            _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
-                _isFallbackGroupCore(cleanName) &&
+            _mainEntry = _groupsPrepped.find(({ g, isFallback }) =>
+                isFallback &&
                 VALID_PROXY_TYPES.has(g?.type) &&
-                Array.isArray(g?.proxies) &&
-                g.proxies.length > 0
+                Array.isArray(g?.proxies) && g.proxies.length > 0
             );
             if (_mainEntry) {
                 console.warn(`⚠️ 未找到优选代理组，降级使用兜底组 [${_mainEntry.g.name}]`);
@@ -485,8 +492,8 @@ function main(config) {
             // [最终容错选取] 排除语义不适合做代理出口的类型（而非全部放开）
             // relay：固定节点链路转发，无节点选择语义，用户无法在其界面切换节点。
             // url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。smart 已移入 VALID_PROXY_TYPES，Mihomo v1.18+ 已稳定，不再列为不适用类型。
-            _mainEntry = _groupsPrepped.find(({ g, cleanName }) =>
-                _isEligibleGroupCore(cleanName) &&
+            _mainEntry = _groupsPrepped.find(({ g, isEligible }) =>
+                isEligible &&
                 !_UNSUITABLE_TYPES.has(g?.type) &&
                 Array.isArray(g?.proxies) && g.proxies.length > 0
             );
@@ -503,9 +510,7 @@ function main(config) {
 
         if (mainGroup?.name) {
             proxyGroupName = mainGroup.name;
-            // cleanName 直接取自 _mainEntry，零额外遍历。
-            const _selectedClean = _mainEntry.cleanName;
-            const groupFlag = _isFallbackGroupCore(_selectedClean) ? "⚠️" : "✅";
+            const groupFlag = _mainEntry.isFallback ? "⚠️" : "✅";
             console.log(`${groupFlag} 代理组识别成功: [${proxyGroupName}] (type: ${mainGroup.type ?? "未知"})`); // ⚠️=兜底组，✅=优选组
         } else {
             // 容错选取策略也失败：订阅中无任何可注入的代理出口组（全被排除或类型不适）。
@@ -514,10 +519,8 @@ function main(config) {
             console.error("   网络将走订阅原始规则，不注入任何自定义规则，防止 Mihomo 内核启动失败");
             console.log(`   已扫描的代理组:`);
             // _groupsPrepped 已预计算 cleanName，错误路径同样零额外 sanitizeName 调用
-            _groupsPrepped.forEach(({ g, cleanName }, idx) => {
-                const eligible = _isEligibleGroupCore(cleanName);
-                const fallback = _isFallbackGroupCore(cleanName);
-                const status   = !eligible ? "❌" : (fallback ? "⚠️" : "✅");
+            _groupsPrepped.forEach(({ g, isEligible, isFallback }, idx) => {
+                const status = !isEligible ? "❌" : (isFallback ? "⚠️" : "✅");
                 const count = g?.proxies?.length ?? 0;
                 console.log(`   ${idx + 1}. ${status} [${g?.name}] (${g?.type ?? "未知"}, ${count} 节点)`);
             });
@@ -561,10 +564,10 @@ function main(config) {
     // 注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
     // 💡 两层覆盖范围的完整差异说明见 _SANITIZE_RE 注释（权威定义源）；
     //    本断言为注入层权威说明：仅覆盖 Clash/YAML 语法破坏字符，不覆盖 Bidi 控制符（Bidi 视觉欺骗问题由识别层处理，注入层不需要重复防御）。
-    if (/[,\u0000-\u001F\u007F\u0085\u2028\u2029]/u.test(proxyGroupName)) { // u 标志确保按完整 Unicode 码点解析，与 _SANITIZE_RE 保持一致，便于将来扩展
+    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u2028\u2029]/u.test(proxyGroupName)) { // u 标志确保按完整 Unicode 码点解析，与 _SANITIZE_RE 保持一致，便于将来扩展
         console.error(`❌ Token 断言触发：proxyGroupName [${JSON.stringify(proxyGroupName)}] 含非法字符`);
-        console.error(`   逗号截断规则语义；C0 控制字符（U+0000–U+001F，含 \t/\n/\r）及 NEL（U+0085，C1 控制字符，等效换行）——均破坏 Clash 规则语法，脚本中止注入`);
-        return config;
+        console.error(`   逗号截断规则语义；方括号/花括号（[ ] { }）破坏 YAML 序列/映射语法；` 
+        +`C0 控制字符（U+0000–U+001F，含 \\t/\\n/\\r）及 NEL（U+0085）——均破坏 Clash 规则语法，脚本中止注入`);
     }
 
     // ✅ 执行到此处时，proxy-groups 非空且 proxyGroupName 已赋值（空或识别失败均已 return config），此断言针对"选组逻辑重构后 proxyGroupName 与实际数组意外失配"的防御场景。
@@ -872,12 +875,13 @@ function main(config) {
 
     // ─────────────── 第三方非官方修改补丁后门（高危，强烈建议保留）───────────────
     // 这些域名会回传设备信息，甚至下发新的远程控制指令。
-    const backdoorSuffix = [
+    const BACKDOOR_BASE_DOMAINS = [
         "966v26.com",                            // 非官方修改补丁后门主域（回传设备信息）
         "vposy.com",                             // 知名非官方修改补丁作者域名（Adobe/Office）
         "api.pzz.cn",                            // 国内非官方修改补丁回传接口
         // "cc-cdn.com",                            // 【待观测】命名形似 Adobe CC CDN，无抓包证据，保守纳入；可信度低于前三条。若误命中合法 CDN，会导致启动卡顿
     ];
+    const backdoorSuffix = [...BACKDOOR_BASE_DOMAINS];
     // 关键词兜底：覆盖 966v26.net / cdn.966v26.org 等非 .com TLD（顶级域名，Top-Level Domain）变种，REJECT-DROP 策略与 backdoorSuffix 一致。
     // ⚠️ 误命中风险评估："966v26" 为高特异性域名特征字符串（抓包来源），在已知合法域名中无任何同名子串，实际误命中概率极低。
     //    若将来发现误命中（如某 CDN 域名恰好含此子串），可将 REJECT-DROP 改为 REJECT 降低影响面；但鉴于字符串高度随机性，此情形极不可能发生，当前策略可接受。
@@ -1159,10 +1163,8 @@ function main(config) {
     // ─────── 关键词兜底（⚠️ 默认关闭：误伤面较大，随着互联网基础设施演进，这些关键词已严重泛化）───────
     // telemetry/analytics/stats/metrics 已出现在大量合法 CDN 和第三方服务域名中。例：video-stats.video.google.com / metrics.cloudflare.com / cdn.telemetry-static.com
     // 如需启用，建议仅保留最精确的词并放到所有具体规则之后。启用：将顶部配置区 ENABLE_GLOBAL_KEYWORD_BLOCK 改为 true；
-    // 关闭时：三元表达式直接赋值空数组 []，pushKeyword([], ...) 为零次迭代（no-op），不向 layerPools 写入任何条目，行为等同于未调用。
-    const globalKeyword = ENABLE_GLOBAL_KEYWORD_BLOCK
-        ? ["telemetry", "analytics", "stats", "metrics"]
-        : [];
+    // 关闭时（ENABLE_GLOBAL_KEYWORD_BLOCK=false）：此数组始终声明，但注入层由 if (ENABLE_GLOBAL_KEYWORD_BLOCK) 门控，不写入任何条目到 layerPools，行为等同于未调用。
+    const globalKeyword = ["telemetry", "analytics", "stats", "metrics"];
 
     // ───────────────────────────── 进程规则 ─────────────────────────────
     // ⚠️ Windows 需要管理员权限 + TUN 模式（Mihomo 创建虚拟网卡接管全部流量）或 Service 模式，系统代理模式无效
@@ -1413,7 +1415,9 @@ function main(config) {
                                                                      // 或直接将该变量的数组赋值清空：const youtubeKeyword = []
             // 通用广告联盟
             pushSuffix(genericAdSuffix, "REJECT", layerPools.block);
-            pushKeyword(globalKeyword, "REJECT", layerPools.block);
+            if (ENABLE_GLOBAL_KEYWORD_BLOCK) {
+                pushKeyword(globalKeyword, "REJECT", layerPools.block);
+            }
         }
 
         if (ENABLE_PROCESS_RULE) {
@@ -1609,24 +1613,9 @@ function main(config) {
             //   精确项是为兼容旧版内核：旧版不识别 +. 语法时，*.XXX.com 覆盖单级子域，如使用旧版内核请自行取消下方对应规则条目的注释以使之生效。
             //   XXX.com 保障主域本身。代价：内核 hosts 树略有冗余，无功能影响。
             //
-            // hijackDomains 覆盖 backdoorSuffix 全部域名，与 rules 层的 REJECT-DROP 规则保持覆盖对称，形成 DNS 层 + rules 层双重纵深防御。
-            const hijackDomains = [
-                // ──── 966v26.com（有明确社区记录）────
-                "+.966v26.com",              // 全量覆盖主域 + 所有多级子域
-                // "966v26.com",             // 兼容旧版内核：主域精确匹配。若使用 2022 年以前旧版内核，请取消注释。
-                // "*.966v26.com",           // 兼容旧版内核：单级通配符。同上
-                // "api.966v26.com",         // 兼容旧版内核：显式精确（双重保障核心接口）。同上
-                // "status.966v26.com",      // 兼容旧版内核：显式精确（双重保障状态接口）。同上
-                // ──── vposy.com（知名非官方修改补丁作者域名，风险等级与 966v26.com 对等）────
-                "+.vposy.com",
-                // "vposy.com",
-                // ──── api.pzz.cn（国内非官方修改补丁回传接口；+. 对应 SUFFIX 语义）────
-                "+.api.pzz.cn",
-                // "api.pzz.cn",
-                // ──── cc-cdn.com（【推断】可信度低于前三条，无公开抓包资料，保守纳入 DNS 层）────
-                // "+.cc-cdn.com",
-                // "cc-cdn.com",
-            ];
+            // hijackDomains 由 BACKDOOR_BASE_DOMAINS 动态生成（+.domain 形式），覆盖所有后门域名的 DNS 解析，
+            // 与 rules 层的 backdoorSuffix REJECT-DROP 规则保持覆盖对称，形成 DNS 层 + rules 层双重纵深防御。
+            const hijackDomains = BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`]);
 
             const customHosts = Object.fromEntries(hijackDomains.map(d => [d, target]));
 
@@ -1643,8 +1632,13 @@ function main(config) {
 
             config.hosts     = { ...ensureHostsObj(config.hosts),     ...customHosts };
 
-            if (typeof config.dns !== "object" || config.dns === null || Array.isArray(config.dns)) {
+            if (config.dns == null) {
+                // 仅当 dns 不存在或为 null/undefined 时初始化（安全兜底）
                 config.dns = {};
+            } else if (typeof config.dns !== "object" || Array.isArray(config.dns)) {
+                // dns 类型异常（如数组、字符串等），保护原始配置，跳过本次 Hosts 覆写
+                console.warn("⚠️ config.dns 类型异常（非对象），已写入顶层 hosts，跳过 dns.hosts 和 fake-ip-filter 注入以保护原始 DNS 配置");
+                return config;  // 提前返回，不执行后续 hosts 和 fake-ip-filter 注入
             }
             //    Clash Verge Rev 的配置生效顺序：
             //    订阅 yaml → 脚本注入 → UI 设置覆盖 → 写入 clash-verge.yaml → Mihomo 加载
@@ -1672,17 +1666,29 @@ function main(config) {
             if (!Array.isArray(config.dns["fake-ip-filter"])) {
                 config.dns["fake-ip-filter"] = [];
             }
-            // ❗❗【脚本历史条目全量注册表】用于清理旧版 hijackDomains 残留条目。❗❗
-            // 设计：fake-ip-filter 采用数组追加模式，直接删除不再使用的条目需要知道"曾注入过哪些"。此集合记录本脚本历史上所有注入过的 fake-ip-filter 条目（含已删除的旧条目）。
-            // ⚠️❗ 维护规范：向 hijackDomains 新增条目时，须同时在此 Set 追加（防旧版残留无法清理）；从 hijackDomains 删除条目时，对应项留在此 Set，不得移除（保证清理能力）。
-            const _SCRIPT_MANAGED_HIJACK = new Set([
-                // 当前 hijackDomains 的全量覆盖（含主域、兼容旧版内核注释条目）
-                "+.966v26.com", "966v26.com", "*.966v26.com", "api.966v26.com", "status.966v26.com",
-                "+.vposy.com",  "vposy.com",  "*.vposy.com",
-                "+.api.pzz.cn", "api.pzz.cn", "*.api.pzz.cn",
-                "+.cc-cdn.com", "cc-cdn.com", "*.cc-cdn.com",
-            ].map(d => d.toLowerCase()));
 
+            // ❗❗【脚本历史条目全量注册表】（_SCRIPT_MANAGED_HIJACK）❗❗
+            // 用于幂等清理 fake-ip-filter 中本脚本曾注入的条目。当前活跃条目：由 BACKDOOR_BASE_DOMAINS 自动派生，新增域名无需手动同步。
+            // 历史遗留条目：见下方 _HISTORICAL_MANAGED，需手动维护已删除/格式变更的旧条目。
+            const _CURRENT_MANAGED = new Set(
+                BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase())
+            );
+
+            // ── 历史遗留条目：已删除或注入形式变更的旧版残留 ──
+            // (1) 已从 BACKDOOR_BASE_DOMAINS 删除的域名的所有历史变体
+            // (2) 当前活跃域名但历史注入形式已从精确子域改为通配符（需保留旧精确条目）
+            const _HISTORICAL_MANAGED = new Set([
+                // 966v26.com 的旧精确子域（现用 +.966v26.com 通配）
+                "api.966v26.com",
+                "status.966v26.com",
+                // cc-cdn.com 已从 BACKDOOR_BASE_DOMAINS 移除，需保留所有变体以清理残留
+                "+.cc-cdn.com",
+                "cc-cdn.com",
+                "*.cc-cdn.com",
+            ].map(s => s.toLowerCase()));
+
+            // 合并为完整注册表（替代原硬编码 Set）
+            const _SCRIPT_MANAGED_HIJACK = new Set([..._CURRENT_MANAGED, ..._HISTORICAL_MANAGED]);
             // 【性能优化】单次遍历同时完成归一化、去重与分类，避免双重 Set 构造开销。先 trim 归一化（消除首尾空白），过滤非法条目，再用 existingSet 去重并写入 cleanExisting。
             // hosts 字段采用对象展开覆写，而 fake-ip-filter 采用数组追加，两者生命周期管理策略不一致，fake-ip-filter 具有累加性，如需清理请重置 CVR 的 DNS 设置或重置订阅。
             const existingSet   = new Set();
@@ -1862,7 +1868,6 @@ function main(config) {
  *
  *   变量和常量的命名准则：
  *    _camelCase 对应运行时临时变量，_UPPER_CASE 对应运行时常量（冻结集合/正则），不应被修改。两段命名语义上是对称的，类似于"私有变量"与"私有常量"的区分惯例。
- *    _Core 后缀进一步标识"接受已清洗 cleanName，不再调用 sanitizeName"的轻量版本，与公开接口（无 _Core 后缀）形成成对设计。
  * 
  *   🛠️ 编程防御：
  *     - 严禁直接访问 config[n]，必须使用 ?. 或 Array.isArray() 级联校验
