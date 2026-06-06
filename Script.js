@@ -102,6 +102,7 @@ function main(config) {
     // 💡 random：启动时从指纹库（按 Cloudflare Radar 数据概率）生成一个浏览器指纹并固定使用，非每连接随机切换。概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
     const DEFAULT_FINGERPRINT = "chrome";
     // 指纹注入关键词跳过名单：名称中包含这些关键词的节点，即使没有指纹也不会被注入。用途：保护特殊节点（如专用 IP 节点、特定落地机）不被意外修改指纹。
+    // ⚠️ CJK（中日韩）关键词使用子串匹配（includes），应避免可能包含在其他词组中的关键词（如 "香港" 会匹配 "非香港直连"）
     const FINGERPRINT_SKIP = [];  // 赋值示例：["原生", "game",]
 
     // ──── 典型配置组合参考（按需参照调整上方开关值；此处为说明性文字，无需操作）────
@@ -215,18 +216,17 @@ function main(config) {
     } else if (!Array.isArray(config.proxies)) {
         console.log("ℹ️ TLS 指纹注入已启用，但 config.proxies 不是数组（订阅可能仅含 proxy-providers），跳过注入。");
     } else {
-        // 预处理 SKIP 名单：按 CJK/ASCII 分轨，CJK 关键词直接子串匹配，ASCII 关键词预编译边界正则
+        // 预处理 SKIP 名单：按 CJK（中日韩）/ASCII（基础字符集）分轨，CJK 关键词直接子串匹配，ASCII 关键词预编译边界正则
         const _skipKeywords = [];  // 含 CJK 字符的关键词，走 includes()
         const _skipRegexes  = [];  // 纯 ASCII 关键词，走边界正则
         for (const raw of FINGERPRINT_SKIP) {
-            const keyword = raw.toLowerCase();
-            // 检测是否包含中日韩统一表意文字（基本多文种平面）
-            const hasCJK = /\p{Unified_Ideograph}/u.test(keyword);
+            const hasCJK = /\p{Unified_Ideograph}/u.test(raw);
             if (hasCJK) {
-                _skipKeywords.push(keyword);
+                // CJK 关键词使用子串匹配，统一转为小写以保证大小写不敏感
+                _skipKeywords.push(raw.toLowerCase());
             } else {
-                // 转义正则元字符（不包括 /，在字符类中无需转义）
-                const escaped = keyword.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&');
+                // ASCII 关键词直接使用原始大小写构建边界正则（正则 'i' 标志负责忽略大小写）
+                const escaped = raw.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&');
                 _skipRegexes.push(new RegExp(`(^|[-_\\s（(])${escaped}([-_\\s）)]|$)`, 'i'));
             }
         }
@@ -286,8 +286,8 @@ function main(config) {
         "DEFAULT",     // Mihomo 内部保留词，用于 Fallback 策略默认出口表达，防御性排除
         "MATCH",       // Mihomo 内置动作关键字（兜底策略）；正常订阅格式下极不可能出现同名代理组，保留以防万一订阅中存在同名代理组时被错误选为出口
         "PASS",        // 防止将 Mihomo 的 PASS（透传）策略错误选为代理出口
-    ]);
-    const FALLBACK_NAMES = new Set(["GLOBAL"]);  // 兜底组：前三轮优选策略全部失败时，第四轮降级才触发
+    ].map(s => s.toUpperCase()));
+    const FALLBACK_NAMES = new Set(["GLOBAL"].map(s => s.toUpperCase()));  // 兜底组：前三轮优选策略全部失败时，第四轮降级才触发
     // ❗ 运行时配置断言：FALLBACK_NAMES ∩ EXCLUDED_NAMES 必须为空集。
     //    若修改 FALLBACK_NAMES 或 EXCLUDED_NAMES，务必确保两者互斥。
     //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroupCore 中的提前 return true 会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
