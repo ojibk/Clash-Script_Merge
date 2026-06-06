@@ -622,7 +622,7 @@ function main(config) {
     //   adobeFireflyOnly：Firefly AI 生成式专属（clio, firefly-api 等）
     //   adobeSharedDeps：共用鉴权端点，Firefly 和其他 Adobe 功能（同时被用于 CC 激活验证）共同依赖的鉴权/授权端点
     //
-    // ⚠️【Firefly 必要妥协】auth.services.adobe.com / cc-api-cp.adobe.io 同时承载 CC 正版验证心跳。
+    // ⚠️【Firefly 依赖链放行】auth.services.adobe.com / cc-api-cp.adobe.io 同时承载 CC 正版验证心跳。
     //   isFireflyActive=true 时放行后，以下进程的鉴权请求均走代理，而进程规则仅覆盖 AdobeGCClient.exe：
     //     AdobeGCClient.exe  ← 由 processBlockRules REJECT-DROP（静默丢包，见下方说明）兜底（已覆盖）
     //     Creative Cloud.exe ← CC 桌面客户端含授权心跳（基于依赖链考量的必要豁免：心跳放行不触发重验证，TUN 进程规则本身不可靠）
@@ -781,7 +781,7 @@ function main(config) {
     //
     // ⚠️【必要妥协】adobeSharedDeps 同时承载 CC 正版验证心跳，
     //           放行后激活拦截的最终防线为 PROCESS-NAME,AdobeGCClient.exe → REJECT-DROP（需 ENABLE_PROCESS_RULE=true + TUN 模式 + 管理员权限，进程规则本身不可靠）。
-    //           其余未覆盖进程详见 adobeSharedDeps 注释中的 Firefly 必要妥协。
+    //           其余未覆盖进程详见 adobeSharedDeps 注释中的 Firefly 依赖链放行。
     // 关于 adobeUdpBlock 与 Firefly .adobe.io 域名的 QUIC 豁免机制：
     //   最终规则池展开顺序（由 LAYER_ORDER 决定，allow → block，与 push 调用书写顺序无关）：
     //   allow 层规则先于 adobeUdpBlock 入 pool（LAYER_ORDER: allow > block）；Firefly 域名的 UDP 流量先命中 allow 层走代理；
@@ -1791,7 +1791,7 @@ function main(config) {
  *   💡 adobeSharedDeps（共用鉴权端点） 推测项集中于数组末尾：
  *      独立块注释区分「已确认 / 待抓包确认」，优先保证 Firefly 功能正常可用，而非严格遵循最小权限原则；待抓包确认后可视情况将推测项移至 adobeSuffix（改为 REJECT）。
  *
- *   💡 Firefly 必要妥协（基于依赖链考量的必要豁免，原因见下）：
+ *   💡 Firefly 依赖链放行（基于依赖链考量的必要豁免，原因见下）：
  *      isFireflyActive=true 时，以下进程的鉴权请求均走代理，进程规则仅覆盖 AdobeGCClient.exe：
  *        AdobeGCClient.exe  ← 由 processBlockRules REJECT-DROP 兜底（已覆盖）
  *        Creative Cloud.exe ← 含授权心跳（必要豁免）
