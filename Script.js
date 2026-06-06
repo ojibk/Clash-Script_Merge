@@ -1179,7 +1179,7 @@ function main(config) {
     //    是唯一有效的域名无关进程级拦截手段（路径A 下 DOMAIN 规则仍生效，此为附加纵深）。
     const processBlockRules = [ // 进程拦截
         // ──── 软件鉴权与遥测类：方案 REJECT-DROP（让软件超时等待，不快速切换备用链路）────
-        // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核能够尽早排除低代价条件后跳过高代价求值）：
+        // AND 条件书写顺序按代价从低到高排列（设计意图：利用短路求值特性低代价条件后跳过高代价求值）：
         // NETWORK（读包头）→ DST-PORT（整数比较）→ PROCESS-NAME（查系统进程表）。实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
         // first-match 语义下：
         //   QUIC 443 规则是全 UDP 和全流量规则的子集；三条动作完全相同（全部 REJECT-DROP），功能上等价于只保留全流量规则。QUIC 443 / 普通 UDP / TCP 分别命中不同规则，
@@ -1574,7 +1574,7 @@ function main(config) {
     //
     // 模式说明（与顶部 HOSTS_MODE 对应）：
     //   ipv4-loopback  → 127.0.0.1          回环模拟拦截（ECONNREFUSED），更温和
-    //   ipv4-blackhole → 0.0.0.0            黑洞拦截，OS 拒绝（WSAEINVAL/ENETUNREACH，见上），TCP SYN 不会发出；阻断速度最快，但可能被部分应用归类为断网状态
+    //   ipv4-blackhole → 0.0.0.0            黑洞拦截，OS 拒绝（WSAEINVAL/ENETUNREACH，见上），通常 TCP SYN 不会发出；阻断速度最快，但可能被部分应用归类为断网状态
     //   dual-loopback  → 127.0.0.1 + ::1    IPv4/IPv6 双栈回环模拟拦截
     //   dual-blackhole → 0.0.0.0 + ::       IPv4/IPv6 双栈黑洞拦截（慎用，最彻底但可能影响某些应用）
     //
