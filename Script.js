@@ -568,6 +568,7 @@ function main(config) {
         console.error(`❌ Token 断言触发：proxyGroupName [${JSON.stringify(proxyGroupName)}] 含非法字符`);
         console.error(`   逗号截断规则语义；方括号/花括号（[ ] { }）破坏 YAML 序列/映射语法；` 
         +`C0 控制字符（U+0000–U+001F，含 \\t/\\n/\\r）及 NEL（U+0085）——均破坏 Clash 规则语法，脚本中止注入`);
+        return config; 
     }
 
     // ✅ 执行到此处时，proxy-groups 非空且 proxyGroupName 已赋值（空或识别失败均已 return config），此断言针对"选组逻辑重构后 proxyGroupName 与实际数组意外失配"的防御场景。
