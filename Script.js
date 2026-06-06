@@ -168,7 +168,7 @@ function main(config) {
         //   ⚠️ 两种孤儿均不抛出异常、不中断注入，残留规则可接受，中止注入不可接受。
         //   孤儿 START（无配对 END）：START 本身不写入 newRules，但其 length 快照被压栈（永不弹出）；
         //     其后续规则正常推入 newRules（无对应 END，不发生截断），旧注入规则与本次新注入共存一个周期。
-        //     旧注入与新注入并存一个周期，若两者覆盖域名相同则新注入先命中（结果正确）；若不同则双重生效直至下次正常清理。
+        //     旧注入规则因失去哨兵包裹而在后续所有执行中均无法被清理，永久残留；但此情形在正常同步赋值路径下实际不会产生。
         //   孤儿 END（无配对 START）：静默跳过，不截断任何内容。
         const newRules = [];
         const stack    = [];
@@ -217,14 +217,17 @@ function main(config) {
     } else if (!Array.isArray(config.proxies)) {
         console.log("ℹ️ TLS 指纹注入已启用，但 config.proxies 不是数组（订阅可能仅含 proxy-providers），跳过注入。");
     } else {
-        // 校验默认指纹值合法性
+        // 合法指纹白名单（含 "none"，统一由 _effectiveFP 降级处理）
         const _VALID_FINGERPRINTS = new Set([
-            "chrome", "firefox", "safari", "iOS", "android", "edge", "360", "qq", "random"
+            "chrome", "firefox", "safari", "iOS", "android", "edge", "360", "qq", "random", "none"
         ]);
-        if (!_VALID_FINGERPRINTS.has(DEFAULT_FINGERPRINT)) {
-            console.warn(`⚠️ 无效的 DEFAULT_FINGERPRINT: "${DEFAULT_FINGERPRINT}"，已降级为不注入指纹。`);
-            console.log("ℹ️ TLS 指纹注入已启用，但指纹值无效，不执行注入。");
-            // 直接跳过注入，不执行后续 map
+        // 无效值降级为 "none"，避免 const 重复赋值问题
+        const _effectiveFP = _VALID_FINGERPRINTS.has(DEFAULT_FINGERPRINT)
+            ? DEFAULT_FINGERPRINT
+            : (console.warn(`⚠️ 无效的 DEFAULT_FINGERPRINT: "${DEFAULT_FINGERPRINT}"，已降级为 "none"`), "none");
+
+        if (_effectiveFP === "none") {
+            console.log("ℹ️ TLS 指纹注入已启用，但默认指纹为 'none'，不执行注入。");
         } else {
             // ── 以下为有效指纹的正常注入逻辑 ──
             // 预处理 SKIP 名单：按 CJK（中日韩字符集）/ASCII（基础字符集）分轨，CJK 关键词直接子串匹配，ASCII 关键词预编译边界正则
@@ -269,14 +272,14 @@ function main(config) {
                     return p;
                 }
 
-                // 3. 注入默认指纹
+                // 3. 注入有效指纹
                 injectedCount++;
-                return { ...p, 'client-fingerprint': DEFAULT_FINGERPRINT };
+                return { ...p, 'client-fingerprint': _effectiveFP };
             });
 
             console.log(`✅ TLS 指纹注入完成: 新增注入 ${injectedCount} 个，`
                     + `跳过（SKIP）${skippedCount} 个，`
-                    + `维持既有指纹 ${preExistingCount} 个。(指纹: ${DEFAULT_FINGERPRINT})`);
+                    + `维持既有指纹 ${preExistingCount} 个。(指纹: ${_effectiveFP})`);
         }
     }
     // ────────────────────────────────────────────────
@@ -564,7 +567,8 @@ function main(config) {
     // 注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
     // 💡 两层覆盖范围的完整差异说明见 _SANITIZE_RE 注释（权威定义源）；
     //    本断言为注入层权威说明：仅覆盖 Clash/YAML 语法破坏字符，不覆盖 Bidi 控制符（Bidi 视觉欺骗问题由识别层处理，注入层不需要重复防御）。
-    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u2028\u2029]/u.test(proxyGroupName)) { // u 标志确保按完整 Unicode 码点解析，与 _SANITIZE_RE 保持一致，便于将来扩展
+    //    u 标志确保按完整 Unicode 码点解析，与 _SANITIZE_RE 保持一致，便于将来扩展。
+    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u200B-\u200F\u2060\u2066-\u2069\u2028\u2029\uFEFF]/u.test(proxyGroupName)) {
         console.error(`❌ Token 断言触发：proxyGroupName [${JSON.stringify(proxyGroupName)}] 含非法字符`);
         console.error(`   逗号截断规则语义；方括号/花括号（[ ] { }）破坏 YAML 序列/映射语法；` 
         +`C0 控制字符（U+0000–U+001F，含 \\t/\\n/\\r）及 NEL（U+0085）——均破坏 Clash 规则语法，脚本中止注入`);
@@ -1179,7 +1183,7 @@ function main(config) {
     //    是唯一有效的域名无关进程级拦截手段（路径A 下 DOMAIN 规则仍生效，此为附加纵深）。
     const processBlockRules = [ // 进程拦截
         // ──── 软件鉴权与遥测类：方案 REJECT-DROP（让软件超时等待，不快速切换备用链路）────
-        // AND 条件书写顺序按代价从低到高排列（设计意图：利用短路求值特性低代价条件后跳过高代价求值）：
+        // AND 条件书写顺序按代价从低到高排列，设计意图：期望尽早排除低代价条件（依赖内核实现）后跳过高代价求值：
         // NETWORK（读包头）→ DST-PORT（整数比较）→ PROCESS-NAME（查系统进程表）。实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
         // first-match 语义下：
         //   QUIC 443 规则是全 UDP 和全流量规则的子集；三条动作完全相同（全部 REJECT-DROP），功能上等价于只保留全流量规则。QUIC 443 / 普通 UDP / TCP 分别命中不同规则，
@@ -1639,7 +1643,7 @@ function main(config) {
             } else if (typeof config.dns !== "object" || Array.isArray(config.dns)) {
                 // dns 类型异常（如数组、字符串等），保护原始配置，跳过本次 Hosts 覆写
                 console.warn("⚠️ config.dns 类型异常（非对象），已写入顶层 hosts，跳过 dns.hosts 和 fake-ip-filter 注入以保护原始 DNS 配置");
-                return config;  // 提前返回，不执行后续 hosts 和 fake-ip-filter 注入
+                return config;  // 提前返回，不执行后续 dns.hosts 和 fake-ip-filter 注入
             }
             //    Clash Verge Rev 的配置生效顺序：
             //    订阅 yaml → 脚本注入 → UI 设置覆盖 → 写入 clash-verge.yaml → Mihomo 加载
