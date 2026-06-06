@@ -215,7 +215,22 @@ function main(config) {
     } else if (!Array.isArray(config.proxies)) {
         console.log("ℹ️ TLS 指纹注入已启用，但 config.proxies 不是数组（订阅可能仅含 proxy-providers），跳过注入。");
     } else {
-        const _skipLower = FINGERPRINT_SKIP.map(s => s.toLowerCase());
+        // 预处理 SKIP 名单：按 CJK/ASCII 分轨，CJK 关键词直接子串匹配，ASCII 关键词预编译边界正则
+        const _skipKeywords = [];  // 含 CJK 字符的关键词，走 includes()
+        const _skipRegexes  = [];  // 纯 ASCII 关键词，走边界正则
+        for (const raw of FINGERPRINT_SKIP) {
+            const keyword = raw.toLowerCase();
+            // 检测是否包含中日韩统一表意文字（基本多文种平面）
+            const hasCJK = /\p{Unified_Ideograph}/u.test(keyword);
+            if (hasCJK) {
+                _skipKeywords.push(keyword);
+            } else {
+                // 转义正则元字符（不包括 /，在字符类中无需转义）
+                const escaped = keyword.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&');
+                _skipRegexes.push(new RegExp(`(^|[-_\\s（(])${escaped}([-_\\s）)]|$)`, 'i'));
+            }
+        }
+
         let injectedCount = 0;
         let skippedCount = 0;
         let preExistingCount = 0;
@@ -228,14 +243,10 @@ function main(config) {
                 return p;
             }
 
-            // 2. 检查 SKIP 名单：命中节点名关键词则跳过指纹修改。并使用强边界正则防止子串碰撞（如 "sg" 误伤 "crossgate"）
+            // 2. 检查 SKIP 名单：CJK 关键词用子串匹配，ASCII 关键词用边界正则
             const nodeName = p.name || "";
-            const isSkipped = _skipLower.some(keyword => {
-                // 将关键词转义并构建边界：前后必须是字符串首尾，或连字符、下划线、空格、括号
-                const escaped = keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                const regex = new RegExp(`(^|[-_\\s（(])` + escaped + `([-_\\s）)]|$)`, 'i');
-                return regex.test(nodeName);
-            });
+            const isSkipped = _skipKeywords.some(kw => nodeName.toLowerCase().includes(kw))
+                           || _skipRegexes.some(regex => regex.test(nodeName));
 
             if (isSkipped) {
                 skippedCount++;
@@ -1837,7 +1848,7 @@ function main(config) {
  *     该模块在所有节点上统一注入 TLS 客户端指纹（如 chrome），以增强抗检测能力。
  *     设计意图：模拟主流浏览器 TLS 握手特征，减少因代理客户端指纹异常触发的验证码。
  *     注意：模块不覆盖已设置指纹的节点（尊重已有配置），修改 DEFAULT_FINGERPRINT 后需手动清理旧指纹。
- *     关键词跳过名单支持子串匹配（大小写不敏感），用于保护特殊节点（如专用 IP 落地机）不被修改。
+ *     关键词跳过名单对 ASCII 关键词使用强边界正则匹配，对含中文关键词使用子串匹配。用于保护特殊节点（如专用 IP 落地机）不被修改。
  *     模块在 ENABLE_SCRIPT 检查之后执行，因此受 ENABLE_SCRIPT 统一控制。
  *   ──────────────────────────────────────────────────────────────
  * 
