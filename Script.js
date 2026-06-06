@@ -1,5 +1,5 @@
 /**
- *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260605
+ *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260606
  * 
  * ══════════════════════════ ░░ 脚本自述 ░░ ══════════════════════════
  *
@@ -101,10 +101,8 @@ function main(config) {
     // 默认指纹，仅在 ENABLE_CLIENT_FINGERPRINT 为 true 时生效。可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random / none
     // 💡 random：启动时从指纹库（按 Cloudflare Radar 数据概率）生成一个浏览器指纹并固定使用，非每连接随机切换。概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
     const DEFAULT_FINGERPRINT = "chrome";
-    // 指纹注入黑名单：名称中包含这些关键词的节点，即使没有指纹也不会被注入。用途：保护特殊节点（如专用 IP 节点、特定落地机）不被意外修改指纹。
-    const FINGERPRINT_BLACKLIST = [
-        // "专用", "原生", "nobook",     // 例：用户自建的落地节点，不希望被修改；原生 IP 节点；特定服务商要求不修改指纹。取消注释状态即启用。
-    ];
+    // 指纹注入关键词跳过名单：名称中包含这些关键词的节点，即使没有指纹也不会被注入。用途：保护特殊节点（如专用 IP 节点、特定落地机）不被意外修改指纹。
+    const FINGERPRINT_SKIP = [];  // 赋值示例：["原生", "game",]
 
     // ──── 典型配置组合参考（按需参照调整上方开关值；此处为说明性文字，无需操作）────
     //
@@ -200,6 +198,15 @@ function main(config) {
         return config;
     }
 
+    console.log("=".repeat(28));
+    // 当前实现手动 padStart 拼接，格式固定为 HH:MM:SS（本地时区），跨引擎跨区域设置格式一致（时间值仍为本地时区）。
+    const _now  = new Date();  // 当前时间（用于格式化日志时间戳）
+    const _ts = [_now.getHours(), _now.getMinutes(), _now.getSeconds()]
+        .map(n => String(n).padStart(2, "0"))
+        .join(":");
+    console.log(`📊 节点与规则链清洗开始 [${_ts}]`);
+    console.log("=".repeat(28));
+
     // ═══════════════ client-fingerprint 注入逻辑 ═══════════════
     if (!ENABLE_CLIENT_FINGERPRINT) {
         console.log("ℹ️ TLS 指纹注入已禁用 (ENABLE_CLIENT_FINGERPRINT = false)。");
@@ -208,7 +215,7 @@ function main(config) {
     } else if (!Array.isArray(config.proxies)) {
         console.log("ℹ️ TLS 指纹注入已启用，但 config.proxies 不是数组（订阅可能仅含 proxy-providers），跳过注入。");
     } else {
-        const _blacklistLower = FINGERPRINT_BLACKLIST.map(s => s.toLowerCase());
+        const _skipLower = FINGERPRINT_SKIP.map(s => s.toLowerCase());
         let injectedCount = 0;
         let skippedCount = 0;
         let preExistingCount = 0;
@@ -221,10 +228,16 @@ function main(config) {
                 return p;
             }
 
-            // 2. 检查黑名单：节点名包含黑名单关键词则跳过
-            const nodeName = (p.name || "").toLowerCase();
-            const isBlacklisted = _blacklistLower.some(keyword => nodeName.includes(keyword));
-            if (isBlacklisted) {
+            // 2. 检查 SKIP 名单：命中节点名关键词则跳过指纹修改。并使用强边界正则防止子串碰撞（如 "sg" 误伤 "crossgate"）
+            const nodeName = p.name || "";
+            const isSkipped = _skipLower.some(keyword => {
+                // 将关键词转义并构建边界：前后必须是字符串首尾，或连字符、下划线、空格、括号
+                const escaped = keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp(`(^|[-_\\s（(])` + escaped + `([-_\\s）)]|$)`, 'i');
+                return regex.test(nodeName);
+            });
+
+            if (isSkipped) {
                 skippedCount++;
                 return p;
             }
@@ -235,19 +248,10 @@ function main(config) {
         });
 
         console.log(`✅ TLS 指纹注入完成: 新增注入 ${injectedCount} 个，`
-                + `跳过黑名单 ${skippedCount} 个，`
-                + `保留原有指纹 ${preExistingCount} 个 (默认指纹: ${DEFAULT_FINGERPRINT})`);
+                + `跳过（SKIP）${skippedCount} 个，`
+                + `维持既有指纹 ${preExistingCount} 个 (默认指纹: ${DEFAULT_FINGERPRINT})`);
     }
     // ────────────────────────────────────────────────
-
-    console.log("=".repeat(28));
-    // 当前实现手动 padStart 拼接，格式固定为 HH:MM:SS（本地时区），跨引擎跨区域设置格式一致（时间值仍为本地时区）。
-    const _now  = new Date();  // 当前时间（用于格式化日志时间戳）
-    const _ts = [_now.getHours(), _now.getMinutes(), _now.getSeconds()]
-        .map(n => String(n).padStart(2, "0"))
-        .join(":");
-    console.log(`📊 规则注入开始 [${_ts}]`);
-    console.log("=".repeat(28));
 
     // ════════════════ 1. 智能识别代理策略组 ════════════════
     //
@@ -326,7 +330,7 @@ function main(config) {
 
     // 合法代理出口类型白名单（统一引用源：关键词优选/正则优选/类型优选各轮均引用此常量，新增类型只需改此处）。
     // ⚠️ 最终容错策略（第五轮）改用 _UNSUITABLE_TYPES 黑名单方式，不引用此常量；
-    //    两者从正反两面描述同一批被排除类型（relay / url-latency-benchmark），在现有已知类型集合内，两者从正反两侧描述同一批被排除类型（relay / url-latency-benchmark）；
+    //    在现有已知类型集合内，两者从正反两侧描述同一批被排除类型（relay / url-latency-benchmark）；
     //    未知新增类型不在两集合中，由第五轮容错策略（_UNSUITABLE_TYPES 黑名单）处理。修改任一处须同步检查另一处。
     // load-balance 为动态路由策略，与 url-test 同级，具备合法出口语义，纳入白名单。
     // 被排除的类型（在此两个 Set 中均体现为排除）：
@@ -1833,7 +1837,7 @@ function main(config) {
  *     该模块在所有节点上统一注入 TLS 客户端指纹（如 chrome），以增强抗检测能力。
  *     设计意图：模拟主流浏览器 TLS 握手特征，减少因代理客户端指纹异常触发的验证码。
  *     注意：模块不覆盖已设置指纹的节点（尊重已有配置），修改 DEFAULT_FINGERPRINT 后需手动清理旧指纹。
- *     黑名单支持子串匹配（大小写不敏感），用于保护特殊节点（如专用 IP 落地机）不被修改。
+ *     关键词跳过名单支持子串匹配（大小写不敏感），用于保护特殊节点（如专用 IP 落地机）不被修改。
  *     模块在 ENABLE_SCRIPT 检查之后执行，因此受 ENABLE_SCRIPT 统一控制。
  *   ──────────────────────────────────────────────────────────────
  * 
