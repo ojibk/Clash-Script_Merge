@@ -260,7 +260,7 @@ function main(config) {
 
         console.log(`✅ TLS 指纹注入完成: 新增注入 ${injectedCount} 个，`
                 + `跳过（SKIP）${skippedCount} 个，`
-                + `维持既有指纹 ${preExistingCount} 个 (默认指纹: ${DEFAULT_FINGERPRINT})`);
+                + `维持既有指纹 ${preExistingCount} 个。(指纹: ${DEFAULT_FINGERPRINT})`);
     }
     // ────────────────────────────────────────────────
 
@@ -1494,7 +1494,7 @@ function main(config) {
             console.log(`   Firefly 放行: ❌`);
         }
 
-        console.log(`   进程规则:   ${ENABLE_PROCESS_RULE  ? "✅（需管理员权限+TUN 模式，另还须 config 开启获取进程信息，条件不满足则静默失效）" : "❌"}`);
+        console.log(`   进程规则:   ${ENABLE_PROCESS_RULE  ? "✅（需管理员权限+TUN 模式，另须 config 开启获取进程信息，条件不满足则静默失效）" : "❌"}`);
         console.log(`   代理规则:   ${ENABLE_PROXY         ? "✅" : "❌"}`);
         // ENABLE_AGGRESSIVE 激进模式日志增加警告行，列出已知受影响域。
         if (ENABLE_AGGRESSIVE) {
