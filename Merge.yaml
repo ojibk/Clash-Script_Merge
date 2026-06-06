@@ -1,4 +1,4 @@
-# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链（智能路由锁区受限网络服务） v260605
+# # Clash-Merge 全局扩展覆写配置 · 锚点组与规则链（智能路由锁区受限网络服务） v260606
 # # --------------------------------------------------------------------------------------
 # # 存储路径参考：
 # #   Windows : %APPDATA%\io.github.clash-verge-rev.clash-verge-rev\profiles
@@ -67,7 +67,6 @@ profile:
 # 可选值: chrome / firefox / safari / iOS / android / edge / 360 / qq / random。💡 random：启动时从指纹库随机抽取一个值并固定使用，非每连接随机切换。
 # 模拟指定客户端的 TLS 握手特征；实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
 # 优先级：协议特定指纹（如 Reality）> 节点级 client-fingerprint > 全局（本字段）。仅在节点未声明 client-fingerprint 时生效，为最低优先级的全局兜底。
-# 直接拉取的服务商订阅节点无法通过 Merge 注入节点级 client-fingerprint 字段，故本全局字段保留。若所有节点均经脚本预处理，可注释禁用。
 global-client-fingerprint: chrome   # 🗑️ [deprecated] 全局 TLS 客户端指纹模拟预设，作为内核级全局默认值（节点未定义时的兜底赋值）。
 
 # # ⚠️ sniffer 配置是保障注入的 UDP/QUIC 域名类规则在纯 IP 直连路径下仍能命中的关键前提，
@@ -88,16 +87,16 @@ sniffer:                        # 嗅探器
                                 # ⚠️ TUN 模式前提：parse-pure-ip 仅在 TUN（虚拟隧道网卡）模式下能完整截获纯 IP 流量；此字段在系统代理模式下对纯 IP 直连流量无效。
                                 # ⚡ ECH 局限：Cloudflare 等站点 SNI 不可读，hk-restricted 规则在纯 IP 路径下失效；DNS 拦截路径（主路径）不受影响。
   sniff:                        # 端口嗅探
-    HTTP:
-      ports: [80, 8080-8880, 2052, 2082, 2086, 2095]    # ℹ️ 标准 HTTP 端口 + Cloudflare 常用 HTTP 备用端口组合。
     TLS:
       ports: [443, 8443, 2053, 2083, 2087, 2096]        # ℹ️ 标准 HTTPS 端口 + Cloudflare 当前已知备用 HTTPS 端口。
+    HTTP:
+      ports: [80, 8080, 8880, 2052, 2082, 2086, 2095]   # ℹ️ 标准 HTTP 端口 + Cloudflare 常用 HTTP 备用端口组合。
     QUIC:
       ports: [443, 8443, 2053, 2083, 2087, 2096]        # ℹ️ QUIC（HTTP/3）嗅探端口，与 TLS 端口保持一致。
-  # override-destination: 覆盖目标未启用（默认 false）：该字段会将连接目标强制替换为嗅探域名，行为具有侵入性，部分绑定 IP 的 HTTPS 服务会因目标被替换而异常，故保守不启用。
+  # override-destination 覆盖目标未启用（默认 false）：该字段会将连接目标强制替换为嗅探域名，行为具有侵入性，部分绑定 IP 的 HTTPS 服务会因目标被替换而异常，故保守不启用。
   # 但是，当应用程序使用 IP 直连但 SNI 字段暴露了目标域名时，启用此字段可让规则匹配基于嗅探到的域名而非原始 IP，从而让域名规则集命中该流量；
   # 在 parse-pure-ip: true 的配合下，规则命中率提升。综合权衡，如选择稳定性优先，不启用此字段；如需最大化域名命中率且确认无绑定 IP 服务，可按需启用。
-  # skip-domain: 跳过域名未配置：如发现特定设备管理域名（如米家云等 IoT 平台）因嗅探而错误匹配，可在此添加 skip-domain 排除列表。
+  # skip-domain 跳过域名未配置：如发现特定设备管理域名（如米家云等 IoT 平台）因嗅探而错误匹配，可在此添加 skip-domain 排除列表。
 
 # # ======================================================================================
 # # ░░ 策略组 (Proxy Groups) — 必须声明，锚定策略组是 rules 出口的唯一保障
