@@ -1,14 +1,14 @@
 /**
- * Clash-Script 全局扩展脚本 · 哨兵幂等清理与规则注入（Firefly 精确豁免版）v260607
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入 v260607
  *
- * 功能：拦截优先 + Firefly 精确例外放行，适用于 PS 生成式填充等 Adobe AI 场景。
+ * 功能：拦截优先 + 放行特定 AI 服务（精确放行 Firefly），Hosts DNS 覆写，模拟客户端指纹，智能匹配策略组等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
 
 function main(config) {
     const _startTime = Date.now();
 
-    // ═══════════════ 配置区 ═══════════════
+    // ═══════════════ 配置区（按需调整） ═══════════════
     const ENABLE_SCRIPT       = true;            // 脚本总开关
     const ENABLE_BLOCK        = true;            // 拦截模块
     const ENABLE_FIREFLY      = true;            // Firefly 放行（需 ENABLE_BLOCK=true）
@@ -82,7 +82,7 @@ function main(config) {
         let _rawFP = _VALID.has(DEFAULT_FINGERPRINT) ? DEFAULT_FINGERPRINT : "none";
         if (!_VALID.has(DEFAULT_FINGERPRINT)) console.warn(`⚠️ 无效指纹 "${DEFAULT_FINGERPRINT}"，降级为 "none"`);
 
-        // 解析 random 指纹：固定使用一次随机数累积比较，概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
+        // 解析 random 指纹：单次随机数累积比较，概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
         const _effectiveFP = _rawFP === "random"
             ? (() => {
                 const rand = Math.random();
@@ -643,7 +643,7 @@ function main(config) {
 
     // ── 激进阻断规则（默认关闭）──
     const aggressiveRules = [
-        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",   // ⚠️ 激进：所有 adobe.io 子域（SUFFIX 已兜底）
+        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // ⚠️ 激进：所有 adobe.io 子域（SUFFIX 已兜底）
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // ⚠️ 激进：adobe.io 裸域+全部子域
         // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP", // 多平台共用域，建议审查后启用
         "DOMAIN-SUFFIX,adsk.com,REJECT-DROP",                // ⚠️ 激进：Autodesk 旧版遥测
@@ -691,7 +691,7 @@ function main(config) {
             pushKeyword(googleTrackKeyword, "REJECT", layerPools.block);
             pushSuffix(youtubeSuffix, "REJECT", layerPools.block);
             pushDomain(youtubeDomain, "REJECT", layerPools.block);
-            pushKeyword(youtubeKeyword, "REJECT", layerPools.block);
+            pushKeyword(youtubeKeyword, "REJECT", layerPools.block); // 该行注释状态须与数据层变量对应行一致
             pushSuffix(genericAdSuffix, "REJECT", layerPools.block);
             if (ENABLE_GLOBAL_KEYWORD_BLOCK) pushKeyword(globalKeyword, "REJECT", layerPools.block);
         }
@@ -765,7 +765,6 @@ function main(config) {
 
             config.hosts = { ...ensureObj(config.hosts), ...customHosts };
 
-            // 保护原有 dns 配置：类型异常时仅警告，不覆写
             if (config.dns == null) {
                 config.dns = {};
             }
@@ -788,7 +787,6 @@ function main(config) {
             const scriptManaged = new Set([...currentManaged, ...histEntries.map(s => s.toLowerCase())]);
 
             if (ENABLE_MAINTENANCE_CHECKS) {
-                // 检查历史条目中仍属于当前活跃集合的项（属于误留在历史集合的冗余条目）
                 const redundant = histEntries.filter(e => currentManaged.has(e.toLowerCase()));
                 if (redundant.length) console.warn("⚠️ 历史托管域名中存在仍属当前活跃集合的冗余条目，建议清理:", redundant);
             }
