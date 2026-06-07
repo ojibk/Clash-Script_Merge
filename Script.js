@@ -765,6 +765,7 @@ function main(config) {
 
             config.hosts = { ...ensureObj(config.hosts), ...customHosts };
 
+            // 保护原有 dns 配置：类型异常时仅警告，不覆写
             if (config.dns == null) {
                 config.dns = {};
             }
@@ -787,6 +788,7 @@ function main(config) {
             const scriptManaged = new Set([...currentManaged, ...histEntries.map(s => s.toLowerCase())]);
 
             if (ENABLE_MAINTENANCE_CHECKS) {
+                // 检查历史条目中仍属于当前活跃集合的项（属于误留在历史集合的冗余条目）
                 const redundant = histEntries.filter(e => currentManaged.has(e.toLowerCase()));
                 if (redundant.length) console.warn("⚠️ 历史托管域名中存在仍属当前活跃集合的冗余条目，建议清理:", redundant);
             }
