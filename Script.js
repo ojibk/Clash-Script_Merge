@@ -88,7 +88,7 @@ function main(config) {
     // 双栈黑洞模式（dual-blackhole）因 IPv6 的 :: 行为更激进，存在非预期的连接错误或应用异常；ipv4-blackhole 单栈版风险较低。
     const HOSTS_MODE = "ipv4-loopback";
     //
-    const ENABLE_MAINTENANCE_CHECKS = false;   // fake-ip-filter 已移除历史记录检查开关。验证 _HISTORICAL_MANAGED 中无残留的活跃域名变体。
+    const ENABLE_MAINTENANCE_CHECKS = false;   // 开启后，验证 _HISTORICAL_MANAGED 中是否存在仍属于当前活跃集合的冗余条目（用于维护期排查）。
     //
     // ──── ✅ 节点级 client-fingerprint 注入开关，TLS 客户端指纹模拟预设 ────
     // 模拟指定客户端的 TLS 握手特征，以增强抗检测能力。实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
@@ -168,10 +168,9 @@ function main(config) {
         //
         // 崩溃恢复行为（上次执行意外中断导致孤儿哨兵残留时）：
         //   ⚠️ 两种孤儿均不抛出异常、不中断注入，残留规则可接受，中止注入不可接受。
-        //   孤儿 START（无配对 END）：START 本身不写入 newRules，但其 length 快照被压栈（永不弹出）；
-        //     其后续规则正常推入 newRules（无对应 END，不发生截断），旧注入规则与本次新注入共存一个周期。
-        //     旧注入规则因失去哨兵包裹而在后续所有执行中均无法被清理，永久残留；但此情形在正常同步赋值路径下实际不会产生。
-        //   孤儿 END（无配对 START）：静默跳过，不截断任何内容。
+        //   孤儿 START（无配对 END）：START 本身不写入 newRules，但其 length 快照被压栈（永不弹出）；其后续规则正常推入 newRules（无对应 END，不发生截断），
+        //     旧注入规则与本次新注入共存。旧注入规则因失去哨兵包裹而在后续所有执行中均无法被清理，
+        //     永久残留；但此情形在正常同步赋值路径下实际不会产生。孤儿 END（无配对 START）：静默跳过，不截断任何内容。
         const newRules = [];
         const stack    = [];
         for (const rule of config.rules) {
@@ -569,7 +568,7 @@ function main(config) {
     // 四类拒绝维度（不同攻击向量）。注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
     // 💡 两层覆盖范围的完整差异说明见 _SANITIZE_RE 注释（权威定义源）；
     //    本断言为注入层权威说明：覆盖 Clash/YAML 语法破坏字符和 Bidi 控制符。u 标志确保按完整 Unicode 码点解析，与 _SANITIZE_RE 保持一致，便于将来扩展。
-    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u200B-\u200F\u2060\u2066-\u2069\u2028\u2029\uFEFF]/u.test(proxyGroupName)) {
+    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u200B-\u200F\u2060\u2066-\u2069\u2028-\u202E\uFEFF]/u.test(proxyGroupName)) {
         console.error(`❌ Token 断言触发：proxyGroupName [${JSON.stringify(proxyGroupName)}] 含非法字符`);
         console.error(`   逗号截断规则语义；方括号/花括号（[ ] { }）破坏 YAML 序列/映射语法；` 
         +`C0 控制字符（U+0000–U+001F，含 \\t/\\n/\\r）及 NEL（U+0085）破坏 Clash 规则语法；`
