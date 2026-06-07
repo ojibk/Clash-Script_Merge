@@ -88,7 +88,7 @@ function main(config) {
     // 双栈黑洞模式（dual-blackhole）因 IPv6 的 :: 行为更激进，存在非预期的连接错误或应用异常；ipv4-blackhole 单栈版风险较低。
     const HOSTS_MODE = "ipv4-loopback";
     //
-    const ENABLE_MAINTENANCE_CHECKS = false;   // 开启后，验证 _HISTORICAL_MANAGED 中是否存在仍属于当前活跃集合的冗余条目（用于维护期排查）。
+    const ENABLE_MAINTENANCE_CHECKS = false;   // 开启后，验证 _HISTORICAL_MANAGED 中是否存在仍属于当前活跃集合的冗余条目（用于 fake-ip-filter 维护期排查）。
     //
     // ──── ✅ 节点级 client-fingerprint 注入开关，TLS 客户端指纹模拟预设 ────
     // 模拟指定客户端的 TLS 握手特征，以增强抗检测能力。实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
@@ -169,8 +169,8 @@ function main(config) {
         // 崩溃恢复行为（上次执行意外中断导致孤儿哨兵残留时）：
         //   ⚠️ 两种孤儿均不抛出异常、不中断注入，残留规则可接受，中止注入不可接受。
         //   孤儿 START（无配对 END）：START 本身不写入 newRules，但其 length 快照被压栈（永不弹出）；其后续规则正常推入 newRules（无对应 END，不发生截断），
-        //     旧注入规则与本次新注入共存。旧注入规则因失去哨兵包裹而在后续所有执行中均无法被清理，
-        //     永久残留；但此情形在正常同步赋值路径下实际不会产生。孤儿 END（无配对 START）：静默跳过，不截断任何内容。
+        //   旧注入规则与本次新注入共存。旧注入规则因失去哨兵包裹而在后续所有执行中均无法被清理，
+        //   永久残留；但此情形在正常同步赋值路径下实际不会产生。孤儿 END（无配对 START）：静默跳过，不截断任何内容。
         const newRules = [];
         const stack    = [];
         for (const rule of config.rules) {
@@ -256,6 +256,7 @@ function main(config) {
             let preExistingCount = 0;
 
             config.proxies = config.proxies.map(p => {
+                if (typeof p !== 'object' || p === null) return p; // 类型守卫：类型以外的对象，不处理
                 // 1. 尊重节点已有配置：字段存在即保留（包括 null、false、""）
                 //    ⚠️ 变更 DEFAULT_FINGERPRINT 不会更新已有该字段的节点；如需强制覆盖，须先从订阅 YAML 删除节点的 client-fingerprint 字段后重新加载。
                 if (Object.prototype.hasOwnProperty.call(p, 'client-fingerprint')) {
@@ -1697,8 +1698,8 @@ function main(config) {
             // 合并为完整注册表（替代原硬编码 Set）
             const _SCRIPT_MANAGED_HIJACK = new Set([..._CURRENT_MANAGED, ..._HISTORICAL_MANAGED]);
             if (ENABLE_MAINTENANCE_CHECKS) {
-            // 🔍 验证 _HISTORICAL_MANAGED 中是否仍有域名属于当前活跃集合（可能是漏删），
-            // 如果某个域名变体仍在 _CURRENT_MANAGED 中，说明它已经重新成为活跃域名，无需继续留在历史集合里。
+                // 🔍 验证 _HISTORICAL_MANAGED 中是否仍有域名属于当前活跃集合（可能是漏删），
+                // 如果某个域名变体仍在 _CURRENT_MANAGED 中，说明它已经重新成为活跃域名，无需继续留在历史集合里。
                 const _redundantHistorical = [..._HISTORICAL_MANAGED].filter(entry => _CURRENT_MANAGED.has(entry));
                 if (_redundantHistorical.length > 0) {
                     console.warn("⚠️ fake-ip-filter 历史托管域名集合中存在仍属于当前活跃域名的条目，"
