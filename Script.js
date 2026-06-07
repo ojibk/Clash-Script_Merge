@@ -143,7 +143,7 @@ function main(config) {
 
     // 功能依赖检查：isFireflyActive 已将 ENABLE_FIREFLY 与 ENABLE_BLOCK 的依赖关系封装，此 warn 仅供调试，对运行逻辑无影响。
     if (ENABLE_FIREFLY && !ENABLE_BLOCK) {
-        console.warn("⚠️ 警告：Firefly 放行需同时启用拦截模块（ENABLE_BLOCK=true），当前已自动降级（未生效）");
+        console.warn("⚠️ 警告：Firefly 放行需同时启用拦截模块（ENABLE_BLOCK=true），当前 ENABLE_BLOCK=false，Firefly 豁免不生效");
     }
     if (ENABLE_PROCESS_RULE && config["find-process-mode"] !== "strict" && config["find-process-mode"] !== "always") {
         console.warn(`⚠️ 进程规则要求 find-process-mode 为 strict 或 always，当前为 [${config["find-process-mode"] ?? "（未设置）"}]，进程规则将静默失效`);
@@ -165,6 +165,7 @@ function main(config) {
         // 哨兵索引截断：单次遍历，O(N) 时间，O(N) 空间。
         const newRules = [];
         const stack    = [];
+        let _orphanEndCount = 0; // 循环之前声明变量
         for (const rule of config.rules) {
             if (rule === _SENTINEL_START) {
                 stack.push(newRules.length);
@@ -173,6 +174,9 @@ function main(config) {
             if (rule === _SENTINEL_END) {
                 if (stack.length > 0) {
                     newRules.length = stack.pop(); // O(1) 截断，等效 splice 但无线性拷贝开销
+                } else {
+                    // 孤立 END：计数但忽略，防止旧异常残留
+                    _orphanEndCount = (_orphanEndCount || 0) + 1;
                 }
                 continue;
             }
@@ -180,6 +184,9 @@ function main(config) {
         }
         if (stack.length > 0) {
             console.warn(`⚠️ 发现 ${stack.length} 个未闭合的哨兵块（旧注入规则可能残留），已保留后续规则`);
+        }
+        if (_orphanEndCount > 0) {
+            console.warn(`⚠️ 发现 ${_orphanEndCount} 个孤立哨兵 END（上次注入可能异常中断），已忽略`);
         }
         config.rules = newRules;
     }
@@ -511,7 +518,16 @@ function main(config) {
         const mainGroup = _mainEntry?.g;
 
         if (mainGroup?.name) {
-            proxyGroupName = _mainEntry.cleanName;
+            const rawGroupName = mainGroup.name;
+            const cleanGroupName = _mainEntry.cleanName;
+
+            // 若原始名含不可见字符，直接拒绝该组，保证后续规则安全
+            if (rawGroupName !== cleanGroupName) {
+                console.error(`❌ 代理组 [${rawGroupName}] 含不可见控制字符，拒绝使用以保证规则安全`);
+                return config;
+            }
+
+            proxyGroupName = rawGroupName;   // 全程使用原始名称（Clash 内核所需）
             const groupFlag = _mainEntry.isFallback ? "⚠️" : "✅";
             console.log(`${groupFlag} 代理组识别成功: [${proxyGroupName}] (type: ${mainGroup.type ?? "未知"})`); // ⚠️=兜底组，✅=优选组
         } else {
@@ -560,7 +576,7 @@ function main(config) {
     //   sanitizeName 在"识别阶段"清洗组名，目的是宽容匹配，以兼容因编辑器或复制粘贴意外引入不可见控制符的代理组（如名称带 BOM 的组）。
     //   用户设置该组的本意是合法代理出口，不应因组名中意外混入的不可见字符导致识别阶段漏选。此断言在"注入阶段"对原始值实施一票否决，Mihomo 内核按原始名称匹配策略组，
     //   注入只能使用原始名；若原始名含控制符，会破坏 Clash 规则行语法，危及整个规则文件解析。
-    //   两者不是冗余，是刻意的"宽进严出（识别阶段宽容，注入阶段严格）"纵深防御：识别尽量不漏选，注入绝对不破坏语法。
+    //   清洗阶段（宽容匹配）确保控制符不导致漏选；注入阶段（严格校验）对原始值执行词法断言，防止语法破坏与注入攻击。
     // proxyGroupName 存储原始值（mainGroup.name），sanitizeName 的清洗结果不用于此处。清洗结果仅用于排除词汇匹配，注入时仍使用原始值。
     // 四类拒绝维度（不同攻击向量）。注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
     // 💡 两层覆盖范围的完整差异说明见 _SANITIZE_RE 注释（权威定义源）；
@@ -634,16 +650,16 @@ function main(config) {
     //   本脚本在此基础上阻断其出站连接，作为额外网络层防线，防止激活状态回报和设备信息上传。
     //   其余进程的心跳即便放行也不会触发重新验证。进程规则本身需管理员+TUN，不可靠。
     //
-    // ⚠️【QUIC（RFC 9000；基于 UDP 的安全传输协议，内嵌 TLS 1.3）豁免机制】Firefly 相关 .adobe.io 域名在 adobeUdpBlock 之前注入（first-match），
-    //   其 UDP 流量先命中 allow 层走代理，adobeUdpBlock 的 adobe.io 通配不再执行。
-    //   → 豁免效果由注入顺序自动保证（allow 层先于 adobeUdpBlock 入 pool，先命中即生效），无需额外处理。
+    // ⚠️【QUIC（RFC 9000；基于 UDP 的安全传输协议，内嵌 TLS 1.3）豁免机制】Firefly 相关 .adobe.io 域名在 udpBlock 之前注入（first-match），
+    //   其 UDP 流量先命中 allow 层走代理，udpBlock 的 adobe.io 通配不再执行。
+    //   → 豁免效果由注入顺序自动保证（allow 层先于 udpBlock 入 pool，先命中即生效），无需额外处理。
     //   ⚠️ 前提：此豁免仅在 Mihomo 能识别 SNI 或存在 Fake-IP 映射时成立。
     //      ECH（Encrypted Client Hello，将 SNI 加密）会使 Sniffer 失效，但影响范围取决于寻址路径：
     //      · 路径A（Fake-IP + TUN，CVR 默认配置路径）：域名已由 DNS 映射阶段记录，ECH 不影响豁免效果，
     //        allow 层 DOMAIN-SUFFIX 正常命中，Firefly QUIC 流量正常走代理。
     //      · 路径B（应用绕过 Mihomo DNS，使用 DoH / DoT 或硬编码 IP）：无 Fake-IP 映射，
-    //        Sniffer 又被 ECH 阻断，allow 层与 adobeUdpBlock 的域名规则同时失效，
-    //        Firefly QUIC 流量不受规则层干预，滑落至 MATCH（详见 adobeUdpBlock 末尾说明）。
+    //        Sniffer 又被 ECH 阻断，allow 层与 udpBlock 的域名规则同时失效，
+    //        Firefly QUIC 流量不受规则层干预，滑落至 MATCH（详见 udpBlock 末尾说明）。
     const adobeSharedDeps = [
         // ──── 已确认条目（抓包或官方资料可支撑）────
         "ims-na1.adobelogin.com",                 // 登录令牌刷新（已确认）
@@ -701,7 +717,7 @@ function main(config) {
                                                   // 因存在激活拦截缺口风险，改为固定 REJECT。若抓包确认其仅服务 Firefly 而非 CC 激活验证，可将其移回 adobeSharedDeps。
     ];
 
-    // ──── 随机子域正则（统一引用源），adobeRegex 与 adobeUdpBlock 均引用此变量，禁止各自硬编码，修改只需改此处 ────
+    // ──── 随机子域正则（统一引用源），adobeRegex 与 udpBlock 均引用此变量，禁止各自硬编码，修改只需改此处 ────
     // 注：实际遥测子域通常为小写十六进制字符（0-9a-f），正则使用全字母数字范围（A-Za-z0-9）为稳妥覆盖，不影响正确性。
     // ⚠️ ^$ 锚定不可移除：Go regexp.MatchString 为子串匹配，若移除锚定，
     //    "abcdefgh.adobe.io.evil.com" 也会命中（子串 abcdefgh.adobe.io 满足 {8,12} 模式），
@@ -744,7 +760,7 @@ function main(config) {
     //
     // AND 条件书写顺序按代价从低到高排列（设计意图：期望内核能够尽早排除低代价条件后跳过高代价求值）：
     // NETWORK（读包头）→ DST-PORT（整数比较）→ DOMAIN-*（依赖 SNI 嗅探）实际求值顺序依赖 Mihomo 内核实现，此处为书写规范而非内核行为保证。
-    const adobeUdpBlock = [
+    const udpBlock = [
         // ⚠️ 以下各条均依赖 Mihomo DNS 映射或 Sniffer SNI 嗅探才能识别域名；
         //    纯 IP 形式 QUIC 流量或路径B（绕过 Mihomo DNS 且开启 ECH）下，DOMAIN 类规则对此无效（见末尾说明）
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",           // 阻断 adobe.io 所有 UDP 流量（含 QUIC/443），强制回退 TCP
@@ -753,8 +769,8 @@ function main(config) {
         `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE_STR})),REJECT`, // 阻断随机子域 QUIC（遥测特征，8-12位，引用 _ADOBE_RAND_RE_STR 统一引用源）
         // ⚠️ 转义链路：JS 字符串 "\\." → 字符串值 "\." → Mihomo Go regexp 接收 \. → 匹配字面点。
         //    AND 规则内嵌 DOMAIN-REGEX 的括号解析基于 Mihomo v1.15+ 实测；旧版可能静默忽略整条 AND 规则，
-        //    此时 adobeUdpBlock 其余精确条目（DOMAIN-SUFFIX）仍有效，此条失效不影响整体覆盖。
-        "AND,((NETWORK,UDP),(DST-PORT,443),(DOMAIN-KEYWORD,adobe)),REJECT", // 兜底：UDP + 443端口 + adobe 关键词，覆盖未列举子域
+        //    此时 udpBlock 其余精确条目（DOMAIN-SUFFIX）仍有效，此条失效不影响整体覆盖。
+        // "AND,((NETWORK,UDP),(DST-PORT,443),(DOMAIN-KEYWORD,adobe)),REJECT", // 兜底：UDP + 443端口 + adobe 关键词，覆盖未列举子域
         // ⚠️ 可靠性存疑：纯 UDP 流量无 TLS SNI 时，DOMAIN-KEYWORD 可能无域名信息可供匹配，
         //    Mihomo 需开启 Sniffer（dns.sniffer）解析 QUIC 握手 SNI 才能识别域名；
         //    实际生效取决于 Mihomo 版本，不可作为唯一防线，上方精确规则为主要覆盖。
@@ -764,8 +780,8 @@ function main(config) {
 
     // Adobe WebSocket 遥测（2025 年新增：以 WSS（WebSocket Secure）建立持久 TCP 长连接上传遥测；
     //   WSS 握手阶段走标准 HTTP Upgrade 请求，升级后转为全双工 WebSocket 持久连接，
-    //   与常规 HTTP 轮询/REST 调用模式不同；adobeUdpBlock 仅覆盖 UDP，此 TCP 路径须单独注入 DOMAIN 规则拦截）
-    // ⚠️ 使用 DOMAIN 精确匹配（而非 DOMAIN-SUFFIX）：WSS 走 TCP，而 adobeUdpBlock 仅覆盖 UDP，无法拦截此类流量；
+    //   与常规 HTTP 轮询/REST 调用模式不同；udpBlock 仅覆盖 UDP，此 TCP 路径须单独注入 DOMAIN 规则拦截）
+    // ⚠️ 使用 DOMAIN 精确匹配（而非 DOMAIN-SUFFIX）：WSS 走 TCP，而 udpBlock 仅覆盖 UDP，无法拦截此类流量；
     //    目前仅有此一个已知端点，无多级子域的抓包证据，保守使用精确匹配，等待后续抓包资料支持后再评估是否扩展。
     const adobeWsDomain = [                // 如后续抓包发现更多 WSS 端点，在此数组补充
         "wss.adobe.io",                    // 前缀 wss 推断为 WebSocket Secure 遥测端点，待抓包确认（新版 CC 框架）。wss 仅 3 字符，不满足随机子域长度正则，必须显式列出
@@ -784,12 +800,12 @@ function main(config) {
     // ⚠️【必要妥协】adobeSharedDeps 同时承载 CC 正版验证心跳，
     //           放行后激活拦截的最终防线为 PROCESS-NAME,AdobeGCClient.exe → REJECT-DROP（需 ENABLE_PROCESS_RULE=true + TUN 模式 + 管理员权限，进程规则本身不可靠）。
     //           其余未覆盖进程详见 adobeSharedDeps 注释中的 Firefly 依赖链放行。
-    // 关于 adobeUdpBlock 与 Firefly .adobe.io 域名的 QUIC 豁免机制：
+    // 关于 udpBlock 与 Firefly .adobe.io 域名的 QUIC 豁免机制：
     //   最终规则池展开顺序（由 LAYER_ORDER 决定，allow → block，与 push 调用书写顺序无关）：
-    //   allow 层规则先于 adobeUdpBlock 入 pool（LAYER_ORDER: allow > block）；Firefly 域名的 UDP 流量先命中 allow 层走代理；
-    //   adobeUdpBlock 的 adobe.io 通配不再参与匹配；前提：Mihomo 能识别 SNI 或存在 Fake-IP 映射（见路径A/B分析）。
-    //   Mihomo first-match（首条命中生效）：Firefly 域名的 UDP 流量先命中 allow 层走代理，adobeUdpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)) 不再执行。
-    //   → 豁免效果由注入顺序自动保证（allow 层先于 adobeUdpBlock 入 pool，先命中即生效），无需额外处理。⚠️ 前提：此豁免仅在 Mihomo 能识别 SNI 或存在 Fake-IP 映射时成立。
+    //   allow 层规则先于 udpBlock 入 pool（LAYER_ORDER: allow > block）；Firefly 域名的 UDP 流量先命中 allow 层走代理；
+    //   udpBlock 的 adobe.io 通配不再参与匹配；前提：Mihomo 能识别 SNI 或存在 Fake-IP 映射（见路径A/B分析）。
+    //   Mihomo first-match（首条命中生效）：Firefly 域名的 UDP 流量先命中 allow 层走代理，udpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)) 不再执行。
+    //   → 豁免效果由注入顺序自动保证（allow 层先于 udpBlock 入 pool，先命中即生效），无需额外处理。⚠️ 前提：此豁免仅在 Mihomo 能识别 SNI 或存在 Fake-IP 映射时成立。
     //   ⚠️ ECH 路径分析同上，详见 adobeSharedDeps 注释。
     const adobeFireflyOnly = [
         // Firefly AI 核心。
@@ -1247,7 +1263,7 @@ function main(config) {
         "DOMAIN-SUFFIX,msftconnecttest.com,DIRECT",        // NCSI 连通性探测（拦截后 Windows 右下角显示「无网络」）
         "DOMAIN-SUFFIX,msftncsi.com,DIRECT",               // NCSI 旧版探测域
         // Adobe 常用业务放行（字体/图库/作品展示）
-        // ⚠️【UDP 路径说明】以下 adobe.com 子域的 QUIC/UDP 流量先命中 adobeUdpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT，
+        // ⚠️【UDP 路径说明】以下 adobe.com 子域的 QUIC/UDP 流量先命中 udpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT，
         //    收到 ICMP 后立即 fallback 至 TCP；TCP 连接再命中此处 DIRECT 规则，整体无延迟，行为符合预期。
         "DOMAIN-SUFFIX,fonts.adobe.com,DIRECT",            // Adobe Fonts 字体同步服务
         "DOMAIN-SUFFIX,color.adobe.com,DIRECT",            // Adobe Color 配色工具
@@ -1293,7 +1309,7 @@ function main(config) {
         // ⚠️ 功能上 SUFFIX 单独即可覆盖全部情形，REGEX 并非必要；保留 REGEX 的意义：明确表达"拦截所有 adobe.io 子域"的设计意图，
         //    且便于未来独立调整子域与裸域的动作（如：子域 REJECT-DROP、裸域改 REJECT），分层更灵活。
         //    如无上述分层需求，可安全删除 REGEX 而零覆盖损失（SUFFIX 完全兜底）。
-        "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",        // ⚠️ 激进：所有 adobe.io 子域；覆盖范围已被下方 SUFFIX 包含，保留意图为将来独立调整子域与裸域动作
+        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",        // ⚠️ 激进：所有 adobe.io 子域；覆盖范围已被下方 SUFFIX 包含，保留意图为将来独立调整子域与裸域动作
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // ⚠️ 激进：adobe.io 裸域+全部子域（SUFFIX 为 REGEX 的严格超集，此条为功能必要条目）
         // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP", // 多平台共用域（Zapier/Notion/GitHub Actions 也在用），建议审查实际流量再决定是否启用。
         // ⚠️ 激进：多服务共用内容托管域（Google Cloud Workflows / Colab / AppSheet / Adobe / Zapier / Notion / GitHub Actions 等）；
@@ -1361,10 +1377,10 @@ function main(config) {
             // Adobe（遥测/授权域改用 REJECT，软件快速感知失败（通常切换离线模式或放弃重试），避免启动卡顿）
             pushSuffix(adobeSuffix, "REJECT", layerPools.block);
             pushLayer("block", adobeRegex);
-            // ❗ adobeUdpBlock 仅 TUN 模式有效，系统代理模式下这些规则不会命中任何 UDP 流量（见 adobeUdpBlock 声明处注释）
-            pushLayer("block", adobeUdpBlock);
+            // ❗ udpBlock 仅 TUN 模式有效，系统代理模式下这些规则不会命中任何 UDP 流量（见 udpBlock 声明处注释）
+            pushLayer("block", udpBlock);
             // ⚠️ 运行时提示：DOMAIN-KEYWORD 规则依赖 SNI 或 Fake-IP 映射
-            // ⚠️ [adobeUdpBlock] 已注入 DOMAIN-KEYWORD,adobe 规则。该规则仅在 Mihomo 能获取域名信息时生效（Fake-IP 或 Sniffer 嗅探 SNI）。
+            // ⚠️ [udpBlock] 所有 UDP 规则依赖域名识别（Fake-IP / Sniffer），ECH 下可能全部失效。
             // 若应用绕过 Mihomo DNS 且启用 ECH，则此规则可能静默失效。
             // WSS（WebSocket Secure）精确匹配（DOMAIN，原因见 adobeWsDomain 注释）
             pushDomain(adobeWsDomain, "REJECT", layerPools.block);
@@ -1479,7 +1495,7 @@ function main(config) {
             if (isFireflyActive) {
                 console.log(`   Firefly 放行: ✅（adobeSharedDeps + adobeFireflyOnly 均已注入 allow 层，走[${proxyGroupName}]）`);
             } else {
-                console.log(`   Firefly 放行: ❌ ENABLE_BLOCK=false，Firefly 豁免已禁用`);
+                console.log(`   Firefly 放行: ❌ ENABLE_BLOCK=false，Firefly 豁免未启用`);
             }
         } else {
             console.log(`   Firefly 放行: ❌`);
@@ -1498,20 +1514,20 @@ function main(config) {
         }
         console.log(`   直连规则:   ${ENABLE_DIRECT        ? "✅" : "❌"}`);
         console.log(`   Hosts 覆写:  ${ENABLE_HOSTS_OVERRIDE   ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
-        console.warn("⚠️ [adobeUdpBlock] 已注入 DOMAIN-KEYWORD,adobe 规则。该规则仅在 Mihomo 能获取域名信息时生效（Fake-IP 或 Sniffer 嗅探 SNI）。"
+        console.warn("⚠️ [udpBlock] 所有 UDP 规则依赖域名识别（Fake-IP / Sniffer），ECH 下可能全部失效。"
         + "若应用绕过 Mihomo DNS 且启用 ECH，则此规则可能静默失效。");
-        // 注入规则条目分项统计日志
-        // ▶▶ 分项统计开始 ▶▶
-        console.log(`   ▶ 注入规则条目分项统计:`);
+        // 注入规则条目分层统计日志
+        // ▶▶ 分层统计开始 ▶▶
+        console.log(`   ▶ 注入规则条目分层统计:`);
         console.log(`      - 放行层 (allow)     : ${layerPools.allow.length} 条`);
         console.log(`      - 拦截层 (block)     : ${layerPools.block.length} 条`);
         console.log(`      - 进程层 (process)   : ${layerPools.process.length} 条`);
         console.log(`      - 代理层 (proxy)     : ${layerPools.proxy.length} 条`);
         console.log(`      - 激进层 (aggressive): ${layerPools.aggressive.length} 条`);
         console.log(`      - 直连层 (direct)    : ${layerPools.direct.length} 条`);
-        // ◀◀ 分项统计结束 ◀◀
+        // ◀◀ 分层统计结束 ◀◀
 
-        console.log(`   注入规则数: ${finalPool.length} 条（上述分项之和 + 首尾 2 条哨兵）`);
+        console.log(`   注入规则数: ${finalPool.length} 条（上述分层之和 + 首尾 2 条哨兵）`);
         console.log(`   总规则数:   ${config.rules.length} 条`);
         console.log(`   脚本执行耗时: ${Date.now() - _startTime} ms（含指纹注入，不含 Hosts 覆写）`);
         console.log("=".repeat(28));
@@ -1620,11 +1636,13 @@ function main(config) {
                 config.dns = {};
             }
 
-            // dns.hosts 注入（仅当 dns 为正常对象时执行）
+            // dns.hosts 注入
+            let _dnsValid = false;
             if (typeof config.dns === "object" && !Array.isArray(config.dns)) {
                 config.dns.hosts = { ...ensureHostsObj(config.dns.hosts), ...customHosts };
+                _dnsValid = true;
             } else {
-                console.warn("⚠️ config.dns 类型异常（非对象），已写入顶层 hosts，跳过 dns.hosts 注入");
+                console.warn("⚠️ config.dns 类型异常，已写入顶层 hosts，跳过 dns.hosts 注入（fake-ip-filter 仍会清理）");
             }
 
             //    Clash Verge Rev 的配置生效顺序：
@@ -1632,12 +1650,15 @@ function main(config) {
             //    → 必须在 CVR 设置 › DNS 覆写 › 手动开启「使用 Hosts」，Hosts DNS 覆写才能真正生效。
             //    注意：同页面还有「使用系统 Hosts」开关，该开关控制的是系统原生 hosts 文件，与本脚本向 Mihomo 注入的 hosts 条目完全独立，保持关闭即可。
 
-            // fake-ip-filter 维护（仅当 dns 为正常对象时执行）
-            if (typeof config.dns === "object" && !Array.isArray(config.dns)) {
-                if (!Array.isArray(config.dns["fake-ip-filter"])) {
-                    config.dns["fake-ip-filter"] = [];
-                }
+            // fake-ip-filter 维护（无论 dns 是否异常，均须执行）
+            // 确保 dns 对象和 fake-ip-filter 数组存在，以便后续写入
+            if (!_dnsValid) {
+                config.dns = { "fake-ip-filter": [] };
+            } else if (!Array.isArray(config.dns["fake-ip-filter"])) {
+                config.dns["fake-ip-filter"] = [];
+            }
 
+            if (true) { // 此 if 仅用于保持代码块缩进，可忽略
                 const _CURRENT_MANAGED = new Set(
                     BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase())
                 );
@@ -1711,9 +1732,9 @@ function main(config) {
  * ══════════════════════════ ░░ 风险边界 ░░ ══════════════════════════
  *
  *   ⚠️ AND 逻辑规则版本依赖（两个粒度，需分别理解）：
- *     ① AND 整体：Mihomo v1.15 以下可能将整条 AND 规则静默忽略（adobeUdpBlock / processBlockRules 均受影响）
+ *     ① AND 整体：Mihomo v1.15 以下可能将整条 AND 规则静默忽略（udpBlock / processBlockRules 均受影响）
  *     ② AND 内嵌 DOMAIN-REGEX：即使 AND 整体可解析，内嵌 DOMAIN-REGEX 的括号语法在 v1.15 以下
- *        额外存在解析失败风险（特指 adobeUdpBlock 中含 _ADOBE_RAND_RE_STR 的条目）
+ *        额外存在解析失败风险（特指 udpBlock 中含 _ADOBE_RAND_RE_STR 的条目）
  *     - 建议升级内核至 v1.15 或以上；若无法升级，将 AND 规则替换为单条
  *       PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP 作为进程级兜底（覆盖范围缩小）
  *
@@ -1807,7 +1828,7 @@ function main(config) {
  *   ── isFireflyActive 派生开关（Derived State，单向只读投影）──
  *     isFireflyActive 是 ENABLE_FIREFLY && ENABLE_BLOCK 的派生值，无独立存储，是两个上游开关逻辑与运算的投影，
  *     无法独立修改，即无法反向影响 ENABLE_FIREFLY 或 ENABLE_BLOCK。
- *     所有 Firefly 逻辑均使用此变量，防止"看起来开了但没生效"的状态误读（ENABLE_FIREFLY=true + ENABLE_BLOCK=false 时自动降级为 false）。
+ *     所有 Firefly 逻辑均使用此变量，防止"看起来开了但没生效"的状态误读（ENABLE_FIREFLY=true + ENABLE_BLOCK=false 时 Firefly 豁免不生效）。
  *   ──────────────────────────────────────────────────────────────
  *
  *   ── client-fingerprint 注入模块 ──
