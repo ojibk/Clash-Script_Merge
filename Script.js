@@ -54,10 +54,9 @@ function main(config) {
     const ENABLE_BLOCK        = true;            // 拦截模块（规则优先级高，仅次于 allow 层，isFireflyActive=true 时 Firefly 放行先于拦截命中，见 LAYER_ORDER）
                                                  // 关闭拦截模块还意味着 Firefly 放行规则也不注入。流量既无 REJECT 也无代理覆盖，被进程规则或 MATCH 兜底策略接管。
     const ENABLE_FIREFLY      = true;            // 精确放行 Adobe Firefly AI 生成式请求。启用放行规则需（ENABLE_BLOCK=true）对应拦截层以供豁免。
-                                                 // ⚠️ 注意：此开关的放行规则注入状态由 isFireflyActive 唯一决定。见 isFireflyActive 声明。
-                                                 // ⚠️ Firefly 放行出口为 proxyGroupName，该值由下方智能识别逻辑自动确定；若识别失败（全部策略均告失败），
-                                                 //    脚本直接 return config 中止注入，Firefly 请求将回退至订阅原始策略。必要妥协：auth/cc-api 等鉴权端点同时放行。
-                                                 // 最后防线为 AdobeGCClient.exe → REJECT-DROP（仅 ENABLE_PROCESS_RULE=true + TUN 模式下有效）
+                                                 // Firefly 放行依赖：isFireflyActive（由ENABLE_FIREFLY && ENABLE_BLOCK派生）=> 放行层走 proxyGroupName，
+                                                 // 识别失败则中止注入。必要妥协：auth/cc-api 等鉴权端点同时放行。
+                                                 // 安全底线：AdobeGCClient.exe 进程规则（需 TUN + 管理员权限）。
     const ENABLE_PROCESS_RULE = true;            // 进程规则模块（需 TUN 模式 + 管理员权限；另还需配置文件的 find-process-mode 参数启用获取进程信息）。
     const ENABLE_PROXY        = true;            // 指定域名走代理模块
     const ENABLE_AGGRESSIVE   = false;           // 激进阻断模块（⚠️ 谨慎启用，可能影响官网/插件商店访问）
@@ -164,13 +163,6 @@ function main(config) {
     const _SENTINEL_END   = "DOMAIN,END-rule-injection-sentinel.invalid,REJECT";
     {
         // 栈重建：单次遍历，O(N) 时间，O(N) 空间。
-        // START 压栈时记录 newRules.length 快照；END 匹配时回退 length 至快照值，等效删除整段旧注入区块。
-        //
-        // 崩溃恢复行为（上次执行意外中断导致孤儿哨兵残留时）：
-        //   ⚠️ 两种孤儿均不抛出异常、不中断注入，残留规则可接受，中止注入不可接受。
-        //   孤儿 START（无配对 END）：START 本身不写入 newRules，但其 length 快照被压栈（永不弹出）；其后续规则正常推入 newRules（无对应 END，不发生截断），
-        //   旧注入规则与本次新注入共存。旧注入规则因失去哨兵包裹而在后续所有执行中均无法被清理，
-        //   永久残留；但此情形在正常同步赋值路径下实际不会产生。孤儿 END（无配对 START）：静默跳过，不截断任何内容。
         const newRules = [];
         const stack    = [];
         for (const rule of config.rules) {
@@ -223,15 +215,29 @@ function main(config) {
             "chrome", "firefox", "safari", "iOS", "android", "edge", "360", "qq", "random", "none"
         ]);
         // 无效值降级为 "none"，避免 const 重复赋值问题
-        const _effectiveFP = _VALID_FINGERPRINTS.has(DEFAULT_FINGERPRINT)
+        const _rawFP = _VALID_FINGERPRINTS.has(DEFAULT_FINGERPRINT)
             ? DEFAULT_FINGERPRINT
             : (console.warn(`⚠️ 无效的 DEFAULT_FINGERPRINT: "${DEFAULT_FINGERPRINT}"，已降级为 "none"`), "none");
 
+        // 解析 random 指纹：按概率随机选取一个具体指纹，并固定使用（非每连接随机）
+        const _effectiveFP = _rawFP === "random"
+            ? (() => {
+                const rand = Math.random();
+                // 概率分布：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
+                if (rand < 0.50) return "chrome";
+                if (rand < 0.75) return "safari";
+                if (rand < 0.917) return "iOS";
+                return "firefox";
+            })()
+            : _rawFP;
+
         if (_effectiveFP === "none") {
-            // 无效值降级为 none 的路径
             console.log("ℹ️ TLS 指纹注入已启用，但因默认指纹配置无效已降级为 'none'，不执行注入。");
         } else {
             // ── 以下为有效指纹的正常注入逻辑 ──
+            if (_rawFP === "random") {
+                console.log(`💡 已从 random 解析为固定指纹: ${_effectiveFP}`);
+            }
             // 预处理 SKIP 名单：按 CJK（中日韩字符集）/ASCII（基础字符集）分轨，CJK 关键词直接子串匹配，ASCII 关键词预编译边界正则
             const _skipKeywords = [];  // 含 CJK 字符的关键词，走 includes()
             const _skipRegexes  = [];  // 纯 ASCII 关键词，走边界正则
@@ -343,16 +349,9 @@ function main(config) {
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|用|球)|所有|默认)$|(?:直连|拒绝)/;
 
     // 中文兜底组：「全局」对应 FALLBACK_NAMES 中的 GLOBAL，语义与行为均对称。
-    // ⚠️ 防回归："全局"必须在此独立正则中识别，不得移入 EXCLUDED_CN_RE：
-    //   · 若移入 EXCLUDED_CN_RE → _isEligibleGroup("全局")=false，"全局"被排除出所有策略；
-    //     而 GLOBAL 由第四轮兜底降级路径的 _isFallbackGroup 直接选中（_isEligibleGroup 不参与第四轮），两者应对称，故"全局"不可移入 EXCLUDED_CN_RE。
-    //   · （假设"全局"被移入 EXCLUDED_CN_RE 的情形下）即使兜底路径选中"全局"，代理组排除断言的 EXCLUDED_CN_RE.test("全局") 也会为 true，立即中止注入，
-    //     净效果为零，两个条件同时满足才能正常工作，缺一不可。
+    // ⚠️ 防回归：“全局”已被独立至 FALLBACK_CN_RE，不可移入 EXCLUDED_CN_RE，否则兜底路径失效。
     const FALLBACK_CN_RE = /^全局$/;
     // ❗ 运行时配置断言：FALLBACK_CN_RE 与 EXCLUDED_CN_RE 对兜底关键词"全局"的覆盖必须互斥。
-    //    若修改 FALLBACK_CN_RE 或 EXCLUDED_CN_RE，务必确保两者互斥。若"全局"同时被两者匹配，第四轮兜底路径虽能选中它，
-    //    但随后代理组排除断言（EXCLUDED_CN_RE.test）会立即中止注入，净效果为零；同时 _isEligibleGroup 也会将其排除，兜底路径失效。
-    //    ⚠️ 注意：此时哨兵清理已经执行（旧注入规则已剥离），返回的是清理后但未注入新规则的配置；等效于"本轮脚本跳过注入"，用户仍有原始订阅规则托底，下次重载时恢复正常。
     {
         const _testWord = "全局";
         if (FALLBACK_CN_RE.test(_testWord) && EXCLUDED_CN_RE.test(_testWord)) {
@@ -372,7 +371,7 @@ function main(config) {
     //   url-latency-benchmark：测速专用工具，以延迟评测为目的，不应作为流量出口组。
     //   smart：Mihomo v1.18+ 正式稳定类型，自适应出口选择，具备合法出口语义，已纳入白名单。旧版对 smart 行为不保证，若遇路由异常可回退：将 smart 从本 Set 移除。
     //   load-balance 已纳入 VALID_PROXY_TYPES（动态路由，具备合法出口语义），不再排除。
-    //   注意：此处保留最低限度的类型语义过滤，而非彻底放开，彻底放开会导致 relay 等固定链路被选中，流量走预设链路而非用户期望的可切换代理，行为与预期不符。
+    //   注意：此处保留最低限度的类型语义过滤，而非彻底放开，因为彻底放开会导致 relay 等固定链路被选中，流量走预设链路而非用户期望的可切换代理，行为与预期不符。
     const VALID_PROXY_TYPES = new Set(["select", "url-test", "fallback", "load-balance", "smart"]);
     // ⚠️ 互补视图：与 VALID_PROXY_TYPES 正反两面描述同一批被排除类型，修改任一处须同步检查另一处。
     // 当前排除：relay（固定链路）/ url-latency-benchmark（测速工具）。smart 已从本 Set 移除并纳入 VALID_PROXY_TYPES。
@@ -851,26 +850,7 @@ function main(config) {
     // DOMAIN-KEYWORD 杀伤力较强，仅针对 Autodesk 特有模块关键词。
     //
     // ──────────── BLOCK vs AGGRESSIVE 重叠说明（设计意图，禁止清理）────────────
-    // "entitlement.autodesk" 同时出现在：
-    //   (1) autodeskKeyword（此处）→ ENABLE_BLOCK=true 时生效，REJECT
-    //      DOMAIN-KEYWORD 为子串匹配，覆盖域名中含 "entitlement.autodesk"（含点）的域名，如 entitlement.autodesk.com。
-    //      ⚠️ 注意：api.entitlements.autodesk.com 因含 "entitlements"（entitlement 后跟 s 再跟点），
-    //         子串 "entitlement.autodesk"（entitlement 后直接跟点）在其中不存在，不被此 KEYWORD 命中。
-    //         简言之：匹配 entitlement.autodesk.com，但不匹配 entitlements.autodesk.com（复数形式，不同 API 端点）。
-    //         该域名由 autodeskSuffix 中的 DOMAIN-SUFFIX 精确条目独立覆盖，两者不可互相替代。
-    //   (2) aggressiveRules → DOMAIN-SUFFIX,entitlement.autodesk.com,REJECT-DROP 仅在 ENABLE_AGGRESSIVE=true 时额外生效。
-    //
-    // 两种开关状态下的行为分析：
-    //   ENABLE_BLOCK=true, ENABLE_AGGRESSIVE=false（默认）：
-    //     → autodeskKeyword REJECT 先命中，aggressiveRules 不注入，无冲突
-    //     → "entitlement.autodesk" 是 entitlement.autodesk.com 的唯一覆盖，必须保留
-    //   ENABLE_BLOCK=true, ENABLE_AGGRESSIVE=true：
-    //     → autodeskKeyword REJECT（KEYWORD 规则）先于 aggressiveRules SUFFIX（SUFFIX 规则）命中（pool 注入顺序决定）
-    //     → aggressiveRules 中的 entitlement.autodesk.com SUFFIX 规则被遮蔽，实质冗余但无害
-    //   ENABLE_BLOCK=false, ENABLE_AGGRESSIVE=true（极少使用）：autodeskKeyword 不注入，aggressiveRules SUFFIX 独立生效，此时两者各司其职，无冲突
-    //
-    // 结论：重叠为纵深覆盖，在所有开关组合下均无副作用，无需合并或删除任一条目。删除单条（如认为 SUFFIX 已覆盖可删 KEYWORD）在 ENABLE_BLOCK=true,
-    //       ENABLE_AGGRESSIVE=false（默认配置）下会产生漏拦截 Bug，此时 KEYWORD 是唯一覆盖，SUFFIX 在 AGGRESSIVE 层未注入。
+    // 与 aggressiveRules 中同名条目为纵深防御，无副作用，勿删。
     // ─────────────────────────────────────────────────────────────
     const autodeskKeyword = [
         "adlm",                                  // Autodesk Desktop Licensing Module（桌面许可证模块）
@@ -1290,9 +1270,9 @@ function main(config) {
         "DOMAIN-SUFFIX,lanzoui.com,DIRECT",       // 蓝奏云备用域 1
         "DOMAIN-SUFFIX,lanzoux.com,DIRECT",       // 蓝奏云备用域 2
         // 可选扩展区
-        "DOMAIN-SUFFIX,masuit.com,DIRECT",        // 学习版软件站 懒得勤快
-        "DOMAIN-SUFFIX,masuit.net,DIRECT",        // 学习版软件站 懒得勤快 备用域1
-        "DOMAIN-SUFFIX,masuit.org,DIRECT",        // 学习版软件站 懒得勤快 备用域2
+        "DOMAIN-SUFFIX,masuit.com,DIRECT",        // 软件分享站 懒得勤快
+        "DOMAIN-SUFFIX,masuit.net,DIRECT",        // 软件分享站 懒得勤快 备用域1
+        "DOMAIN-SUFFIX,masuit.org,DIRECT",        // 软件分享站 懒得勤快 备用域2
         "DOMAIN-SUFFIX,423down.com,DIRECT",       // 知名绿色软件站
         "DOMAIN-SUFFIX,ghxi.com,DIRECT",          // 果核剥壳（绿色软件站）
         "DOMAIN-SUFFIX,mpyit.com,DIRECT",         // 殁漂遥软件分享站
@@ -1616,16 +1596,11 @@ function main(config) {
 
             // 拦截域名列表（针对全部高危非官方修改补丁回传域名）
             // Mihomo hosts 通配符说明（来源：wiki.metacubex.one/en/config/dns/hosts）：
-            //   +.domain → 匹配主域本身 + 所有多级子域，等效 DOMAIN-SUFFIX
+            //   +.domain → 匹配主域本身 + 所有多级子域，等效 DOMAIN-SUFFIX。老版内核不支持该语法
             //   *.domain → 仅匹配单级子域，不含主域和多级子域
             //   .domain  → 匹配所有多级子域，不含主域本身
             //
-            // 冗余项说明：新版 Mihomo 内核中，+.XXX.com 已完全包含 XXX.com 和 *.XXX.com。
-            //   精确项是为兼容旧版内核：旧版不识别 +. 语法时，*.XXX.com 覆盖单级子域，如使用旧版内核请自行取消下方对应规则条目的注释以使之生效。
-            //   XXX.com 保障主域本身。代价：内核 hosts 树略有冗余，无功能影响。
-            //
-            // hijackDomains 由 BACKDOOR_BASE_DOMAINS 动态生成（+.domain 形式），覆盖所有后门域名的 DNS 解析，
-            // 与 rules 层的 backdoorSuffix REJECT-DROP 规则保持覆盖对称，形成 DNS 层 + rules 层双重纵深防御。
+            // hijackDomains 覆盖所有后门域名的 DNS 解析（+.domain 语法），与 rules 层的 backdoorSuffix REJECT-DROP 配合，形成 DNS + rules 双层防御。
             const hijackDomains = BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`]);
 
             const customHosts = Object.fromEntries(hijackDomains.map(d => [d, target]));
@@ -1856,14 +1831,6 @@ function main(config) {
  *           孤儿 START 本身不写入 newRules（continue 跳过），但其长度快照压栈；其后的规则正常推入 newRules，最终保留在输出中（旧注入规则与新注入共存一个周期）。
  *           循环结束后自然保留，无需额外处理；最坏情形：孤儿 START 是上次注入区间开头（崩溃导致 END 未写入），其后旧注入规则不被截断，
  *           但孤儿之后的完整配对仍可正确处理。此情形仅在上次 finalPool.concat 赋值未完成时出现，正常路径不产生孤儿。
- *
- *     💡【算法选型：三候选方案，实测失败用例与边界用例详见附录"哨兵清理算法"节】
- *        (1) 废弃：filter 状态机——孤儿（无匹配配对的单端哨兵） START 出现时，其后全部订阅规则被无差别删除，当次执行不可逆（规则被删除，仅可通过重载订阅恢复）。
- *        (2) 废弃：while + findIndex + splice（首个END向前配对）——孤儿 END 触发 break，其后全部有效配对未处理，旧注入规则全部残留；O(P×N) 时间，每轮 splice 内存重分配。
- *            方案变体（废弃）：findIndex 取全局首个 END 而非向前最近配对，嵌套场景连带删除哨兵间有效用户规则。
- *        (3) 采用方案：单次遍历栈重建（Stack Rebuild）—— O(N) 时间 / O(N) 空间。
- *
- *     采用方案：单次遍历栈重建（Stack Rebuild），是三方案中时间/空间/安全综合最优的方案。
  *
  *   ──────────────────────────────────────────────────────────────
  *
