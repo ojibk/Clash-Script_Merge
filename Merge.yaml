@@ -14,6 +14,10 @@
 #      auto-route: true
 #      dns-hijack: [any:53]
 
+# 允许内核自身的流量（如规则集下载、外部控制等）完全绕过路由匹配，是最标准的内置 passrule 行为
+lifecycle:
+  rule-providers-bypass: true  # 确保规则集下载直接放行
+  
 # ░░ 全局行为配置
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
 geodata-mode: true              # ⚙️ GeoIP 数据库：true=dat (MetaCubeX)，统一归属判定
