@@ -1,14 +1,14 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260607
+ * Clash-Script 全局扩展脚本 · 哨兵幂等清理与规则注入（Firefly 精确豁免版）v260607
  *
- * 功能：拦截优先 + 放行特定 AI 服务，Hosts DNS 覆写，模拟客户端指纹，智能匹配策略组等。
+ * 功能：拦截优先 + Firefly 精确例外放行，适用于 PS 生成式填充等 Adobe AI 场景。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
 
 function main(config) {
     const _startTime = Date.now();
 
-    // ═══════════════ 配置区（按需调整） ═══════════════
+    // ═══════════════ 配置区 ═══════════════
     const ENABLE_SCRIPT       = true;            // 脚本总开关
     const ENABLE_BLOCK        = true;            // 拦截模块
     const ENABLE_FIREFLY      = true;            // Firefly 放行（需 ENABLE_BLOCK=true）
@@ -63,8 +63,9 @@ function main(config) {
         return config;
     }
 
+    const _now = new Date();
     console.log("=".repeat(28));
-    const _ts = [new Date().getHours(), new Date().getMinutes(), new Date().getSeconds()]
+    const _ts = [_now.getHours(), _now.getMinutes(), _now.getSeconds()]
         .map(n => String(n).padStart(2, "0")).join(":");
     console.log(`📊 节点与规则链注入开始 [${_ts}]`);
     console.log("=".repeat(28));
@@ -80,8 +81,16 @@ function main(config) {
         const _VALID = new Set(["chrome","firefox","safari","iOS","android","edge","360","qq","random","none"]);
         let _rawFP = _VALID.has(DEFAULT_FINGERPRINT) ? DEFAULT_FINGERPRINT : "none";
         if (!_VALID.has(DEFAULT_FINGERPRINT)) console.warn(`⚠️ 无效指纹 "${DEFAULT_FINGERPRINT}"，降级为 "none"`);
+
+        // 解析 random 指纹：固定使用一次随机数累积比较，概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
         const _effectiveFP = _rawFP === "random"
-            ? (Math.random() < 0.5 ? "chrome" : Math.random() < 0.75 ? "safari" : Math.random() < 11/12 ? "iOS" : "firefox")
+            ? (() => {
+                const rand = Math.random();
+                if (rand < 0.50) return "chrome";
+                if (rand < 0.75) return "safari";
+                if (rand < 11/12) return "iOS";
+                return "firefox";
+              })()
             : _rawFP;
 
         if (_effectiveFP === "none") {
@@ -110,11 +119,25 @@ function main(config) {
     // ═══════════════ 1. 识别代理策略组 ═══════════════
     let proxyGroupName = null;
     const EXCLUDED_NAMES = new Set(["DIRECT","REJECT","COMPATIBLE","DEFAULT","MATCH","PASS"].map(s => s.toUpperCase()));
-    const FALLBACK_NAMES = new Set(["GLOBAL"]);
+    const FALLBACK_NAMES = new Set(["GLOBAL"].map(s => s.toUpperCase()));
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|用|球)|所有|默认)$|(?:直连|拒绝)/;
     const FALLBACK_CN_RE = /^全局$/;
     const VALID_PROXY_TYPES = new Set(["select","url-test","fallback","load-balance","smart"]);
     const _UNSUITABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
+
+    // 运行时断言：FALLBACK_NAMES 与 EXCLUDED_NAMES 必须互斥
+    {
+        const _overlap = [...FALLBACK_NAMES].filter(n => EXCLUDED_NAMES.has(n));
+        if (_overlap.length) {
+            console.error(`❌ 配置断言失败：FALLBACK_NAMES ∩ EXCLUDED_NAMES 非空: ${_overlap.join(", ")}`);
+            return config;
+        }
+    }
+    // 运行时断言：FALLBACK_CN_RE 与 EXCLUDED_CN_RE 对"全局"必须互斥
+    if (FALLBACK_CN_RE.test("全局") && EXCLUDED_CN_RE.test("全局")) {
+        console.error(`❌ 配置断言失败："全局"同时匹配 FALLBACK_CN_RE 和 EXCLUDED_CN_RE`);
+        return config;
+    }
 
     const _SANITIZE_RE = /[\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/gu;
     const sanitizeName = n => (typeof n === "string" && n) ? n.replace(_SANITIZE_RE, '').trim() : "";
@@ -123,9 +146,10 @@ function main(config) {
 
     if (config["proxy-groups"].length) {
         const _KW_RE = /节点(?:选择)?|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅|代理|选择/i;
-        const prepped = config["proxy-groups"].map(g => ({
-            g, clean: sanitizeName(g?.name), fallback: _isFallback(sanitizeName(g?.name)), eligible: _isEligible(sanitizeName(g?.name))
-        }));
+        const prepped = config["proxy-groups"].map(g => {
+            const clean = sanitizeName(g?.name);
+            return { g, clean, fallback: _isFallback(clean), eligible: _isEligible(clean) };
+        });
 
         // 多级降级识别
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
@@ -157,7 +181,7 @@ function main(config) {
         return config;
     }
 
-    // 安全断言
+    // 代理组排除断言与 Token 断言
     {
         const s = sanitizeName(proxyGroupName);
         if (!s || EXCLUDED_NAMES.has(s.toUpperCase()) || EXCLUDED_CN_RE.test(s)) {
@@ -547,7 +571,6 @@ function main(config) {
         // "PROCESS-NAME,Wps.exe,REJECT",                    // ⚠️ 慎用：WPS 主进程，拦截后联网全失效
     ];
     const processProxyRules = [ // 进程代理（空占位）
-        // 示例：修改进程名后取消注释即可——策略组名由脚本自动填入（proxyGroupName）
         // `PROCESS-NAME,Telegram.exe,${proxyGroupName}`,
         // `PROCESS-NAME,Slack.exe,${proxyGroupName}`,
     ];
@@ -636,7 +659,10 @@ function main(config) {
     try {
         const LAYER_ORDER = Object.freeze(["allow","block","process","proxy","aggressive","direct"]);
         const layerPools = { allow:[], block:[], process:[], proxy:[], aggressive:[], direct:[] };
-        const pushLayer = (l, r) => { for (const x of r) layerPools[l].push(x); };
+        const pushLayer = (l, r) => {
+            if (!(l in layerPools)) throw new Error(`[Script] 未知层 '${l}'，请检查 layerPools 键名`);
+            for (const x of r) layerPools[l].push(x);
+        };
 
         if (ENABLE_BLOCK) {
             const [act, pool] = isFireflyActive ? [proxyGroupName, layerPools.allow] : ["REJECT", layerPools.block];
@@ -665,7 +691,7 @@ function main(config) {
             pushKeyword(googleTrackKeyword, "REJECT", layerPools.block);
             pushSuffix(youtubeSuffix, "REJECT", layerPools.block);
             pushDomain(youtubeDomain, "REJECT", layerPools.block);
-            pushKeyword(youtubeKeyword, "REJECT", layerPools.block); // 该行注释状态须与数据层变量对应行一致
+            pushKeyword(youtubeKeyword, "REJECT", layerPools.block);
             pushSuffix(genericAdSuffix, "REJECT", layerPools.block);
             if (ENABLE_GLOBAL_KEYWORD_BLOCK) pushKeyword(globalKeyword, "REJECT", layerPools.block);
         }
@@ -677,6 +703,11 @@ function main(config) {
         if (ENABLE_PROXY) pushSuffix(proxySuffixList, proxyGroupName, layerPools.proxy);
         if (ENABLE_AGGRESSIVE) pushLayer("aggressive", aggressiveRules);
         if (ENABLE_DIRECT) pushLayer("direct", directRules);
+
+        // LAYER_ORDER 双向一致性断言
+        const _orderSet = new Set(LAYER_ORDER);
+        for (const k of LAYER_ORDER) if (!(k in layerPools)) throw new Error(`[Script] LAYER_ORDER 键 '${k}' 不在 layerPools 中`);
+        for (const k of Object.keys(layerPools)) if (!_orderSet.has(k)) throw new Error(`[Script] layerPools 键 '${k}' 不在 LAYER_ORDER 中`);
 
         const finalPool = [_SENTINEL_START];
         for (const k of LAYER_ORDER) for (const r of layerPools[k]) finalPool.push(r);
@@ -733,16 +764,33 @@ function main(config) {
             const ensureObj = v => (typeof v === "object" && v !== null && !Array.isArray(v)) ? v : {};
 
             config.hosts = { ...ensureObj(config.hosts), ...customHosts };
-            if (typeof config.dns !== "object" || Array.isArray(config.dns)) config.dns = {};
-            config.dns.hosts = { ...ensureObj(config.dns.hosts), ...customHosts };
-            if (!Array.isArray(config.dns["fake-ip-filter"])) config.dns["fake-ip-filter"] = [];
+
+            // 保护原有 dns 配置：类型异常时仅警告，不覆写
+            if (config.dns == null) {
+                config.dns = {};
+            }
+            let _dnsValid = false;
+            if (typeof config.dns === "object" && !Array.isArray(config.dns)) {
+                config.dns.hosts = { ...ensureObj(config.dns.hosts), ...customHosts };
+                _dnsValid = true;
+            } else {
+                console.warn("⚠️ config.dns 类型异常，已写入顶层 hosts，跳过 dns.hosts 注入（fake-ip-filter 仍会清理）");
+            }
+
+            if (!_dnsValid) {
+                config.dns = { "fake-ip-filter": [] };
+            } else if (!Array.isArray(config.dns["fake-ip-filter"])) {
+                config.dns["fake-ip-filter"] = [];
+            }
 
             const currentManaged = new Set(BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase()));
-            const scriptManaged = new Set([...currentManaged, "api.966v26.com","status.966v26.com","+.cc-cdn.com","cc-cdn.com","*.cc-cdn.com"]);
+            const histEntries = ["api.966v26.com","status.966v26.com","+.cc-cdn.com","cc-cdn.com","*.cc-cdn.com"];
+            const scriptManaged = new Set([...currentManaged, ...histEntries.map(s => s.toLowerCase())]);
 
             if (ENABLE_MAINTENANCE_CHECKS) {
-                const redundant = [...scriptManaged].filter(e => !currentManaged.has(e) && scriptManaged.has(e));
-                if (redundant.length) console.warn("⚠️ 历史托管域名中存在冗余条目，建议清理:", redundant);
+                // 检查历史条目中仍属于当前活跃集合的项（属于误留在历史集合的冗余条目）
+                const redundant = histEntries.filter(e => currentManaged.has(e.toLowerCase()));
+                if (redundant.length) console.warn("⚠️ 历史托管域名中存在仍属当前活跃集合的冗余条目，建议清理:", redundant);
             }
 
             const existing = new Set(), cleaned = [];
