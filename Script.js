@@ -763,53 +763,56 @@ function main(config) {
             const customHosts = Object.fromEntries(hijackDomains.map(d => [d, target]));
             const ensureObj = v => (typeof v === "object" && v !== null && !Array.isArray(v)) ? v : {};
 
+            // 注入顶层 hosts（与 dns 状态无关）
             config.hosts = { ...ensureObj(config.hosts), ...customHosts };
 
-            // 保护原有 dns 配置：类型异常时仅警告，不覆写
+            // 检查 dns 对象合法性
+            let _dnsValid = false;
             if (config.dns == null) {
                 config.dns = {};
             }
-            let _dnsValid = false;
             if (typeof config.dns === "object" && !Array.isArray(config.dns)) {
                 config.dns.hosts = { ...ensureObj(config.dns.hosts), ...customHosts };
                 _dnsValid = true;
             } else {
-                console.warn("⚠️ config.dns 类型异常，已写入顶层 hosts，跳过 dns.hosts 注入（fake-ip-filter 仍会清理）");
+                console.warn("⚠️ config.dns 类型异常，已写入顶层 hosts，跳过 dns.hosts 注入");
             }
 
-            if (!_dnsValid) {
-                config.dns = { "fake-ip-filter": [] };
-            } else if (!Array.isArray(config.dns["fake-ip-filter"])) {
-                config.dns["fake-ip-filter"] = [];
+            // 仅当 dns 对象合法时维护 fake-ip-filter
+            if (_dnsValid) {
+                if (!Array.isArray(config.dns["fake-ip-filter"])) {
+                    config.dns["fake-ip-filter"] = [];
+                }
+
+                const currentManaged = new Set(BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase()));
+                const histEntries = ["api.966v26.com","status.966v26.com","+.cc-cdn.com","cc-cdn.com","*.cc-cdn.com"];
+                const scriptManaged = new Set([...currentManaged, ...histEntries.map(s => s.toLowerCase())]);
+
+                if (ENABLE_MAINTENANCE_CHECKS) {
+                    const redundant = histEntries.filter(e => currentManaged.has(e.toLowerCase()));
+                    if (redundant.length) console.warn("⚠️ 历史托管域名中存在仍属当前活跃集合的冗余条目，建议清理:", redundant);
+                }
+
+                const existing = new Set(), cleaned = [];
+                let cleanedCount = 0;
+                for (const e of config.dns["fake-ip-filter"]) {
+                    const s = (typeof e === "string" ? e.trim() : "").toLowerCase();
+                    if (!s) continue;
+                    if (scriptManaged.has(s)) { cleanedCount++; continue; }
+                    if (existing.has(s)) continue;
+                    existing.add(s); cleaned.push(e);
+                }
+                const newEntries = hijackDomains.filter(d => !existing.has(d.toLowerCase())).sort();
+                config.dns["fake-ip-filter"] = [...cleaned, ...newEntries];
+
+                console.warn("⚠️ Hosts DNS 覆写需在 CVR 开启「启用 DNS」和「使用 Hosts」才生效");
+                console.log("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
+                const targetStr = Array.isArray(target) ? target.join(" / ") : target;
+                console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条，模式: [${HOSTS_MODE}] → ${targetStr}，但需 CVR 开启相关开关才能生效。`);
+                console.log(`   fake-ip-filter 清理旧条目: ${cleanedCount} 条，新增注入: ${newEntries.length} 条（订阅原有非脚本条目共 ${existing.size} 条）`);
+            } else {
+                console.warn("⚠️ config.dns 类型异常，跳过 fake-ip-filter 维护");
             }
-
-            const currentManaged = new Set(BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase()));
-            const histEntries = ["api.966v26.com","status.966v26.com","+.cc-cdn.com","cc-cdn.com","*.cc-cdn.com"];
-            const scriptManaged = new Set([...currentManaged, ...histEntries.map(s => s.toLowerCase())]);
-
-            if (ENABLE_MAINTENANCE_CHECKS) {
-                // 检查历史条目中仍属于当前活跃集合的项（属于误留在历史集合的冗余条目）
-                const redundant = histEntries.filter(e => currentManaged.has(e.toLowerCase()));
-                if (redundant.length) console.warn("⚠️ 历史托管域名中存在仍属当前活跃集合的冗余条目，建议清理:", redundant);
-            }
-
-            const existing = new Set(), cleaned = [];
-            let cleanedCount = 0;
-            for (const e of config.dns["fake-ip-filter"]) {
-                const s = (typeof e === "string" ? e.trim() : "").toLowerCase();
-                if (!s) continue;
-                if (scriptManaged.has(s)) { cleanedCount++; continue; }
-                if (existing.has(s)) continue;
-                existing.add(s); cleaned.push(e);
-            }
-            const newEntries = hijackDomains.filter(d => !existing.has(d.toLowerCase())).sort();
-            config.dns["fake-ip-filter"] = [...cleaned, ...newEntries];
-
-            console.warn("⚠️ Hosts DNS 覆写需在 CVR 开启「启用 DNS」和「使用 Hosts」才生效");
-            console.log("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
-            const targetStr = Array.isArray(target) ? target.join(" / ") : target;
-            console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条，模式: [${HOSTS_MODE}] → ${targetStr}，但需 CVR 开启相关开关才能生效。`);
-            console.log(`   fake-ip-filter 清理旧条目: ${cleanedCount} 条，新增注入: ${newEntries.length} 条（订阅原有非脚本条目共 ${existing.size} 条）`);
         } catch (err) {
             console.error("❌ Hosts DNS 覆写失败:", err);
         }
