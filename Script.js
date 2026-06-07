@@ -23,7 +23,7 @@
  *   - 进程规则（需管理员权限 + TUN 模式，即 Mihomo 创建虚拟网卡接管全部流量）
  *   - 激进阻断模块（默认关闭，需谨慎开启）
  *   - Hosts 级 DNS 覆写（四种映射子模式：黑洞型与欺骗型，由 HOSTS_MODE 选择）
- *   - 基于哨兵标记的幂等性（即无论执行多少次，结果相同）规则清理与注入（栈重建算法，O(N) 时间 / O(N) 空间，单次遍历，防止每次重新加载订阅时本脚本注入的规则块被重复追加）
+ *   - 基于哨兵标记的幂等性（即无论执行多少次，结果相同）规则清理与注入（哨兵索引截断法，O(N) 时间 / O(N) 空间，单次遍历，防止每次重新加载订阅时本脚本注入的规则块被重复追加）
  *   - 异常降级保护，详细运行日志
  *
  * ══════════════════════════ ░░ 使用说明 ░░ ══════════════════════════
@@ -102,8 +102,8 @@ function main(config) {
     // 💡 random：启动时从指纹库（按 Cloudflare Radar 数据概率）生成一个浏览器指纹并固定使用，非每连接随机切换。概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
     const DEFAULT_FINGERPRINT = "chrome";
     // 指纹注入关键词跳过名单：名称中包含这些关键词的节点，即使没有指纹也不会被注入。用途：保护特殊节点（如专用 IP 节点、特定落地机）不被意外修改指纹。
-    // ⚠️ 含汉字（CJK 中日韩统一表意文字）的关键词使用子串匹配（includes），应避免可能包含在其他词组中的关键词（如 "香港" 会匹配 "非香港直连"）
-    const FINGERPRINT_SKIP = [];  // 赋值示例：["原生", "game",]
+    // ⚠️ 跳过关键词列表：含中文字符（CJK 中日韩统一表意文字）的子串匹配（includes），和纯英文 ASCII 的词边界正则匹配。
+    const FINGERPRINT_SKIP = [];  // 赋值示例：["原生", "game",]。应避免可能包含在其他词组中的关键词（如 "香港" 会匹配 "非香港直连"）
 
     // ──── 典型配置组合参考（按需参照调整上方开关值；此处为说明性文字，无需操作）────
     //
@@ -150,7 +150,7 @@ function main(config) {
     }
 
     // ══════════════════════ ENABLE_SCRIPT 分支 ══════════════════════
-    // ──── 前置执行：基于哨兵标记的幂等性规则清理与注入（栈重建算法，O(N) 单次遍历，处理任意数量堆叠）────
+    // ──── 前置执行：基于哨兵标记的幂等性规则清理与注入（哨兵索引截断，O(N) 单次遍历，处理任意数量堆叠）────
     // 先清理上次遗留标记，再插入新标记，防止多次切换后堆叠。
     // 哨兵标记（sentinel）：成对包裹本脚本注入的规则区间，供幂等清理时精确定位注入范围。此处在 ENABLE_SCRIPT 判断之前执行，
     // 即使 ENABLE_SCRIPT=false 时也清理旧哨兵，确保注入操作的幂等性：无论脚本执行多少次，结果相同，防多次切换后旧规则残留堆叠。
@@ -162,7 +162,7 @@ function main(config) {
     const _SENTINEL_START = "DOMAIN,START-rule-injection-sentinel.invalid,REJECT";
     const _SENTINEL_END   = "DOMAIN,END-rule-injection-sentinel.invalid,REJECT";
     {
-        // 栈重建：单次遍历，O(N) 时间，O(N) 空间。
+        // 哨兵索引截断：单次遍历，O(N) 时间，O(N) 空间。
         const newRules = [];
         const stack    = [];
         for (const rule of config.rules) {
@@ -178,6 +178,9 @@ function main(config) {
             }
             newRules.push(rule);
         }
+        if (stack.length > 0) {
+            console.warn(`⚠️ 发现 ${stack.length} 个未闭合的哨兵块（旧注入规则可能残留），已保留后续规则`);
+        }
         config.rules = newRules;
     }
 
@@ -187,7 +190,7 @@ function main(config) {
         //      (2) 在规则头部插入新的 debug-script-disabled 标记（供外部识别脚本禁用状态）
         //    因此返回的 config 与订阅原始状态有微小差异（多一条标记规则）。如需零修改直接返回（Passthrough 直通模式），将此 if 分支体改为 return config; 即可。
         //    如需保留 Hosts DNS 覆写但关闭规则注入，请保持 ENABLE_SCRIPT=true，并将 ENABLE_BLOCK / ENABLE_PROXY / ENABLE_DIRECT 等各子模块开关设为 false。
-        //    此处用 filter 而非栈重建，因调试标记为单条平铺，无嵌套清理需求；使用 !== 等值匹配（与哨兵清理策略一致），避免宽泛子串误删合法规则。
+        //    此处用 filter 而非哨兵索引截断，因调试标记为单条平铺，无嵌套清理需求；使用 !== 等值匹配（与哨兵清理策略一致），避免宽泛子串误删合法规则。
         config.rules = config.rules.filter(r => r !== "DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         return config;
@@ -199,7 +202,7 @@ function main(config) {
     const _ts = [_now.getHours(), _now.getMinutes(), _now.getSeconds()]
         .map(n => String(n).padStart(2, "0"))
         .join(":");
-    console.log(`📊 节点与规则链清洗开始 [${_ts}]`);
+    console.log(`📊 节点与规则链注入开始 [${_ts}]`);
     console.log("=".repeat(28));
 
     // ═══════════════ client-fingerprint 注入逻辑 ═══════════════
@@ -215,9 +218,13 @@ function main(config) {
             "chrome", "firefox", "safari", "iOS", "android", "edge", "360", "qq", "random", "none"
         ]);
         // 无效值降级为 "none"，避免 const 重复赋值问题
-        const _rawFP = _VALID_FINGERPRINTS.has(DEFAULT_FINGERPRINT)
-            ? DEFAULT_FINGERPRINT
-            : (console.warn(`⚠️ 无效的 DEFAULT_FINGERPRINT: "${DEFAULT_FINGERPRINT}"，已降级为 "none"`), "none");
+        let _rawFP;
+        if (_VALID_FINGERPRINTS.has(DEFAULT_FINGERPRINT)) {
+            _rawFP = DEFAULT_FINGERPRINT;
+        } else {
+            console.warn(`⚠️ 无效指纹 "${DEFAULT_FINGERPRINT}"，降级为 "none"`);
+            _rawFP = "none";
+        }
 
         // 解析 random 指纹：按概率随机选取一个具体指纹，并固定使用（非每连接随机）
         const _effectiveFP = _rawFP === "random"
@@ -226,7 +233,7 @@ function main(config) {
                 // 概率分布：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
                 if (rand < 0.50) return "chrome";
                 if (rand < 0.75) return "safari";
-                if (rand < 0.917) return "iOS";
+                if (rand < 11/12) return "iOS"; // 11/12 ≈ 0.91666
                 return "firefox";
             })()
             : _rawFP;
@@ -316,7 +323,7 @@ function main(config) {
         "MATCH",       // Mihomo 内置动作关键字（兜底策略）；正常订阅格式下极不可能出现同名代理组，保留以防万一订阅中存在同名代理组时被错误选为出口
         "PASS",        // 防止将 Mihomo 的 PASS（透传）策略错误选为代理出口
     ].map(s => s.toUpperCase()));
-    const FALLBACK_NAMES = new Set(["GLOBAL"].map(s => s.toUpperCase()));  // 兜底组：前三轮优选策略全部失败时，第四轮降级才触发
+    const FALLBACK_NAMES = new Set(["GLOBAL"]);  // 兜底组：前三轮优选策略全部失败时，第四轮降级才触发
     // ❗ 运行时配置断言：FALLBACK_NAMES ∩ EXCLUDED_NAMES 必须为空集。
     //    若修改 FALLBACK_NAMES 或 EXCLUDED_NAMES，务必确保两者互斥。
     //    若 "REJECT" 等被误加入 FALLBACK_NAMES，_isEligibleGroup 中的提前 return true 会旁路 EXCLUDED_NAMES 检查，使排除词被错误视为合法兜底组。
@@ -384,7 +391,7 @@ function main(config) {
     // ⚠️ u 标志（Unicode 模式）：确保字符类 [] 按完整 Unicode 码点解析，避免代理对被拆分匹配，语义更严谨；
     //    当前覆盖范围仅含 BMP 内字符（U+0000–U+FEFF），不加 u 在现有代码路径下无实际 bug，
     //    但加 u 是最佳实践，便于将来扩展覆盖范围时无需回头补加。
-    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/gu;
+    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/gu;
     function sanitizeName(name) {
         if (typeof name !== "string") return "";
         if (!name) return "";  // 短路返回，省去对空字符串的无意义正则调用
@@ -422,7 +429,7 @@ function main(config) {
         //    在 _groupsPrepped.find() 中多次调用 .test() 行为一致，无需担心状态污染。
         //    🚀（U+1F680）为 BMP 外字符，无 u 标志时作代理对匹配，现代 V8 引擎行为正确；若需严格 Unicode 语义可加 u 标志（/…/iu），当前不加亦无实际问题。
         // 不含 "global"（GLOBAL 由 FALLBACK_NAMES 单独处理），不含 "默认"（已被 EXCLUDED_CN_RE 覆盖，关键词层无需重复）。
-        const _KW_RE = /节点(?:选择)?|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅/i;
+        const _KW_RE = /节点(?:选择)?|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅|代理|选择/i;
 
         // 预计算所有组的 cleanName，避免各轮 find 各自对同一组名重复调用 sanitizeName。
         // 对含 100+ 代理组的大型订阅，最坏情况下五轮各遍历一次，sanitizeName（_SANITIZE_RE.replace）被执行 1×N 次 sanitize + 5×N 次正则测试；
@@ -450,16 +457,6 @@ function main(config) {
             // includeAll 仅接受 boolean true 或字符串 "true"（严格等值）；数字 1 / 其他 truthy 值不触发（有意严格，避免意外匹配）。
             return typeOk && (nameMatch || includeAll || hasMany);
         });
-
-        // [优选·正则] 正则宽松匹配（次选，排除兜底组）
-        if (!_mainEntry) {
-            _mainEntry = _groupsPrepped.find(({ g, cleanName, isFallback, isEligible }) =>
-                isEligible && !isFallback &&
-                /代理|节点|选择|Proxy/i.test(cleanName) &&
-                VALID_PROXY_TYPES.has(g?.type) &&
-                Array.isArray(g?.proxies) && g.proxies.length > 3
-            );
-        }
 
         // [优选·类型] 类型约束（放宽数量，任意合法出口类型）
         // 增加 Array.isArray + length > 0 约束，防止选中空 proxies 的 select 组。
@@ -514,7 +511,7 @@ function main(config) {
         const mainGroup = _mainEntry?.g;
 
         if (mainGroup?.name) {
-            proxyGroupName = mainGroup.name;
+            proxyGroupName = _mainEntry.cleanName;
             const groupFlag = _mainEntry.isFallback ? "⚠️" : "✅";
             console.log(`${groupFlag} 代理组识别成功: [${proxyGroupName}] (type: ${mainGroup.type ?? "未知"})`); // ⚠️=兜底组，✅=优选组
         } else {
@@ -740,7 +737,7 @@ function main(config) {
     // REJECT 发送 ICMP Port Unreachable，应用立即感知 QUIC 不可达并 fallback 至 TCP，比 REJECT-DROP 的 15–30s 超时 fallback 快得多，用户体验更好。
     //
     // ⚠️【directRules 中 adobe.com 子域的 UDP 路径说明】
-    //    fonts.adobe.com / stock.adobe.com / behance.adobe.com 等在 directRules 中配置为 DIRECT。
+    //    fonts.adobe.com / color.adobe.com 等在 directRules 中配置为 DIRECT。
     //    其 UDP（QUIC）流量先命中 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT（下方第三条），
     //    收到 ICMP 后应用立即 fallback 至 TCP，TCP 连接再命中 directRules 的 DOMAIN-SUFFIX,DIRECT。
     //    整体路径：UDP→REJECT（立即） → TCP fallback → DIRECT。无延迟，行为符合预期。
@@ -948,8 +945,8 @@ function main(config) {
         "watson.telemetry.microsoft.com",        // Watson 崩溃报告服务
     ];
 
-    // ────────────────────────── 国产广告联盟 / 遥测 ──────────────────────────
-    const cnAdSuffix = [
+    // ────────────────────────── 广告联盟、遥测、追踪、弹窗、强制更新──────────────────────────
+    const adsSuffix = [
         // WPS
         "ups.k0s.gk.kingsoft.com",               // WPS 升级推送服务
         "pcfg.wps.cn",                           // WPS 配置/广告下发
@@ -1209,19 +1206,22 @@ function main(config) {
     ];
 
     // ────────────────────────────── 代理规则 ──────────────────────────────
-    // ⚠️ Google 风控：Gemini 检测出口 IP 漂移，google.com 与 gemini.google.com 必须命中同一策略组，否则可能触发 403 或账号异常
     const proxySuffixList = [
         "github.com",                         // 代码托管平台，防御性规则：当外部覆写配置引用的代理规则集下载失败（规则集条目为空）时，让该域走代理确保连通性
-        "copilot.microsoft.com",              // Copilot AI 助手，注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct
         "linkedin.com",                       // 领英职场社交网络
+        "stock.adobe.com",                    // Adobe Stock 图库，因锁区需代理
+        "behance.net",                        // Behance 设计作品展示平台，因锁区需代理
+        "behance.adobe.com",                  // Behance Adobe 子域，因锁区需代理
+        "copilot.microsoft.com",              // Copilot AI 助手，注意：directRules 中 microsoft.com 的 SUFFIX 会匹配此域，优先级由 LAYER_ORDER 顺序保证 proxy > direct
         // "openai.com",                      // OpenAI，按需取消注释
+        // ⚠️ Google 风控警告：Gemini 检测出口 IP 漂移，google.com 与 gemini.google.com 必须命中同一策略组，否则可能触发 403 或账号异常 
         // "gemini.google.com",               // Gemini，按需取消注释（⚠️ 见上方 Google 风控警告：google.com 必须与 gemini.google.com 命中同一策略组）
         // ────────── Steam 分流：商店走代理，下载走直连 ──────────
-        // store / community / static 是国内受阻的前端域，走代理提升访问体验。
+        // store / community / static 是国内受干扰的前端域，可以直连，也可以走代理提升访问体验。
         // steampowered.com 根域含 content1~9 下载 CDN（内容分发网络）子域，保留直连保证下载速度。
-        "store.steampowered.com",             // Steam 商店页面
-        "steamcommunity.com",                 // Steam 社区 / 创意工坊 / 市场
-        "steamstatic.com",                    // Steam 商店静态资源（封面/截图）
+        // "store.steampowered.com",             // Steam 商店页面，可以直连
+        // "steamcommunity.com",                 // Steam 社区 / 创意工坊 / 市场，可以直连
+        // "steamstatic.com",                    // Steam 商店静态资源（封面/截图）
     ];
 
     // ────────────────────────────── 直连规则 ──────────────────────────────
@@ -1250,9 +1250,6 @@ function main(config) {
         // ⚠️【UDP 路径说明】以下 adobe.com 子域的 QUIC/UDP 流量先命中 adobeUdpBlock 的 AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT，
         //    收到 ICMP 后立即 fallback 至 TCP；TCP 连接再命中此处 DIRECT 规则，整体无延迟，行为符合预期。
         "DOMAIN-SUFFIX,fonts.adobe.com,DIRECT",            // Adobe Fonts 字体同步服务
-        "DOMAIN-SUFFIX,stock.adobe.com,DIRECT",            // Adobe Stock 图库
-        "DOMAIN-SUFFIX,behance.net,DIRECT",                // Behance 设计作品展示平台
-        "DOMAIN-SUFFIX,behance.adobe.com,DIRECT",          // Behance Adobe 子域
         "DOMAIN-SUFFIX,color.adobe.com,DIRECT",            // Adobe Color 配色工具
         "DOMAIN,assets.adobe.com,DIRECT",                  // Adobe 静态资源 CDN（内容分发网络），精确匹配以防过度放行（若实测需要子域可改 DOMAIN-SUFFIX）
         // 官网放行
@@ -1392,7 +1389,7 @@ function main(config) {
             // 微软遥测（REJECT 立即终止连接）
             pushSuffix(msTelemSuffix, "REJECT", layerPools.block);
             // 国产广告 / 遥测（REJECT 快速拒绝，广告类无需静默超时）
-            pushSuffix(cnAdSuffix, "REJECT", layerPools.block);
+            pushSuffix(adsSuffix, "REJECT", layerPools.block);
             pushDomain(cnAdDomain, "REJECT", layerPools.block);
             // 浏览器遥测（REJECT 立即终止连接）
             pushSuffix(mozillaSuffix, "REJECT", layerPools.block);
@@ -1482,7 +1479,7 @@ function main(config) {
             if (isFireflyActive) {
                 console.log(`   Firefly 放行: ✅（adobeSharedDeps + adobeFireflyOnly 均已注入 allow 层，走[${proxyGroupName}]）`);
             } else {
-                console.log(`   Firefly 放行: ❌ ENABLE_BLOCK=false，isFireflyActive 已自动降级（不生效）`);
+                console.log(`   Firefly 放行: ❌ ENABLE_BLOCK=false，Firefly 豁免已禁用`);
             }
         } else {
             console.log(`   Firefly 放行: ❌`);
@@ -1601,7 +1598,7 @@ function main(config) {
             //   .domain  → 匹配所有多级子域，不含主域本身
             //
             // hijackDomains 覆盖所有后门域名的 DNS 解析（+.domain 语法），与 rules 层的 backdoorSuffix REJECT-DROP 配合，形成 DNS + rules 双层防御。
-            const hijackDomains = BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`]);
+            const hijackDomains = BACKDOOR_BASE_DOMAINS.map(d => `+.${d}`);
 
             const customHosts = Object.fromEntries(hijackDomains.map(d => [d, target]));
 
@@ -1618,112 +1615,85 @@ function main(config) {
 
             config.hosts     = { ...ensureHostsObj(config.hosts),     ...customHosts };
 
+            // 初始化 dns 对象（若缺失则补全）
             if (config.dns == null) {
-                // 仅当 dns 不存在或为 null/undefined 时初始化（安全兜底）
                 config.dns = {};
-            } else if (typeof config.dns !== "object" || Array.isArray(config.dns)) {
-                // dns 类型异常（如数组、字符串等），保护原始配置，跳过本次 Hosts 覆写
-                console.warn("⚠️ config.dns 类型异常（非对象），已写入顶层 hosts，跳过 dns.hosts 和 fake-ip-filter 注入以保护原始 DNS 配置");
-                // ⚠️ 注意：此 return 会直接退出 main() 函数，后续所有代码（包括未来可能在此 try 块之后新增的逻辑）都不会执行。
-                return config;  // 提前返回，不执行后续 dns.hosts 和 fake-ip-filter 注入
             }
+
+            // dns.hosts 注入（仅当 dns 为正常对象时执行）
+            if (typeof config.dns === "object" && !Array.isArray(config.dns)) {
+                config.dns.hosts = { ...ensureHostsObj(config.dns.hosts), ...customHosts };
+            } else {
+                console.warn("⚠️ config.dns 类型异常（非对象），已写入顶层 hosts，跳过 dns.hosts 注入");
+            }
+
             //    Clash Verge Rev 的配置生效顺序：
             //    订阅 yaml → 脚本注入 → UI 设置覆盖 → 写入 clash-verge.yaml → Mihomo 加载
             //    → 必须在 CVR 设置 › DNS 覆写 › 手动开启「使用 Hosts」，Hosts DNS 覆写才能真正生效。
             //    注意：同页面还有「使用系统 Hosts」开关，该开关控制的是系统原生 hosts 文件，与本脚本向 Mihomo 注入的 hosts 条目完全独立，保持关闭即可。
 
-            // dns.hosts 同样使用 ensureHostsObj 校验。
-            config.dns.hosts = { ...ensureHostsObj(config.dns.hosts), ...customHosts };
-
-            //    hosts 命中时请求直接返回拦截地址，根本不走到 Fake-IP 分配阶段；
-            //    此处追加的真实意义是：防止 Fake-IP（198.18.x.x）被分配给这些域名，导致 IP 类规则产生误命中——不应将其理解为 hosts 失效时的替代防护。
-            //    hosts 未生效时，域名走真实 DNS 返回真实 IP，Mihomo 无 Fake-IP 映射可查，DOMAIN 类规则对已解析 IP 的流量无效；
-            //    此时 fake-ip-filter 条目的防护贡献几乎为零，真正的兜底是 rules 层中的 REJECT-DROP 规则。
-            // fake-ip-filter 追加为辅助手段：阻止内核为拦截域名分配 198.18.x.x 虚拟 IP（防止 Fake-IP 表污染，使域名走真实 DNS 查询）。
-            // ⚠️ fake-ip-filter 本身不阻断连接：加入后域名走真实 DNS，返回真实 IP，
-            //    连接能否被拦截仍取决于 rules 层（backdoorSuffix REJECT-DROP）；
-            //    硬编码 IP 路径（应用绕过 DNS）下 DOMAIN 类规则全部失效，需依赖 PROCESS-NAME / IP-CIDR。
-            //
-            // [优化] 仅追加新条目，不对全量 fake-ip-filter 排序，保留订阅原有顺序。
-            //        全量重排会触发 Mihomo DNS hash 重建，可能导致连接瞬断，故仅追加。
-            //        保留 .sort() 确保每次 reload 的追加顺序幂等一致，防止 hijackDomains 将来改为动态生成时产生随机排列；当前静态数组无此风险，sort 为前向预防。
-            //        确保将来 hijackDomains 改为动态生成时每次 reload 追加顺序仍一致，与"不打乱订阅原有顺序"不矛盾（仅对新条目排序）。
-            // ⚠️ 注意：CVR UI 若开启了某些预设模板或覆盖 DNS 配置，可能清空或重置 fake-ip-filter 列表，导致本脚本注入的条目在该次加载中无法生效（被 UI 设置覆盖清空）。
-            //    建议在 CVR 日志中确认最终生效的 fake-ip-filter 条目包含本脚本注入的域名。
-            if (!Array.isArray(config.dns["fake-ip-filter"])) {
-                config.dns["fake-ip-filter"] = [];
-            }
-
-            // ❗❗【脚本历史条目全量注册表】（_SCRIPT_MANAGED_HIJACK）❗❗
-            // 用于幂等清理 fake-ip-filter 中本脚本曾注入的条目。当前活跃条目：由 BACKDOOR_BASE_DOMAINS 自动派生，新增域名无需手动同步。
-            // 历史遗留条目：见下方 _HISTORICAL_MANAGED，需手动维护已删除/格式变更的旧条目。
-            const _CURRENT_MANAGED = new Set(
-                BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase())
-            );
-
-            // ── 历史遗留条目：已删除或注入形式变更的旧版残留 ──
-            // (1) 已从 BACKDOOR_BASE_DOMAINS 删除的域名的所有历史变体
-            // (2) 当前活跃域名但历史注入形式已从精确子域改为通配符（需保留旧精确条目）
-            const _HISTORICAL_MANAGED = new Set([
-                // 966v26.com 的旧精确子域（现用 +.966v26.com 通配）
-                "api.966v26.com",
-                "status.966v26.com",
-                // cc-cdn.com 已从 BACKDOOR_BASE_DOMAINS 移除，需保留所有变体以清理残留
-                "+.cc-cdn.com",
-                "cc-cdn.com",
-                "*.cc-cdn.com",
-            ].map(s => s.toLowerCase()));
-
-            // 合并为完整注册表（替代原硬编码 Set）
-            const _SCRIPT_MANAGED_HIJACK = new Set([..._CURRENT_MANAGED, ..._HISTORICAL_MANAGED]);
-            if (ENABLE_MAINTENANCE_CHECKS) {
-                // 🔍 验证 _HISTORICAL_MANAGED 中是否仍有域名属于当前活跃集合（可能是漏删），
-                // 如果某个域名变体仍在 _CURRENT_MANAGED 中，说明它已经重新成为活跃域名，无需继续留在历史集合里。
-                const _redundantHistorical = [..._HISTORICAL_MANAGED].filter(entry => _CURRENT_MANAGED.has(entry));
-                if (_redundantHistorical.length > 0) {
-                    console.warn("⚠️ fake-ip-filter 历史托管域名集合中存在仍属于当前活跃域名的条目，"
-                        + "这可能是从 BACKDOOR_BASE_DOMAINS 移除域名后忘记同步清理历史集合所致：",
-                        _redundantHistorical);
+            // fake-ip-filter 维护（仅当 dns 为正常对象时执行）
+            if (typeof config.dns === "object" && !Array.isArray(config.dns)) {
+                if (!Array.isArray(config.dns["fake-ip-filter"])) {
+                    config.dns["fake-ip-filter"] = [];
                 }
-            }
 
-            // 【性能优化】单次遍历同时完成归一化、去重与分类，避免双重 Set 构造开销。先 trim 归一化（消除首尾空白），过滤非法条目，再用 existingSet 去重并写入 cleanExisting。
-            // hosts 字段采用对象展开覆写，而 fake-ip-filter 采用数组追加，两者生命周期管理策略不一致，fake-ip-filter 具有累加性，如需清理请重置 CVR 的 DNS 设置或重置订阅。
-            const existingSet   = new Set();
-            const cleanExisting = [];
-            let cleanedCount    = 0;   // 统计本次清理的旧脚本条目
-            for (const entry of config.dns["fake-ip-filter"]) {
-                const s  = typeof entry === "string" ? entry.trim() : "";
-                const sl = s.toLowerCase();
-                if (!s) continue;
-                // 属于脚本历史管理的条目 → 清理并计数
-                if (_SCRIPT_MANAGED_HIJACK.has(sl)) {
-                    cleanedCount++;
-                    continue;
+                const _CURRENT_MANAGED = new Set(
+                    BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase())
+                );
+
+                const _HISTORICAL_MANAGED = new Set([
+                    "api.966v26.com",
+                    "status.966v26.com",
+                    "+.cc-cdn.com",
+                    "cc-cdn.com",
+                    "*.cc-cdn.com",
+                ].map(s => s.toLowerCase()));
+
+                const _SCRIPT_MANAGED_HIJACK = new Set([..._CURRENT_MANAGED, ..._HISTORICAL_MANAGED]);
+                if (ENABLE_MAINTENANCE_CHECKS) {
+                    const _redundantHistorical = [..._HISTORICAL_MANAGED].filter(entry => _CURRENT_MANAGED.has(entry));
+                    if (_redundantHistorical.length > 0) {
+                        console.warn("⚠️ fake-ip-filter 历史托管域名集合中存在仍属于当前活跃域名的条目，"
+                            + "这可能是从 BACKDOOR_BASE_DOMAINS 移除域名后忘记同步清理历史集合所致：",
+                            _redundantHistorical);
+                    }
                 }
-                // 去重：保留订阅自带的首个出现
-                if (existingSet.has(sl)) continue;
-                existingSet.add(sl);
-                cleanExisting.push(s);
-            }
-            // 域名大小写不敏感（RFC 4343）
-            const newEntries = hijackDomains.filter(d => !existingSet.has(d.toLowerCase())).sort();
-            config.dns["fake-ip-filter"] = [...cleanExisting, ...newEntries];
 
-            // ⚠️ 以下为关键前置条件警告，必须保留 warn 级别
-            console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可！");
-            console.log("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
+                const existingSet   = new Set();
+                const cleanExisting = [];
+                let cleanedCount    = 0;
+                for (const entry of config.dns["fake-ip-filter"]) {
+                    const s  = typeof entry === "string" ? entry.trim() : "";
+                    const sl = s.toLowerCase();
+                    if (!s) continue;
+                    if (_SCRIPT_MANAGED_HIJACK.has(sl)) {
+                        cleanedCount++;
+                        continue;
+                    }
+                    if (existingSet.has(sl)) continue;
+                    existingSet.add(sl);
+                    cleanExisting.push(s);
+                }
+                const newEntries = hijackDomains.filter(d => !existingSet.has(d.toLowerCase())).sort();
+                config.dns["fake-ip-filter"] = [...cleanExisting, ...newEntries];
 
-            const targetStr = Array.isArray(target) ? target.join(" / ") : target;
-            console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条`
-                + `，模式: [${HOSTS_MODE}] → ${targetStr}`
-                + `，但需 CVR 开启「启用 DNS」与「使用 Hosts」才能生效。`);
+                console.warn("⚠️ Hosts DNS 覆写模块已启用，但仅在 CVR 同时开启两个前置开关时生效：CVR › DNS 覆写 → 必须开启「启用 DNS」和「使用 Hosts」。两个开关缺一不可！");
+                console.log("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
 
-            console.log(`   fake-ip-filter 本次清理旧脚本条目: ${cleanedCount} 条，`
-                + `新增注入: ${newEntries.length} 条`
-                + `（订阅原有非脚本条目共 ${existingSet.size} 条）`);
-            if (existingSet.size === 0) {
-                console.log("   （订阅 fake-ip-filter 此前为空或已被 CVR UI 清空，已完整重建）");
+                const targetStr = Array.isArray(target) ? target.join(" / ") : target;
+                console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条`
+                    + `，模式: [${HOSTS_MODE}] → ${targetStr}`
+                    + `，但需 CVR 开启「启用 DNS」与「使用 Hosts」才能生效。`);
+
+                console.log(`   fake-ip-filter 本次清理旧脚本条目: ${cleanedCount} 条，`
+                    + `新增注入: ${newEntries.length} 条`
+                    + `（订阅原有非脚本条目共 ${existingSet.size} 条）`);
+                if (existingSet.size === 0) {
+                    console.log("   （订阅 fake-ip-filter 此前为空或已被 CVR UI 清空，已完整重建）");
+                }
+            } else {
+                console.warn("⚠️ config.dns 类型异常，跳过 fake-ip-filter 维护");
             }
         } catch (err) {
             console.error("❌ Hosts DNS 覆写注入失败:", err);
@@ -1825,7 +1795,7 @@ function main(config) {
  *     全部失败 → 直接 return config（显式中止注入，网络回退至订阅原始规则）
  *   ──────────────────────────────────────────────────────────────
  *
- *   ── 哨兵清理算法（栈重建，O(N) 单次遍历，处理任意数量堆叠）──
+ *   ── 哨兵清理算法（哨兵索引截断，O(N) 单次遍历，处理任意数量堆叠）──
  *     原理：单次遍历原数组，重建新数组 newRules，用栈记录每个 START 被压入时 newRules 的长度（注入区间在 newRules 中的起始快照）；
  *           遇 END 时弹出栈顶快照，将 newRules.length 设为快照值（O(1) 截断，length= 无 splice 的数组拷贝开销）；孤儿 END（栈为空）静默跳过（不 break，继续处理后续规则）；
  *           孤儿 START 本身不写入 newRules（continue 跳过），但其长度快照压栈；其后的规则正常推入 newRules，最终保留在输出中（旧注入规则与新注入共存一个周期）。
@@ -1871,7 +1841,7 @@ function main(config) {
  *     - ⚡ [风险/潜在隐患]       可能导致卡顿、重连或极端情况下的逻辑失效
  *     - ⚙️ [配置/开关]           用户可调节的变量定义
  *     - 🔍 [诊断/审计]           console.log 运行日志或逻辑对齐
- *     - 💡 [设计/原理]           解释为何不使用状态机、为何采用 for...of 栈重建等深度意图
+ *     - 💡 [设计/原理]           解释为何不使用状态机、为何采用 for...of 哨兵索引截断等深度意图
  *     - ℹ️ [提示/注意]           中性信息说明，如环境要求、路径说明等
  *     - › 表示 UI 路径
  *     - → 逻辑结果、映射或规则路由
