@@ -139,7 +139,7 @@ function main(config) {
         return config;
     }
 
-    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF]/gu;
+    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2065\u2066-\u2069\uFEFF]/gu;
     const sanitizeName = n => (typeof n === "string" && n) ? n.replace(_SANITIZE_RE, '').trim() : "";
     const _isFallback = t => !!(t && (FALLBACK_NAMES.has(t.toUpperCase()) || FALLBACK_CN_RE.test(t)));
     const _isEligible = t => !!(t && (_isFallback(t) || (!EXCLUDED_NAMES.has(t.toUpperCase()) && !EXCLUDED_CN_RE.test(t))));
@@ -200,7 +200,8 @@ function main(config) {
     const pushDomain  = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN,${v},${a}`); });
     const pushKeyword = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN-KEYWORD,${v},${a}`); });
 
-    // ── Adobe Firefly 共用鉴权端点 ──
+    // ── Adobe 共用鉴权端点（包括 Firefly 和 CC） ──
+    // 注意：与 isFireflyActive 开关绑定，Firefly 开启时走代理放行，Firefly 关闭时走 REJECT 拦截。
     const adobeSharedDeps = [
         "ims-na1.adobelogin.com",                 // 登录令牌刷新
         "adobeid-na1.services.adobe.com",         // Adobe ID 服务
@@ -239,11 +240,11 @@ function main(config) {
         "lcs-cops.adobe.io",                      // 云端授权策略端点
     ];
 
-    const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$";
-    const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$";
+    const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配域名 随机8~12位字母/数字.adobe.io
+    // const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$"; // 匹配域名 随机10位字母/数字.adobe.io
     const adobeRegex = [
         `DOMAIN-REGEX,${_ADOBE_RAND_RE},REJECT`,
-        `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE},REJECT`,
+        // `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE},REJECT`,
     ];
 
     // ── UDP / QUIC 拦截（强制回退 TCP）──
@@ -551,9 +552,9 @@ function main(config) {
 
     // ── 进程规则（需 TUN + 管理员权限）──
     const processBlockRules = [
-        "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP",
-        "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP",
-        "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证
+        // "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 仅 UDP 443
+        // "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 全部 UDP
+        "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证。全部 TCP + 全部 UDP
         "PROCESS-NAME,AdskLicensingService.exe,REJECT-DROP", // Autodesk 许可验证
         "PROCESS-NAME,AdskAccess.exe,REJECT-DROP",           // Autodesk 访问控制
         "PROCESS-NAME,AdskIdentityManager.exe,REJECT-DROP",  // Autodesk 身份认证
@@ -588,7 +589,7 @@ function main(config) {
         "behance.adobe.com",                      // Behance Adobe 子域
         "copilot.microsoft.com",                  // Copilot AI
         // "openai.com",                          // OpenAI，按需取消注释
-        // "gemini.google.com",                   // Gemini（⚠️ google.com 须同策略组）
+        // "gemini.google.com",                   // Gemini（⚠️ 与 google.com 须同策略组，IP 不同可能触发风控）
         // "store.steampowered.com",             // Steam 商店
         // "steamcommunity.com",                 // Steam 社区
         // "steamstatic.com",                    // Steam 商店静态资源
@@ -785,11 +786,11 @@ function main(config) {
                 }
 
                 const currentManaged = new Set(BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase()));
-                const histEntries = ["api.966v26.com","status.966v26.com","+.cc-cdn.com","cc-cdn.com","*.cc-cdn.com"];
-                const scriptManaged = new Set([...currentManaged, ...histEntries.map(s => s.toLowerCase())]);
+                const LEGACY_CLEANUP_ENTRIES = ["api.966v26.com","status.966v26.com","+.cc-cdn.com","cc-cdn.com","*.cc-cdn.com"];
+                const scriptManaged = new Set([...currentManaged, ...LEGACY_CLEANUP_ENTRIES.map(s => s.toLowerCase())]);
 
                 if (ENABLE_MAINTENANCE_CHECKS) {
-                    const redundant = histEntries.filter(e => currentManaged.has(e.toLowerCase()));
+                    const redundant = LEGACY_CLEANUP_ENTRIES.filter(e => currentManaged.has(e.toLowerCase()));
                     if (redundant.length) console.warn("⚠️ 历史托管域名中存在仍属当前活跃集合的冗余条目，建议清理:", redundant);
                 }
 
