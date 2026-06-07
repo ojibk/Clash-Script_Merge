@@ -1,5 +1,5 @@
 # ============================================================
-# Clash-Merge 全局扩展覆写配置 v260607
+# Clash-Merge 全局扩展覆写配置 v260608
 # 智能路由港区受限网络服务
 # 静态规则链，支持独立运行。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
@@ -14,9 +14,140 @@
 #      auto-route: true
 #      dns-hijack: [any:53]
 
-# 允许内核自身的流量（如规则集下载、外部控制等）完全绕过路由匹配，是最标准的内置 passrule 行为
+# ============================================================
+# ░░ 内核生命周期与自身行为配置-允许内核自身的流量（如规则集下载、外部控制等）完全绕过路由匹配
+# ============================================================
 lifecycle:                     # 内核生命周期：控制内核自身运行与维护行为
   rule-providers-bypass: true  # 🔓 规则集下载绕过：强制内建 passrule 直连，防更新死循环
+
+# ======================================================================
+# ░░ DNS 最终平衡配置 — 国内优先 · 防污染兜底 · 代理保出海
+# ======================================================================
+# 设计哲学：
+#   1. 事前精准分流：geosite:cn 走国内明文，!cn 走境外 DoH
+#   2. 长尾域名信任国内：nameserver 使用国内 DoH，保证国内小众网站 CDN 最优
+#   3. 防污染兜底：当国内 DoH 返回境外 IP 时，通过 fallback 用境外 DoH 重查
+#   4. 代理保出海：respect-rules: true 让境外 DoH 的 HTTPS 连接走代理，无惧干扰
+#
+# ⚠️ 关键风险与取舍：
+#   - 长尾境外域名延迟翻倍：
+#     未收录在 geosite:geolocation-!cn 中的境外域名，会先由国内 DoH 解析，
+#     返回境外 IP 后触发 fallback 二次查询，首包延迟略高于直接走境外 DoH。
+#     这是为了换取国内长尾域名最佳 CDN 性能的必要代价。
+#
+#   - 国内 DoH 的轻微隐私暴露：
+#     长尾域名会先向腾讯/阿里 DoH 发起一次加密查询，运营商看不到内容，
+#     但服务商（腾讯/阿里）会在日志中留下你的查询记录。
+#     若追求极致隐私，可将 nameserver 也改为境外 DoH。
+#
+#   - 强依赖代理节点：
+#     geosite:geolocation-!cn 及 fallback 的 DoH 请求均走代理规则链。
+#     若代理不可用，境外域名解析将全部失败（国内域名不受影响）。
+#     务必确保路由规则将 geolocation-!cn 和 DNS DoH 流量正确导向代理。
+#
+#   - DNS 引导泄漏：
+#     default-nameserver 使用国内明文 DNS 解析 DoH 服务器 IP（如 1.1.1.1），
+#     会留下极少量无害的引导记录，无隐私风险。
+#
+#   - 校园网/企业内网兼容性：
+#     本配置的 fallback-filter 未包含 RFC1918 私有地址段（10/8, 172.16/12, 192.168/16），
+#     因此内网域名解析不会被误判为污染，校园网和企业内网环境可直接使用。
+#     如果你的网络中存在公共域名被内网 DNS 解析到私有 IP 的特殊场景，
+#     勿将私有段加入 ipcidr，否则会导致这些域名被反复回退。
+#
+# ======================================================================
+dns:
+  # ── 基础设置 ──
+  enable: true
+  listen: 0.0.0.0:53                     # 接管系统 DNS
+  enhanced-mode: fake-ip                 # 与 sniffer 联动，Fake-IP 下规则匹配更精确
+  ipv6: false                            # 关闭 IPv6，避免纯 IPv4 代理环境下连接错误，若全链路支持 IPv6 且代理可出站，可改为 true
+
+  # ── Fake-IP 范围 ──
+  fake-ip-range: 198.18.0.0/15           # RFC 2544 预留段完整范围，容量充足
+
+  # ── Fake-IP 白名单（强制走真实 IP 解析） ──
+  fake-ip-filter:
+    # NTP 时间同步
+    - "time.*.com"
+    - "time.*.gov"
+    - "time.*.edu.cn"
+    - "time.*.apple.com"
+    - "ntp.*.com"
+    - "*.ntp.org.cn"
+    - "*.time.edu.cn"
+    # STUN / WebRTC — 必须补全直接匹配，防止 stun.l.google.com 等被虚拟化
+    - "stun.*.*"
+    - "stun.*.*.*"
+    - "+.stun.*.*"
+    - "+.stun.*.*.*"
+    # 系统连通性探测
+    - "*.msftconnecttest.com"
+    - "*.msftncsi.com"
+    - "*.captive.apple.com"
+    - "network-test.debian.org"
+    - "detectportal.firefox.com"
+    # 局域网与本地服务
+    - "localhost"
+    - "*.lan"
+    - "*.local"
+    - "*.localhost"
+    - "*.localdomain"
+    - "*.internal"
+    - "+.in-addr.arpa"
+    - "+.ip6.arpa"
+    # 国内应用增强兼容性
+    - "+.market.xiaomi.com"              # 小米应用商店
+    - "localhost.ptlogin2.qq.com"        # QQ 本地登录
+
+  # ── 引导解析器（Bootstrap DNS） ──
+  default-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+
+  # ── 核心开关：DNS 请求参与规则路由 ──
+  respect-rules: true                    # 必须开启，让境外 DoH 走代理避免直连被阻
+
+  # ── 主动精准分流（主路径） ──
+  nameserver-policy:
+    # 国内域名 → 国内明文 DNS，延迟最低，CDN 最优
+    "geosite:cn":
+      - 223.5.5.5
+      - 119.29.29.29
+    # 境外域名 → 境外加密 DoH，源头防污染，走代理出海
+    "geosite:geolocation-!cn":
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+
+  # ── 默认解析器（处理 nameserver-policy 未收录的长尾/新域名） ──
+  # 采用国内 DoH，保证国内长尾域名 CDN 最优，境外长尾域名由 fallback 纠偏
+  nameserver:
+    - https://doh.pub/dns-query          # 腾讯 DoH
+    - https://dns.alidns.com/dns-query   # 阿里 DoH
+
+  # ── 回退解析器（防污染兜底） ──
+  # 当国内 DoH 返回境外 IP 时，启用此解析器重新查询
+  fallback:
+    - https://1.1.1.1/dns-query
+    - https://8.8.8.8/dns-query
+
+  # ── 回退过滤器 ──
+  fallback-filter:
+    geoip: true
+    geoip-code: CN                       # 非 CN IP 视为可疑，触发 fallback 重查
+    ipcidr:                              # 补充明确污染 IP 网段
+      - 240.0.0.0/4                      # E 类保留地址
+      - 0.0.0.0/8                        # 零地址
+      - 127.0.0.0/8                      # 本地回环
+      # 以下私有地址段特意不包含，以免影响校园网/企业内网解析：
+      # - 10.0.0.0/8
+      # - 172.16.0.0/12
+      # - 192.168.0.0/16
+
+  # ── 代理节点自身域名解析（破除代理环路） ──
+  proxy-server-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
 
 # ░░ 全局行为配置
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
