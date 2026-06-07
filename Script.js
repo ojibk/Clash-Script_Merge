@@ -247,7 +247,7 @@ function main(config) {
                 } else {
                     // ASCII 关键词直接使用原始大小写构建边界正则（正则 'i' 标志负责忽略大小写）
                     const escaped = raw.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&');
-                    _skipRegexes.push(new RegExp(`(^|[-_\\s（）()\\[\\]])${escaped}([-_\\s（）()\\[\\]]|$)`, 'i'));
+                    _skipRegexes.push(new RegExp(`(^|[-_\\s（）()\\[\\]./])${escaped}([-_\\s（）()\\[\\]./]|$)`, 'i'));
                 }
             }
 
@@ -1386,6 +1386,9 @@ function main(config) {
             pushLayer("block", adobeRegex);
             // ❗ adobeUdpBlock 仅 TUN 模式有效，系统代理模式下这些规则不会命中任何 UDP 流量（见 adobeUdpBlock 声明处注释）
             pushLayer("block", adobeUdpBlock);
+            // ⚠️ 运行时提示：DOMAIN-KEYWORD 规则依赖 SNI 或 Fake-IP 映射
+            // ⚠️ [adobeUdpBlock] 已注入 DOMAIN-KEYWORD,adobe 规则。该规则仅在 Mihomo 能获取域名信息时生效（Fake-IP 或 Sniffer 嗅探 SNI）。
+            // 若应用绕过 Mihomo DNS 且启用 ECH，则此规则可能静默失效。
             // WSS（WebSocket Secure）精确匹配（DOMAIN，原因见 adobeWsDomain 注释）
             pushDomain(adobeWsDomain, "REJECT", layerPools.block);
             // Corel
@@ -1504,7 +1507,6 @@ function main(config) {
         } else {
             console.log(`   Firefly 放行: ❌`);
         }
-
         console.log(`   进程规则:   ${ENABLE_PROCESS_RULE  ? "✅（需管理员权限+TUN 模式，另须 config 开启获取进程信息，条件不满足则静默失效）" : "❌"}`);
         console.log(`   代理规则:   ${ENABLE_PROXY         ? "✅" : "❌"}`);
         // ENABLE_AGGRESSIVE 激进模式日志增加警告行，列出已知受影响域。
@@ -1519,6 +1521,8 @@ function main(config) {
         }
         console.log(`   直连规则:   ${ENABLE_DIRECT        ? "✅" : "❌"}`);
         console.log(`   Hosts 覆写:  ${ENABLE_HOSTS_OVERRIDE   ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
+        console.warn("⚠️ [adobeUdpBlock] 已注入 DOMAIN-KEYWORD,adobe 规则。该规则仅在 Mihomo 能获取域名信息时生效（Fake-IP 或 Sniffer 嗅探 SNI）。"
+        + "若应用绕过 Mihomo DNS 且启用 ECH，则此规则可能静默失效。");
         // 注入规则条目分项统计日志
         // ▶▶ 分项统计开始 ▶▶
         console.log(`   ▶ 注入规则条目分项统计:`);
