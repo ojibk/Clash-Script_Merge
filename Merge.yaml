@@ -15,14 +15,14 @@
 #      dns-hijack: [any:53]
 
 # 允许内核自身的流量（如规则集下载、外部控制等）完全绕过路由匹配，是最标准的内置 passrule 行为
-lifecycle:
-  rule-providers-bypass: true  # 确保规则集下载直接放行
-  
+lifecycle:                     # 内核生命周期：控制内核自身运行与维护行为
+  rule-providers-bypass: true  # 🔓 规则集下载绕过：强制内建 passrule 直连，防更新死循环
+
 # ░░ 全局行为配置
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
 geodata-mode: true              # ⚙️ GeoIP 数据库：true=dat (MetaCubeX)，统一归属判定
 geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭则停留在出厂版本
-geo-update-interval: 168        # ⏱️ 更新间隔（小时），168=每周
+geo-update-interval: 24        # ⏱️ 更新间隔（小时），24=每天
 geox-url:                       # ⚙️ geodata 下载地址（CF 加速），未声明时回退默认
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
@@ -98,7 +98,7 @@ rule-providers:
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/private.mrs"
     # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/private.mrs" # 备用
 
-  # lan-cidr: # 🔓 局域网私有 IP 段 (192.168/10/172等)，与 private 互补。MetaCubeX geoip/private
+  # lan-cidr: # 🔓 局域网私有 IP 段，与 private 互补。MetaCubeX geoip/private
   #   type: http        # ℹ️ 远程 HTTP 资源
   #   behavior: ipcidr  # ℹ️ IP 网段前缀匹配树
   #   format: mrs
@@ -125,7 +125,7 @@ rule-providers:
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.mrs"
     # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs" # 备用
 
-  # threat: # 🚫 威胁域名 (EasyPrivacy 抽取，peiyingyao 构建 MRS)，备用
+  # threat: # 🚫 威胁阻断 (EasyPrivacy 抽取，peiyingyao 构建 MRS)，备用
   #   type: http
   #   behavior: domain
   #   format: mrs
@@ -177,12 +177,12 @@ rule-providers:
 rules:
   # ── 本地放行（绝对确定） ──
   - RULE-SET,private,DIRECT             # 🔓 私有/保留域名直连
-  # - RULE-SET,lan-cidr,DIRECT,no-resolve # 🔓 局域网 IP 直连（需启用对应 provider）
+  # - RULE-SET,lan-cidr,DIRECT,no-resolve # 🔓 局域网 IP 直连（需启用对应 rule-provider）
 
   # ── 综合拦截 ──
   - RULE-SET,ads,REJECT                 # 🚫 综合拦截集拒绝
-  # - RULE-SET,advertising,REJECT       # 🚫 广告域名拒绝（需启用）
-  # - RULE-SET,threat,REJECT            # 🚫 威胁域名拒绝（需启用）
+  # - RULE-SET,advertising,REJECT       # 🚫 广告拦截（需启用）
+  # - RULE-SET,threat,REJECT            # 🚫 威胁阻断（需启用）
 
   # ── 域名分流（国内优先，规避 CDN 误判） ──
   - RULE-SET,cn,DIRECT                  # 🔓 国内域名直连
