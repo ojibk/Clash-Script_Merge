@@ -153,7 +153,7 @@ dns:
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
 geodata-mode: true              # ⚙️ GeoIP 数据库：true=dat (MetaCubeX)，统一归属判定
 geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭则停留在出厂版本
-geo-update-interval: 24        # ⏱️ 更新间隔（小时），24=每天
+geo-update-interval: 168        # ⏱️ 更新间隔（小时），168=每周
 geox-url:                       # ⚙️ geodata 下载地址（CF 加速），未声明时回退默认
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
