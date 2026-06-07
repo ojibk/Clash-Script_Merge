@@ -1,5 +1,5 @@
 /**
- *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260606
+ *   Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入（Firefly 精确豁免版）v260607
  * 
  * ══════════════════════════ ░░ 脚本自述 ░░ ══════════════════════════
  *
@@ -87,6 +87,8 @@ function main(config) {
     //
     // 双栈黑洞模式（dual-blackhole）因 IPv6 的 :: 行为更激进，存在非预期的连接错误或应用异常；ipv4-blackhole 单栈版风险较低。
     const HOSTS_MODE = "ipv4-loopback";
+    //
+    const ENABLE_MAINTENANCE_CHECKS = false;   // fake-ip-filter 已移除历史记录检查开关。验证 _HISTORICAL_MANAGED 中无残留的活跃域名变体。
     //
     // ──── ✅ 节点级 client-fingerprint 注入开关，TLS 客户端指纹模拟预设 ────
     // 模拟指定客户端的 TLS 握手特征，以增强抗检测能力。实际效果依赖目标站点策略，不保证绕过指纹检测或消除触发验证码。
@@ -217,7 +219,7 @@ function main(config) {
     } else if (!Array.isArray(config.proxies)) {
         console.log("ℹ️ TLS 指纹注入已启用，但 config.proxies 不是数组（订阅可能仅含 proxy-providers），跳过注入。");
     } else {
-        // 合法指纹白名单（含 "none"，统一由 _effectiveFP 降级处理）
+        // 合法指纹白名单；无效值通过 _effectiveFP 降级为 "none"（无注入），"none" 本身由上层早出口处理
         const _VALID_FINGERPRINTS = new Set([
             "chrome", "firefox", "safari", "iOS", "android", "edge", "360", "qq", "random", "none"
         ]);
@@ -227,7 +229,8 @@ function main(config) {
             : (console.warn(`⚠️ 无效的 DEFAULT_FINGERPRINT: "${DEFAULT_FINGERPRINT}"，已降级为 "none"`), "none");
 
         if (_effectiveFP === "none") {
-            console.log("ℹ️ TLS 指纹注入已启用，但默认指纹为 'none'，不执行注入。");
+            // 无效值降级为 none 的路径
+            console.log("ℹ️ TLS 指纹注入已启用，但因默认指纹配置无效已降级为 'none'，不执行注入。");
         } else {
             // ── 以下为有效指纹的正常注入逻辑 ──
             // 预处理 SKIP 名单：按 CJK（中日韩字符集）/ASCII（基础字符集）分轨，CJK 关键词直接子串匹配，ASCII 关键词预编译边界正则
@@ -563,15 +566,14 @@ function main(config) {
     //   注入只能使用原始名；若原始名含控制符，会破坏 Clash 规则行语法，危及整个规则文件解析。
     //   两者不是冗余，是刻意的"宽进严出（识别阶段宽容，注入阶段严格）"纵深防御：识别尽量不漏选，注入绝对不破坏语法。
     // proxyGroupName 存储原始值（mainGroup.name），sanitizeName 的清洗结果不用于此处。清洗结果仅用于排除词汇匹配，注入时仍使用原始值。
-    // 四类拒绝维度（不同攻击向量），详细字符集见附录特殊字符集说明。
-    // 注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
+    // 四类拒绝维度（不同攻击向量）。注：_SANITIZE_RE 与此断言存在字符集重叠，但两者作用层次不同（清洗识别副本 vs 拒绝注入原始值），目的不重叠，非冗余。
     // 💡 两层覆盖范围的完整差异说明见 _SANITIZE_RE 注释（权威定义源）；
-    //    本断言为注入层权威说明：仅覆盖 Clash/YAML 语法破坏字符，不覆盖 Bidi 控制符（Bidi 视觉欺骗问题由识别层处理，注入层不需要重复防御）。
-    //    u 标志确保按完整 Unicode 码点解析，与 _SANITIZE_RE 保持一致，便于将来扩展。
+    //    本断言为注入层权威说明：覆盖 Clash/YAML 语法破坏字符和 Bidi 控制符。u 标志确保按完整 Unicode 码点解析，与 _SANITIZE_RE 保持一致，便于将来扩展。
     if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u200B-\u200F\u2060\u2066-\u2069\u2028\u2029\uFEFF]/u.test(proxyGroupName)) {
         console.error(`❌ Token 断言触发：proxyGroupName [${JSON.stringify(proxyGroupName)}] 含非法字符`);
         console.error(`   逗号截断规则语义；方括号/花括号（[ ] { }）破坏 YAML 序列/映射语法；` 
-        +`C0 控制字符（U+0000–U+001F，含 \\t/\\n/\\r）及 NEL（U+0085）——均破坏 Clash 规则语法，脚本中止注入`);
+        +`C0 控制字符（U+0000–U+001F，含 \\t/\\n/\\r）及 NEL（U+0085）破坏 Clash 规则语法；`
+        +`以及零宽度字符 / Bidi 控制符（含 BOM）——均可导致内核规则解析异常或视觉欺骗，脚本中止注入`);
         return config; 
     }
 
@@ -1643,6 +1645,7 @@ function main(config) {
             } else if (typeof config.dns !== "object" || Array.isArray(config.dns)) {
                 // dns 类型异常（如数组、字符串等），保护原始配置，跳过本次 Hosts 覆写
                 console.warn("⚠️ config.dns 类型异常（非对象），已写入顶层 hosts，跳过 dns.hosts 和 fake-ip-filter 注入以保护原始 DNS 配置");
+                // ⚠️ 注意：此 return 会直接退出 main() 函数，后续所有代码（包括未来可能在此 try 块之后新增的逻辑）都不会执行。
                 return config;  // 提前返回，不执行后续 dns.hosts 和 fake-ip-filter 注入
             }
             //    Clash Verge Rev 的配置生效顺序：
@@ -1694,6 +1697,17 @@ function main(config) {
 
             // 合并为完整注册表（替代原硬编码 Set）
             const _SCRIPT_MANAGED_HIJACK = new Set([..._CURRENT_MANAGED, ..._HISTORICAL_MANAGED]);
+            if (ENABLE_MAINTENANCE_CHECKS) {
+            // 🔍 验证 _HISTORICAL_MANAGED 中是否仍有域名属于当前活跃集合（可能是漏删），
+            // 如果某个域名变体仍在 _CURRENT_MANAGED 中，说明它已经重新成为活跃域名，无需继续留在历史集合里。
+                const _redundantHistorical = [..._HISTORICAL_MANAGED].filter(entry => _CURRENT_MANAGED.has(entry));
+                if (_redundantHistorical.length > 0) {
+                    console.warn("⚠️ fake-ip-filter 历史托管域名集合中存在仍属于当前活跃域名的条目，"
+                        + "这可能是从 BACKDOOR_BASE_DOMAINS 移除域名后忘记同步清理历史集合所致：",
+                        _redundantHistorical);
+                }
+            }
+
             // 【性能优化】单次遍历同时完成归一化、去重与分类，避免双重 Set 构造开销。先 trim 归一化（消除首尾空白），过滤非法条目，再用 existingSet 去重并写入 cleanExisting。
             // hosts 字段采用对象展开覆写，而 fake-ip-filter 采用数组追加，两者生命周期管理策略不一致，fake-ip-filter 具有累加性，如需清理请重置 CVR 的 DNS 设置或重置订阅。
             const existingSet   = new Set();
