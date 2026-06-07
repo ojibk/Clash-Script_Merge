@@ -1084,7 +1084,7 @@ function main(config) {
         "cmcm.com",                              // 猎豹移动广告联盟
         "ijinshan.com",                          // 金山猎豹旗下追踪域
         "duba.com",                              // 金山毒霸广告/弹窗
-        // 搜狗（精确子域见 cnAdDomain）
+        // 搜狗（精确子域见 adDomain）
         "inte.sogou.com",                        // 搜狗整合服务遥测
         "theta.sogou.com",                       // 搜狗 A/B 测试上报
         "sogoucdn.com",                          // 搜狗 CDN（广告素材）
@@ -1099,7 +1099,7 @@ function main(config) {
         "p2-pc.daum.net",                        // PotPlayer 侧边栏广告节点 2
         "p1-pc.pdk.daum.net",                    // PotPlayer 广告 CDN 节点
     ];
-    const cnAdDomain = [
+    const adDomain = [
         // 搜狗精确域名（避免误伤 sogou.com 整体）
         "pinyin.sogou.com",                      // 搜狗拼音输入法弹窗
         "news.sogou.com",                        // 搜狗新闻推送
@@ -1404,9 +1404,9 @@ function main(config) {
             pushDomain(miscSoftwareDomain, "REJECT", layerPools.block);
             // 微软遥测（REJECT 立即终止连接）
             pushSuffix(msTelemSuffix, "REJECT", layerPools.block);
-            // 国产广告 / 遥测（REJECT 快速拒绝，广告类无需静默超时）
+            // 广告 / 遥测（REJECT 快速拒绝，广告类无需静默超时）
             pushSuffix(adsSuffix, "REJECT", layerPools.block);
-            pushDomain(cnAdDomain, "REJECT", layerPools.block);
+            pushDomain(adDomain, "REJECT", layerPools.block);
             // 浏览器遥测（REJECT 立即终止连接）
             pushSuffix(mozillaSuffix, "REJECT", layerPools.block);
             pushSuffix(googleTrackSuffix, "REJECT", layerPools.block);
