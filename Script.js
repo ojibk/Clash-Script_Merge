@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入 v260607
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入 v260608
  *
  * 功能：拦截优先 + 放行特定 AI 服务（精确放行 Firefly），Hosts DNS 覆写，模拟客户端指纹，智能匹配策略组等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
@@ -79,8 +79,13 @@ function main(config) {
         console.log("ℹ️ config.proxies 不是数组，跳过指纹注入");
     } else {
         const _VALID = new Set(["chrome","firefox","safari","iOS","android","edge","360","qq","random","none"]);
-        let _rawFP = _VALID.has(DEFAULT_FINGERPRINT) ? DEFAULT_FINGERPRINT : "none";
-        if (!_VALID.has(DEFAULT_FINGERPRINT)) console.warn(`⚠️ 无效指纹 "${DEFAULT_FINGERPRINT}"，降级为 "none"`);
+        let _rawFP;
+        if (_VALID.has(DEFAULT_FINGERPRINT)) {
+            _rawFP = DEFAULT_FINGERPRINT;
+        } else {
+            console.warn(`⚠️ 无效指纹 "${DEFAULT_FINGERPRINT}"，降级为 "none"`);
+            _rawFP = "none";
+        }
 
         // 解析 random 指纹：单次随机数累积比较，概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
         const _effectiveFP = _rawFP === "random"
