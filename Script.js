@@ -560,7 +560,7 @@ function main(config) {
     const processBlockRules = [
         // "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 仅 UDP 443
         // "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 全部 UDP
-        "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证。全部 TCP + 全部 UDP
+        "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证。全部 TCP + 全部 UDP，兜底未知激活域
         "PROCESS-NAME,AdskLicensingService.exe,REJECT-DROP", // Autodesk 许可验证
         "PROCESS-NAME,AdskAccess.exe,REJECT-DROP",           // Autodesk 访问控制
         "PROCESS-NAME,AdskIdentityManager.exe,REJECT-DROP",  // Autodesk 身份认证
@@ -739,6 +739,7 @@ function main(config) {
         } else {
             console.log(`   激进模式: ❌`);
         }
+        console.log(`   全局关键词阻断: ${ENABLE_GLOBAL_KEYWORD_BLOCK ? "✅ (含: " + globalKeyword.join(", ") + ")" : "❌"}`);
         console.log(`   直连规则: ${ENABLE_DIRECT ? "✅" : "❌"}`);
         console.log(`   Hosts 覆写: ${ENABLE_HOSTS_OVERRIDE ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
         console.warn("⚠️ [udpBlock] 所有 UDP 规则依赖域名识别（Fake-IP / Sniffer），ECH 下可能全部失效。");
