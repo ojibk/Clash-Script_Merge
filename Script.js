@@ -87,7 +87,7 @@ function main(config) {
             _rawFP = "none";
         }
 
-        // 解析 random 指纹：单次随机数累积比较，概率：Chrome 50%，Safari 25%，iOS ≈16.7%（1/6），Firefox ≈8.3%（1/12）
+        // random = 每次重载配置触发随机，概率：Chrome 50%，Safari 25%，iOS ≈16.7%（1/6），Firefox ≈8.3%（1/12）
         const _effectiveFP = _rawFP === "random"
             ? (() => {
                 const rand = Math.random();
@@ -253,10 +253,11 @@ function main(config) {
     ];
 
     // ── UDP / QUIC 拦截（强制回退 TCP）──
+    // ⚠️ direct 层对 UDP 无效——udpBlock 强制回退 TCP，fonts/color 只走 TCP DIRECT
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
-        "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
+        // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT", // SUFFIX 规则的 adobestats.io（无协议条件）已覆盖所有协议，此处冗余
         `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`,
     ];
 
