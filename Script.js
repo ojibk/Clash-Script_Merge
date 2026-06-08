@@ -739,7 +739,10 @@ function main(config) {
         } else {
             console.log(`   激进模式: ❌`);
         }
-        console.log(`   全局关键词阻断: ${ENABLE_GLOBAL_KEYWORD_BLOCK ? "✅ (含: " + globalKeyword.join(", ") + ")" : "❌"}`);
+        if (ENABLE_GLOBAL_KEYWORD_BLOCK)
+            console.warn(`   全局关键词阻断: ⚠️ 已开启 (含: ${globalKeyword.join(", ")})`);
+        else
+            console.log(`   全局关键词阻断: ❌`);
         console.log(`   直连规则: ${ENABLE_DIRECT ? "✅" : "❌"}`);
         console.log(`   Hosts 覆写: ${ENABLE_HOSTS_OVERRIDE ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
         console.warn("⚠️ [udpBlock] 所有 UDP 规则依赖域名识别（Fake-IP / Sniffer），ECH 下可能全部失效。");
