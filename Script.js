@@ -87,7 +87,7 @@ function main(config) {
             _rawFP = "none";
         }
 
-        // random = 每次重载配置触发随机，概率：Chrome 50%，Safari 25%，iOS ≈16.7%（1/6），Firefox ≈8.3%（1/12）
+        // random = 每次重载配置触发随机指纹，概率：Chrome 50%，Safari 25%，iOS ≈16.7%（1/6），Firefox ≈8.3%（1/12）
         const _effectiveFP = _rawFP === "random"
             ? (() => {
                 const rand = Math.random();
