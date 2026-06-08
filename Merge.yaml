@@ -128,7 +128,7 @@ dns:
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
 geodata-mode: true              # ⚙️ GeoIP 数据库模式：true = .dat 格式（MetaCubeX），false = .mmdb 格式；统一归属判定
 geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭则停留在出厂版本
-geo-update-interval: 168        # ⏱️ 更新间隔（小时），168=每周
+geo-update-interval: 24        # ⏱️ 更新间隔（小时）
 geox-url:                       # ⚙️ geodata 下载地址（CF 加速），未声明时回退默认
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
@@ -210,6 +210,7 @@ rule-providers:
     format: mrs       # ℹ️ MRS 二进制直接映射
     path: "./ruleset/providers/private.mrs"
     interval: 604800  # ⏱️ 7天，低频变动
+    proxy: DIRECT     # 经过指定代理进行下载/更新
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/private.mrs"
     # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/private.mrs" # 备用
 
@@ -219,6 +220,7 @@ rule-providers:
   #   format: mrs
   #   path: "./ruleset/providers/lan-cidr.mrs" # 重命名避免 geosite/private 冲突
   #   interval: 604800
+  #   proxy: DIRECT     # 经过指定代理进行下载/更新
   #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
   #   # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs" # 备用
 
@@ -237,6 +239,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/ads.mrs"
     interval: 86400   # 24小时，上游变动频繁
+    proxy: DIRECT     # 经过指定代理进行下载/更新
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.mrs"
     # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs" # 备用
 
@@ -246,6 +249,7 @@ rule-providers:
   #   format: mrs
   #   path: "./ruleset/providers/threat.mrs"
   #   interval: 86400
+  #   proxy: DIRECT     # 经过指定代理进行下载/更新
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
   #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs" # 备用
 
@@ -255,6 +259,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/cn.mrs"
     interval: 86400   # 24小时
+    proxy: DIRECT     # 经过指定代理进行下载/更新
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
     # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs" # 备用
 
@@ -264,6 +269,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/non-cn.mrs"
     interval: 86400   # 24小时
+    proxy: DIRECT     # 经过指定代理进行下载/更新
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs"
     # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs" # 备用
 
@@ -273,6 +279,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/hk-restricted.mrs"
     interval: 604800  # 7天，低频变动
+    proxy: DIRECT     # 经过指定代理进行下载/更新
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/hk-restricted.mrs"
     # url: "https://raw.githubusercontent.com/ojibk/rules/main/hk-restricted.mrs" # 备用
 
@@ -282,6 +289,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/amazon.mrs"
     interval: 604800  # 7天
+    proxy: DIRECT     # 经过指定代理进行下载/更新
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
     # url: "https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs" # 备用
 
