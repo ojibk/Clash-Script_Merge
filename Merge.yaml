@@ -210,7 +210,7 @@ rule-providers:
     format: mrs       # ℹ️ MRS 二进制直接映射
     path: "./ruleset/providers/private.mrs"
     interval: 604800  # ⏱️ 7天，低频变动
-    proxy: DIRECT     # 经过指定代理进行下载/更新
+    proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/private.mrs"
     # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/private.mrs" # 备用
 
