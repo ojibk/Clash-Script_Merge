@@ -87,7 +87,7 @@ function main(config) {
             _rawFP = "none";
         }
 
-        // 解析 random 指纹：单次随机数累积比较，概率：Chrome 50%，Safari 25%，iOS 16.7%，Firefox 8.3%
+        // 解析 random 指纹：单次随机数累积比较，概率：Chrome 50%，Safari 25%，iOS ≈16.7%（1/6），Firefox ≈8.3%（1/12）
         const _effectiveFP = _rawFP === "random"
             ? (() => {
                 const rand = Math.random();
@@ -123,8 +123,8 @@ function main(config) {
 
     // ═══════════════ 1. 识别代理策略组 ═══════════════
     let proxyGroupName = null;
-    const EXCLUDED_NAMES = new Set(["DIRECT","REJECT","COMPATIBLE","DEFAULT","MATCH","PASS"].map(s => s.toUpperCase()));
-    const FALLBACK_NAMES = new Set(["GLOBAL"].map(s => s.toUpperCase()));
+    const EXCLUDED_NAMES = new Set(["DIRECT","REJECT","COMPATIBLE","DEFAULT","MATCH","PASS"]);
+    const FALLBACK_NAMES = new Set(["GLOBAL"]);
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|用|球)|所有|默认)$|(?:直连|拒绝)/;
     const FALLBACK_CN_RE = /^全局$/;
     const VALID_PROXY_TYPES = new Set(["select","url-test","fallback","load-balance","smart"]);
@@ -193,7 +193,7 @@ function main(config) {
             console.error(`❌ 代理组排除断言触发：[${proxyGroupName}]`); return config;
         }
     }
-    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u200B-\u200F\u2060\u2066-\u2069\u2028-\u202E\uFEFF]/u.test(proxyGroupName)) {
+    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2065\u2066-\u2069\uFEFF]/u.test(proxyGroupName)) {
         console.error(`❌ 代理组名含非法字符`); return config;
     }
     if (!config["proxy-groups"].some(g => g?.name === proxyGroupName)) {
@@ -246,7 +246,7 @@ function main(config) {
     ];
 
     const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配域名 随机8~12位字母/数字.adobe.io
-    // const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$"; // 匹配域名 随机10位字母/数字.adobe.io
+    // const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$"; // 匹配域名 随机10位字母/数字子域
     const adobeRegex = [
         `DOMAIN-REGEX,${_ADOBE_RAND_RE},REJECT`,
         // `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE},REJECT`,
@@ -323,7 +323,7 @@ function main(config) {
         "966v26.com",                            // 后门主域
         "vposy.com",                             // 知名非官方修改补丁作者域名
         "api.pzz.cn",                            // 国内后门回传接口
-        // "cc-cdn.com",                         // 【待观测】命名形似 Adobe CC CDN，无抓包证据，保守纳入
+        // "cc-cdn.com",                         // 【待观测】命名形似 Adobe CC CDN，无抓包证据
     ];
     const backdoorSuffix = [...BACKDOOR_BASE_DOMAINS];
     const backdoorKeyword = ["966v26"];
@@ -535,7 +535,7 @@ function main(config) {
     const googleTrackKeyword = ["safebrowsing.google"]; // SafeBrowsing 接口（拦截后失去钓鱼防护）
 
     // ── YouTube 遥测 ──
-    const youtubeSuffix = ["youtube-ui.l.google.com"];   // YouTube UI 遥测域
+    const youtubeSuffix = ["youtube-ui.l.google.com"];   // YouTube CDN 负载均衡域（非纯遥测，拦截可能影响画质自适应）
     const youtubeDomain = ["s.youtube.com"];             // 观看历史 + 遥测上报
     const youtubeKeyword = []; // YouTube 内部 API，当前已禁用；启用方式：改为 ['youtubei.googleapis']
 
@@ -665,6 +665,9 @@ function main(config) {
     try {
         const LAYER_ORDER = Object.freeze(["allow","block","process","proxy","aggressive","direct"]);
         const layerPools = { allow:[], block:[], process:[], proxy:[], aggressive:[], direct:[] };
+        const _orderSet = new Set(LAYER_ORDER);
+        for (const k of LAYER_ORDER) if (!(k in layerPools)) throw new Error(`[Script] LAYER_ORDER 键 '${k}' 不在 layerPools 中`);
+        for (const k of Object.keys(layerPools)) if (!_orderSet.has(k)) throw new Error(`[Script] layerPools 键 '${k}' 不在 LAYER_ORDER 中`);
         const pushLayer = (l, r) => {
             if (!(l in layerPools)) throw new Error(`[Script] 未知层 '${l}'，请检查 layerPools 键名`);
             for (const x of r) layerPools[l].push(x);
@@ -697,7 +700,7 @@ function main(config) {
             pushKeyword(googleTrackKeyword, "REJECT", layerPools.block);
             pushSuffix(youtubeSuffix, "REJECT", layerPools.block);
             pushDomain(youtubeDomain, "REJECT", layerPools.block);
-            pushKeyword(youtubeKeyword, "REJECT", layerPools.block); // 该行注释状态须与数据层变量对应行一致
+            pushKeyword(youtubeKeyword, "REJECT", layerPools.block); // 与 youtubeKeyword 数组联动，空数组即禁用
             pushSuffix(genericAdSuffix, "REJECT", layerPools.block);
             if (ENABLE_GLOBAL_KEYWORD_BLOCK) pushKeyword(globalKeyword, "REJECT", layerPools.block);
         }
@@ -710,11 +713,6 @@ function main(config) {
         if (ENABLE_AGGRESSIVE) pushLayer("aggressive", aggressiveRules);
         if (ENABLE_DIRECT) pushLayer("direct", directRules);
 
-        // LAYER_ORDER 双向一致性断言
-        const _orderSet = new Set(LAYER_ORDER);
-        for (const k of LAYER_ORDER) if (!(k in layerPools)) throw new Error(`[Script] LAYER_ORDER 键 '${k}' 不在 layerPools 中`);
-        for (const k of Object.keys(layerPools)) if (!_orderSet.has(k)) throw new Error(`[Script] layerPools 键 '${k}' 不在 LAYER_ORDER 中`);
-
         const finalPool = [_SENTINEL_START];
         for (const k of LAYER_ORDER) for (const r of layerPools[k]) finalPool.push(r);
         finalPool.push(_SENTINEL_END);
@@ -725,7 +723,7 @@ function main(config) {
         console.log(`   脚本状态: ✅ 已启用`);
         console.log(`   拦截模块: ${ENABLE_BLOCK ? "✅" : "❌"}`);
         if (ENABLE_FIREFLY) {
-            console.log(`   Firefly 放行: ${isFireflyActive ? "✅ (allow 层，走 " + proxyGroupName + ")" : "❌ (ENABLE_BLOCK=false，豁免未生效)"}`);
+            console.log(`   Firefly 放行: ${isFireflyActive ? "✅ (allow 层，走 " + proxyGroupName + ")" : "❌ (ENABLE_BLOCK=false，拦截模块未启用)"}`);
         } else {
             console.log(`   Firefly 放行: ❌`);
         }
