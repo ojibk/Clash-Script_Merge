@@ -224,7 +224,6 @@ function main(config) {
         "lmlicenses.wip4.adobe.com",              // 许可证管理服务
         "prod.adobegenuine.com",                  // 正版完整性验证服务
         "na1e.services.adobe.com",                // Genuine 服务备用
-        // "adobedtm.com",                        // Adobe DTM 旧版遥测域，可能仍有旧版 CC 存量实例使用
         "crs.cr.adobe.com",                       // 许可证检查
         "cclibraries-defaults-cdn.adobe.com",     // CC Libraries 默认资源 CDN
         "adobesearch.adobe.io",                   // 搜索遥测
@@ -234,7 +233,6 @@ function main(config) {
         "adobe-dns.adobe.com",                    // Adobe 自有 DNS 服务
         "adobe-dns-2.adobe.com",                  // 同上，备用节点 2
         "adobe-dns-3.adobe.com",                  // 同上，备用节点 3
-        "practivate.adobe.com",                   // 预激活服务
         "lm.licenses.adobe.com",                  // 许可证管理器
         "genuine.adobe.com",                      // 正版验证
         "oobesaas.adobe.com",                     // SaaS 授权验证服务
@@ -243,6 +241,8 @@ function main(config) {
         "assets.entitlement.adobe.com",           // 授权资产校验
         "telemetry.adobe.com",                    // 遥测入口
         "lcs-cops.adobe.io",                      // 云端授权策略端点
+        // "adobedtm.com",                        // Adobe DTM 旧版遥测域，可能仍有旧版 CC 存量实例使用
+        // "practivate.adobe.com",                   // 预激活服务。该域名可能已失效，待观察
     ];
 
     const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配域名 随机8~12位字母/数字.adobe.io
@@ -533,11 +533,11 @@ function main(config) {
         "redirector.gvt1.com",                   // Chrome 遥测重定向节点
         "optimizationguide-pa.googleapis.com",   // Chrome 优化提示遥测
     ];
-    const googleTrackKeyword = ["safebrowsing.google"]; // SafeBrowsing 接口（拦截后失去钓鱼防护）
+    const googleTrackKeyword = ["safebrowsing.google"]; // Safe Browsing 接口（拦截后失去钓鱼防护）
 
     // ── YouTube 遥测 ──
     const youtubeSuffix = ["youtube-ui.l.google.com"];   // YouTube CDN 负载均衡域（非纯遥测，拦截可能影响画质自适应）
-    const youtubeDomain = ["s.youtube.com"];             // 观看历史 + 遥测上报
+    const youtubeDomain = ["s.youtube.com"];             // 观看历史 + 遥测上报 + 广告追踪和日志
     const youtubeKeyword = []; // YouTube 内部 API，当前已禁用；启用方式：改为 ['youtubei.googleapis']
 
     // ── 全球主流广告联盟 ──
@@ -659,7 +659,7 @@ function main(config) {
         "DOMAIN,geo2.adobe.com,REJECT-DROP",                 // ⚠️ 激进：Adobe 地理区域识别备用
         "DOMAIN-SUFFIX,accounts.autodesk.com,REJECT-DROP",   // ⚠️ 激进：Autodesk 账户登录
         "DOMAIN-SUFFIX,entitlement.autodesk.com,REJECT-DROP",// ⚠️ 激进：Autodesk 授权端点
-        "DOMAIN,ieonline.microsoft.com,REJECT-DROP",         // ⚠️ 激进：IE 内核在线检测
+        "DOMAIN,ieonline.microsoft.com,REJECT-DROP",         // ⚠️ 激进：IE 内核在线检测 / 旧版 Office 激活
     ];
 
     // ═══════════════ 3. 规则组装与注入 ═══════════════
