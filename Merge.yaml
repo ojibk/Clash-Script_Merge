@@ -73,10 +73,10 @@ dns:
 
   # ── 主动精准分流（主路径） ──
   nameserver-policy:
-    # 强制规则集 CDN 域名使用国内安全 DoH 解析，防止冷启动时因外网 DNS 未就绪而卡死
-    "testingcf.jsdelivr.net":
-      - https://doh.pub/dns-query
-      - https://dns.alidns.com/dns-query
+    # # 强制规则集 CDN 域名使用国内安全 DoH 解析，防止冷启动时因外网 DNS 未就绪而卡死
+    # "testingcf.jsdelivr.net":
+    #   - https://doh.pub/dns-query
+    #   - https://dns.alidns.com/dns-query
     # 国内域名 → 国内明文 DNS，延迟最低，CDN 最优
     "geosite:cn":
       - 223.5.5.5
@@ -104,7 +104,7 @@ dns:
   # ── 回退过滤器 ──
   fallback-filter:
     geoip: true
-    geoip-code: CN                       # 非 CN IP 视为可疑，触发 fallback 重查
+    geoip-code: CN                       # 非 CN IP 触发 fallback 重查
     ipcidr:                              # 补充明确污染 IP 网段
       - 240.0.0.0/4                      # E 类保留地址
       - 0.0.0.0/8                        # 本网络保留段
@@ -290,6 +290,12 @@ rule-providers:
 # ============================================================
 # 顺序即优先级，MATCH 兜底不可省略。
 rules:
+  # ── 核心网络基础设施（防死锁与防阻断） ──
+  - IP-CIDR,1.1.1.1/32,🎛️ 动态选择,no-resolve     # 确保 Cloudflare DNS 走代理
+  - IP-CIDR,1.0.0.1/32,🎛️ 动态选择,no-resolve
+  - IP-CIDR,8.8.8.8/32,🎛️ 动态选择,no-resolve     # 确保 Google DNS 走代理
+  - IP-CIDR,8.8.4.4/32,🎛️ 动态选择,no-resolve
+
   # ── 本地放行（绝对确定） ──
   - RULE-SET,private,DIRECT             # 🔓 私有/保留域名直连
   # - RULE-SET,lan-cidr,DIRECT,no-resolve # 🔓 局域网 IP 直连（需启用对应 rule-provider）
