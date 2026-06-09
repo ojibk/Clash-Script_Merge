@@ -39,11 +39,6 @@ function main(config) {
 
     // ═══════════════ 无条件清理遗留调试标记 ═══════════════
     config.rules = config.rules.filter(r => r !== "DOMAIN,debug-script-disabled.marker.invalid,REJECT");
-    // ═══════════════ 脚本总开关与禁用标记逻辑 ═══════════════
-    if (!ENABLE_SCRIPT) {
-        config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
-        return config;
-    }
 
     // ═══════════════ 哨兵幂等清理 ═══════════════
     const _SENTINEL_START = "DOMAIN,START-rule-injection-sentinel.invalid,REJECT";
@@ -71,6 +66,12 @@ function main(config) {
         .map(n => String(n).padStart(2, "0")).join(":");
     console.log(`📊 配置注入开始 [${_ts}]`);
     console.log("=".repeat(28));
+    
+    // ═══════════════ 脚本总开关与禁用标记逻辑 ═══════════════
+    if (!ENABLE_SCRIPT) {
+        config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
+        return config;
+    }
 
     // ═══════════════ client-fingerprint 注入 ═══════════════
     if (!ENABLE_CLIENT_FINGERPRINT) {
@@ -755,9 +756,9 @@ function main(config) {
         console.log(`   Hosts 覆写: ${ENABLE_HOSTS_OVERRIDE ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
         console.warn("⚠️ [udpBlock] 所有 UDP 规则依赖域名识别（Fake-IP / Sniffer），ECH 下可能全部失效。");
         console.log(`   ▶ 注入规则条目分层统计:`);
+        const _LAYER_LABELS = { allow:"放行层", block:"拦截层", process:"进程层", proxy:"代理层", aggressive:"激进层", direct:"直连层" };
         for (const k of LAYER_ORDER) {
-            const label = { allow:"放行层", block:"拦截层", process:"进程层", proxy:"代理层", aggressive:"激进层", direct:"直连层" };
-            console.log(`      - ${label[k]} (${k})  : ${layerPools[k].length} 条`);
+            console.log(`      - ${_LAYER_LABELS[k]} (${k})  : ${layerPools[k].length} 条`);
         }
         console.log(`   注入规则数: ${finalPool.length} 条（含首尾哨兵）`);
         console.log(`   总规则数: ${config.rules.length} 条`);
