@@ -39,6 +39,11 @@ function main(config) {
 
     // ═══════════════ 无条件清理遗留调试标记 ═══════════════
     config.rules = config.rules.filter(r => r !== "DOMAIN,debug-script-disabled.marker.invalid,REJECT");
+    // ══════════════ 脚本总开关与禁用标记逻辑 ══════════════
+    if (!ENABLE_SCRIPT) {
+        config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
+        return config;
+    }
 
     // ═══════════════ 哨兵幂等清理 ═══════════════
     const _SENTINEL_START = "DOMAIN,START-rule-injection-sentinel.invalid,REJECT";
@@ -243,7 +248,7 @@ function main(config) {
         // "practivate.adobe.com",                   // 预激活服务。该域名可能已失效，待验证
     ];
 
-    const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配随机8~12位字母/数字 .adobe.io 子域
+    const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配随机8~12位字母/数字.adobe.io 子域
     // const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$"; // 匹配随机10位字母/数字子域
     const adobeRegex = [
         `DOMAIN-REGEX,${_ADOBE_RAND_RE},REJECT`,
@@ -559,7 +564,7 @@ function main(config) {
     const globalKeyword = ["telemetry", "analytics", "stats", "metrics"];
 
     // ── 进程规则（需 TUN + 管理员权限）──
-    // 注：上述规则中 REJECT-DROP（静默丢弃）用于让目标进程“感知不到”网络，REJECT（发送 TCP RST）用于让进程快速失败；选择依据是进程对网络超时的敏感度。
+    // 注：规则中 REJECT-DROP（静默丢弃）用于让目标进程“感知不到”网络，REJECT（发送 TCP RST）用于让进程快速失败；选择依据是进程对网络超时的敏感度。
     const processBlockRules = [
         // "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 仅 UDP 443
         // "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 全部 UDP
