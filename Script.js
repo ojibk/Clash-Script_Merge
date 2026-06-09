@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入 v260608
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入 v260609
  *
  * 功能：拦截优先 + 放行特定 AI 服务（精确放行 Firefly），Hosts DNS 覆写，模拟客户端指纹，智能匹配策略组等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
@@ -22,7 +22,7 @@ function main(config) {
     const ENABLE_MAINTENANCE_CHECKS = false;     // 检查 fake-ip-filter 中是否残留已废弃的历史托管域名（调试用）
     const ENABLE_CLIENT_FINGERPRINT = true;
     const DEFAULT_FINGERPRINT = "chrome";        // TLS 指纹预设
-    const FINGERPRINT_SKIP = [];                 // 指纹跳过名单：节点名含这些关键词则不注入 fingerprint
+    const FINGERPRINT_SKIP = [];                 // 指纹跳过名单：节点名含这些关键词则不注入指纹
     const isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 放行规则是否注入
 
     // ═══════════════ 防御性检查 ═══════════════
@@ -67,14 +67,14 @@ function main(config) {
     console.log("=".repeat(28));
     const _ts = [_now.getHours(), _now.getMinutes(), _now.getSeconds()]
         .map(n => String(n).padStart(2, "0")).join(":");
-    console.log(`📊 节点与规则链注入开始 [${_ts}]`);
+    console.log(`📊 配置注入开始 [${_ts}]`);
     console.log("=".repeat(28));
 
     // ═══════════════ client-fingerprint 注入 ═══════════════
     if (!ENABLE_CLIENT_FINGERPRINT) {
         console.log("ℹ️ TLS 指纹注入已禁用");
     } else if (DEFAULT_FINGERPRINT === "none") {
-        console.log("ℹ️ TLS 指纹注入已启用，但默认指纹为 'none'，跳过");
+        console.log("ℹ️ TLS 指纹开关已开启，但指纹值配置为 'none'，等同禁用，跳过注入");
     } else if (!Array.isArray(config.proxies)) {
         console.log("ℹ️ config.proxies 不是数组，跳过指纹注入");
     } else {
@@ -101,7 +101,7 @@ function main(config) {
         if (_effectiveFP === "none") {
             console.log("ℹ️ TLS 指纹注入因配置无效已降级为 'none'，跳过");
         } else {
-            if (_rawFP === "random") console.log(`💡 已从 random 解析为固定指纹: ${_effectiveFP}`);
+            if (_rawFP === "random") console.log(`💡 本次加载已从 random 解析为: ${_effectiveFP}`);
             const _skipKw = [], _skipRe = [];
             for (const raw of FINGERPRINT_SKIP) {
                 if (typeof raw !== "string" || !raw) continue;
@@ -125,7 +125,7 @@ function main(config) {
     let proxyGroupName = null;
     const EXCLUDED_NAMES = new Set(["DIRECT","REJECT","COMPATIBLE","DEFAULT","MATCH","PASS"]);
     const FALLBACK_NAMES = new Set(["GLOBAL"]);
-    const EXCLUDED_CN_RE = /^(?:全(?:部|网|用|球)|所有|默认)$|(?:直连|拒绝)/;
+    const EXCLUDED_CN_RE = /^(?:全(?:部|网|球)|所有|默认)$|(?:直连|拒绝)/;
     const FALLBACK_CN_RE = /^全局$/;
     const VALID_PROXY_TYPES = new Set(["select","url-test","fallback","load-balance","smart"]);
     const _UNSUITABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
@@ -206,7 +206,7 @@ function main(config) {
     const pushKeyword = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN-KEYWORD,${v},${a}`); });
 
     // ── Adobe 共用鉴权端点（包括 Firefly 和 CC） ──
-    // 注意：与 isFireflyActive 开关绑定，Firefly 开启时走代理放行，Firefly 关闭时走 REJECT 拦截。
+    // 注意：与 isFireflyActive 开关绑定，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
     const adobeSharedDeps = [
         "ims-na1.adobelogin.com",                 // 登录令牌刷新
         "adobeid-na1.services.adobe.com",         // Adobe ID 服务
@@ -245,15 +245,15 @@ function main(config) {
         // "practivate.adobe.com",                   // 预激活服务。该域名可能已失效，待观察
     ];
 
-    const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配域名 随机8~12位字母/数字.adobe.io
-    // const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$"; // 匹配域名 随机10位字母/数字子域
+    const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配随机8~12位字母/数字.adobe.io 子域
+    // const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$"; // 匹配随机10位字母/数字子域
     const adobeRegex = [
         `DOMAIN-REGEX,${_ADOBE_RAND_RE},REJECT`,
         // `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE},REJECT`,
     ];
 
     // ── UDP / QUIC 拦截（强制回退 TCP）──
-    // ⚠️ direct 层对 UDP 无效——udpBlock 强制回退 TCP，fonts/color 只走 TCP DIRECT
+    // ⚠️ UDP 流量在 block 层已被 udpBlock 拦截（REJECT），因此 direct 层的 fonts/color 规则对 UDP 永远不可达；fonts/color 实际只走 TCP DIRECT
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
@@ -314,7 +314,7 @@ function main(config) {
         "ipm-aem.autodesk.com",                  // 弹窗消息（精确匹配）
     ];
     const autodeskKeyword = [
-        "adlm",                                  // 桌面许可证模块关键词
+        // "adlm",                                  // 桌面许可证模块关键词。⚠️ 4字符短串，存在极低概率误伤不相关含 adlm 子串的域名
         "telemetry.autodesk",                    // 遥测模块关键词兜底
         "entitlement.autodesk",                  // 授权模块关键词兜底
     ];
@@ -499,7 +499,7 @@ function main(config) {
         "metasogou.com",                         // 搜狗元数据追踪
         // Flash/PotPlayer
         "flash.cn",                              // Flash 国内分发域
-        "kakaocorp.com",                         // PotPlayer 关联公司统计上报
+        "kakaocorp.com",                         // PotPlayer 母公司 Kakao 统计上报
         "p1-pc.daum.net",                        // PotPlayer 侧边栏广告
         "p2-pc.daum.net",                        // PotPlayer 侧边栏广告节点 2
         "p1-pc.pdk.daum.net",                    // PotPlayer 广告 CDN 节点
@@ -565,7 +565,7 @@ function main(config) {
         "PROCESS-NAME,AdskAccess.exe,REJECT-DROP",           // Autodesk 访问控制
         "PROCESS-NAME,AdskIdentityManager.exe,REJECT-DROP",  // Autodesk 身份认证
         "PROCESS-NAME,CorelDRW.exe,REJECT-DROP",             // CorelDRAW
-        // "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",    // 进程间通信代理，误伤风险：可能影响 PS/AI 启动
+        // "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",    // 进程间通信代理，误伤风险：可能影响 Ps/Ai 启动
         "PROCESS-NAME,360sd.exe,REJECT-DROP",                // 360 杀毒
         "PROCESS-NAME,360tray.exe,REJECT",                   // 360 系统托盘
         "PROCESS-NAME,2345Mini.exe,REJECT",                  // 2345 迷你窗口
@@ -614,7 +614,7 @@ function main(config) {
         "DOMAIN-SUFFIX,msftidentity.com,DIRECT",           // 微软身份服务
         "DOMAIN-SUFFIX,passport.net,DIRECT",               // 微软 Passport 认证（旧版）
         "DOMAIN-SUFFIX,windowsupdate.com,DIRECT",          // Windows Update 更新服务
-        "DOMAIN-SUFFIX,microsoftpersonalcontent.com,DIRECT",// 微软个人内容 CDN
+        "DOMAIN-SUFFIX,microsoftpersonalcontent.com,DIRECT", // 微软个人内容 CDN
         "DOMAIN-SUFFIX,msocsp.com,DIRECT",                 // 微软证书吊销列表 (OCSP)
         "DOMAIN-SUFFIX,msedge.net,DIRECT",                 // Microsoft Edge CDN/更新
         "DOMAIN-SUFFIX,msftconnecttest.com,DIRECT",        // NCSI 连通性探测（拦截后显示「无网络」）
