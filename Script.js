@@ -23,7 +23,7 @@ function main(config) {
     const ENABLE_CLIENT_FINGERPRINT = true;      // TLS 指纹注入开关（为代理节点批量添加 client-fingerprint）
     const DEFAULT_FINGERPRINT = "chrome";        // TLS 指纹预设
     const FINGERPRINT_SKIP = [];                 // 指纹跳过名单：节点名含这些关键词则不注入指纹
-    const isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 放行规则是否注入
+    const fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 放行规则是否注入
 
     // ═══════════════ 防御性检查 ═══════════════
     if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -216,7 +216,7 @@ function main(config) {
     });
 
     // ── Adobe 共用鉴权端点（包括 Firefly 和 CC） ──
-    // 注意：受控于 isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK 两个开关，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
+    // 注意：受控于 fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK 两个开关，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
     const adobeSharedDeps = [
         "ims-na1.adobelogin.com",                 // 登录令牌刷新
         "adobeid-na1.services.adobe.com",         // Adobe ID 服务
@@ -259,7 +259,7 @@ function main(config) {
     // const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$"; // 匹配随机10位字母/数字子域
     const adobeRegex = [
         `DOMAIN-REGEX,${_ADOBE_RAND_RE},REJECT`,
-        // `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE},REJECT`,
+        // `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE},REJECT`, // 已被 adobeSuffix 的 "adobestats.io" 覆盖
     ];
 
     // ── UDP / QUIC 拦截（强制回退 TCP）──
@@ -393,7 +393,7 @@ function main(config) {
         "vortex.data.microsoft.com",             // Windows 错误报告
         "settings-win.data.microsoft.com",       // Windows 诊断数据上报
         "watson.telemetry.microsoft.com",        // Watson 崩溃报告服务
-        // 注：当前精确匹配 v10/v20，若微软推出 v30 等新版本需手动添加。更通用的 DOMAIN-SUFFIX,events.data.microsoft.com 会覆盖未知子域。
+        // 注：当前精确匹配 v10/v20，若微软推出 v30 等新版本需手动添加。但更通用的 DOMAIN-SUFFIX,events.data.microsoft.com 会覆盖未知子域。
         "v10.events.data.microsoft.com",         // Windows 诊断数据 v1.0
         "v20.events.data.microsoft.com",         // Windows 诊断数据 v2.0
     ];
@@ -544,7 +544,7 @@ function main(config) {
         "google-analytics.com",                  // Google Analytics 主域
         "analytics.google.com",                  // Google Analytics API
         "googletagmanager.com",                  // Google Tag Manager
-        "redirector.gvt1.com",                   // Chrome 遥测重定向节点
+        "redirector.gvt1.com",                   // Google 更新/扩展下载重定向服务（非纯遥测，拦截可能影响更新）
         "optimizationguide-pa.googleapis.com",   // Chrome 优化提示遥测
     ];
     const googleTrackKeyword = ["safebrowsing.google"]; // Safe Browsing 接口（拦截后失去钓鱼防护）
@@ -673,8 +673,8 @@ function main(config) {
         "DOMAIN,geo.adobe.com,REJECT-DROP",                  // ⚠️ 激进：Adobe 地理区域识别
         "DOMAIN,geo2.adobe.com,REJECT-DROP",                 // ⚠️ 激进：Adobe 地理区域识别备用
         "DOMAIN-SUFFIX,accounts.autodesk.com,REJECT-DROP",   // ⚠️ 激进：Autodesk 账户登录
-        "DOMAIN-SUFFIX,entitlement.autodesk.com,REJECT-DROP",// ⚠️ 激进：Autodesk 授权端点
         "DOMAIN,ieonline.microsoft.com,REJECT-DROP",         // ⚠️ 激进：IE 内核在线检测 / 旧版 Office 激活
+        // "DOMAIN-SUFFIX,entitlement.autodesk.com,REJECT-DROP",// ⚠️ 激进：Autodesk 授权端点；被 autodeskKeyword 层规则遮蔽
     ];
 
     // ═══════════════ 3. 规则组装与注入 ═══════════════
@@ -690,7 +690,7 @@ function main(config) {
         };
 
         if (ENABLE_BLOCK) {
-            const [act, pool] = isFireflyActive ? [proxyGroupName, layerPools.allow] : ["REJECT", layerPools.block];
+            const [act, pool] = fireflyUseProxy ? [proxyGroupName, layerPools.allow] : ["REJECT", layerPools.block];
             pushSuffix(adobeSharedDeps, act, pool);
             pushFirefly(adobeFireflyOnly, act, pool);
             pushSuffix(adobeSuffix, "REJECT", layerPools.block);
@@ -739,7 +739,7 @@ function main(config) {
         console.log(`   脚本状态: ✅ 已启用`);
         console.log(`   拦截模块: ${ENABLE_BLOCK ? "✅" : "❌"}`);
         if (ENABLE_FIREFLY) {
-            console.log(`   Firefly 放行: ${isFireflyActive ? `✅ (allow 层，走 ${proxyGroupName})` : "❌ (ENABLE_BLOCK=false，拦截模块未启用)"}`);
+            console.log(`   Firefly 放行: ${fireflyUseProxy ? `✅ (allow 层，走 ${proxyGroupName})` : "❌ (ENABLE_BLOCK=false，拦截模块未启用)"}`);
         } else {
             console.log(`   Firefly 放行: ❌`);
         }
