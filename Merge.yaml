@@ -1,5 +1,5 @@
 # ============================================================
-# Clash-Merge 全局扩展覆写配置 v260608
+# Clash-Merge 全局扩展覆写配置 v260609
 # 绕行港区受限网络服务智能路由覆写配置
 # 静态规则链，支持独立运行。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
@@ -128,7 +128,7 @@ dns:
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
 geodata-mode: true              # ⚙️ GeoIP 数据库模式：true = .dat 格式（MetaCubeX），false = .mmdb 格式；统一归属判定
 geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭则停留在出厂版本
-geo-update-interval: 24        # ⏱️ 更新间隔（小时）
+geo-update-interval: 24        # ⏱️ 更新间隔（小时），24=每日
 geox-url:                       # ⚙️ geodata 下载地址（CF 加速），未声明时回退默认
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
@@ -220,7 +220,7 @@ rule-providers:
   #   format: mrs
   #   path: "./ruleset/providers/lan-cidr.mrs" # 重命名避免 geosite/private 冲突
   #   interval: 604800
-  #   proxy: DIRECT     # 经过指定代理进行下载/更新
+  #   proxy: DIRECT     # 指定规则集下载/更新出口
   #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
   #   # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs" # 备用
 
