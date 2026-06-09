@@ -19,7 +19,7 @@ function main(config) {
     const ENABLE_DIRECT          = true;         // 直连模块
     const ENABLE_HOSTS_OVERRIDE  = true;         // Hosts DNS 覆写
     const HOSTS_MODE = "ipv4-loopback";          // 模式: ipv4-loopback | ipv4-blackhole | dual-loopback | dual-blackhole
-    const DEBUG_FAKEIPFILTER_CLEANUP = false;     // 检查 fake-ip-filter 中是否残留已废弃的历史托管域名（调试用）
+    const DEBUG_FAKEIPFILTER_CLEANUP = false;    // 检查 fake-ip-filter 中是否残留已废弃的历史托管域名（调试用）
     const ENABLE_CLIENT_FINGERPRINT = true;      // TLS 指纹注入开关（为代理节点批量添加 client-fingerprint）
     const DEFAULT_FINGERPRINT = "chrome";        // TLS 指纹预设
     const FINGERPRINT_SKIP = [];                 // 指纹跳过名单：节点名含这些关键词则不注入指纹
@@ -60,6 +60,13 @@ function main(config) {
         config.rules = newRules;
     }
 
+    // ═══════════════ 脚本总开关与禁用标记逻辑 ═══════════════
+    if (!ENABLE_SCRIPT) {
+        config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
+        return config;
+    }
+
+    // ═══════════════ 时间戳 ═══════════════
     const _now = new Date();
     console.log("=".repeat(28));
     const _ts = [_now.getHours(), _now.getMinutes(), _now.getSeconds()]
@@ -67,12 +74,6 @@ function main(config) {
     console.log(`📊 配置注入开始 [${_ts}]`);
     console.log("=".repeat(28));
     
-    // ═══════════════ 脚本总开关与禁用标记逻辑 ═══════════════
-    if (!ENABLE_SCRIPT) {
-        config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
-        return config;
-    }
-
     // ═══════════════ client-fingerprint 注入 ═══════════════
     if (!ENABLE_CLIENT_FINGERPRINT) {
         console.log("ℹ️ TLS 指纹注入已禁用");
