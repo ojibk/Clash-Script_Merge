@@ -210,6 +210,11 @@ function main(config) {
     const pushDomain  = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN,${v},${a}`); });
     const pushKeyword = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN-KEYWORD,${v},${a}`); });
 
+    // Firefly 专属：仅放行 TCP，避免 UDP/QUIC 被错误代理，确保 udpBlock 能快速终止 QUIC 以回退 TCP
+    const pushFirefly = (d, a, p) => d.forEach(v => {
+        if (typeof v === "string" && v) p.push(`AND,((NETWORK,TCP),(DOMAIN-SUFFIX,${v})),${a}`);
+    });
+
     // ── Adobe 共用鉴权端点（包括 Firefly 和 CC） ──
     // 注意：受控于 isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK 两个开关，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
     const adobeSharedDeps = [
@@ -687,7 +692,7 @@ function main(config) {
         if (ENABLE_BLOCK) {
             const [act, pool] = isFireflyActive ? [proxyGroupName, layerPools.allow] : ["REJECT", layerPools.block];
             pushSuffix(adobeSharedDeps, act, pool);
-            pushSuffix(adobeFireflyOnly, act, pool);
+            pushFirefly(adobeFireflyOnly, act, pool);
             pushSuffix(adobeSuffix, "REJECT", layerPools.block);
             pushLayer("block", adobeRegex);
             pushLayer("block", udpBlock);
