@@ -39,7 +39,7 @@ function main(config) {
 
     // ═══════════════ 无条件清理遗留调试标记 ═══════════════
     config.rules = config.rules.filter(r => r !== "DOMAIN,debug-script-disabled.marker.invalid,REJECT");
-    // ══════════════ 脚本总开关与禁用标记逻辑 ══════════════
+    // ═══════════════ 脚本总开关与禁用标记逻辑 ═══════════════
     if (!ENABLE_SCRIPT) {
         config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
         return config;
@@ -130,7 +130,7 @@ function main(config) {
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|球)|所有|默认)$|(?:直连|拒绝)/;
     const FALLBACK_CN_RE = /^全局$/;
     const VALID_PROXY_TYPES = new Set(["select","url-test","fallback","load-balance","smart"]);
-    const NOROUTABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
+    const NONROUTABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
 
     // 运行时断言：FALLBACK_NAMES 与 EXCLUDED_NAMES 必须互斥
     {
@@ -167,7 +167,7 @@ function main(config) {
             if (entry) console.warn(`⚠️ 降级使用兜底组 [${entry.g.name}]`);
         }
         if (!entry) {
-            entry = prepped.find(e => e.eligible && !NOROUTABLE_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
+            entry = prepped.find(e => e.eligible && !NONROUTABLE_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
             if (entry) console.warn(`🚨 最终容错选取 [${entry.g.name}]`);
         }
 
