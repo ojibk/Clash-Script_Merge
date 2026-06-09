@@ -1,7 +1,7 @@
 /**
  * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入 v260609
  *
- * 功能：拦截优先 + 放行特定 AI 服务（精确放行 Firefly），Hosts DNS 覆写，模拟客户端指纹，智能匹配策略组等。
+ * 功能：默认拦截 + 白名单放行特定 AI 服务（Firefly），Hosts DNS 覆写，模拟客户端指纹，智能匹配策略组等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
 
@@ -19,7 +19,7 @@ function main(config) {
     const ENABLE_DIRECT          = true;         // 直连模块
     const ENABLE_HOSTS_OVERRIDE  = true;         // Hosts DNS 覆写
     const HOSTS_MODE = "ipv4-loopback";          // 模式: ipv4-loopback | ipv4-blackhole | dual-loopback | dual-blackhole
-    const ENABLE_MAINTENANCE_CHECKS = false;     // 检查 fake-ip-filter 中是否残留已废弃的历史托管域名（调试用）
+    const DEBUG_FAKEIPFILTER_CLEANUP = false;     // 检查 fake-ip-filter 中是否残留已废弃的历史托管域名（调试用）
     const ENABLE_CLIENT_FINGERPRINT = true;      // TLS 指纹注入开关（为代理节点批量添加 client-fingerprint）
     const DEFAULT_FINGERPRINT = "chrome";        // TLS 指纹预设
     const FINGERPRINT_SKIP = [];                 // 指纹跳过名单：节点名含这些关键词则不注入指纹
@@ -58,12 +58,6 @@ function main(config) {
         if (stack.length) console.warn(`⚠️ ${stack.length} 个未闭合哨兵块`);
         if (_orphanEndCount) console.warn(`⚠️ ${_orphanEndCount} 个孤立 END`);
         config.rules = newRules;
-    }
-
-    if (!ENABLE_SCRIPT) {
-        config.rules = config.rules.filter(r => r !== "DOMAIN,debug-script-disabled.marker.invalid,REJECT");
-        config.rules.unshift("DOMAIN,debug-script-disabled.marker.invalid,REJECT");
-        return config;
     }
 
     const _now = new Date();
@@ -131,7 +125,7 @@ function main(config) {
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|球)|所有|默认)$|(?:直连|拒绝)/;
     const FALLBACK_CN_RE = /^全局$/;
     const VALID_PROXY_TYPES = new Set(["select","url-test","fallback","load-balance","smart"]);
-    const _UNSUITABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
+    const NOROUTABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
 
     // 运行时断言：FALLBACK_NAMES 与 EXCLUDED_NAMES 必须互斥
     {
@@ -168,7 +162,7 @@ function main(config) {
             if (entry) console.warn(`⚠️ 降级使用兜底组 [${entry.g.name}]`);
         }
         if (!entry) {
-            entry = prepped.find(e => e.eligible && !_UNSUITABLE_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
+            entry = prepped.find(e => e.eligible && !NOROUTABLE_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
             if (entry) console.warn(`🚨 最终容错选取 [${entry.g.name}]`);
         }
 
@@ -210,7 +204,7 @@ function main(config) {
     const pushKeyword = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN-KEYWORD,${v},${a}`); });
 
     // ── Adobe 共用鉴权端点（包括 Firefly 和 CC） ──
-    // 注意：与 isFireflyActive 开关绑定，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
+    // 注意：受控于 isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK 两个开关，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
     const adobeSharedDeps = [
         "ims-na1.adobelogin.com",                 // 登录令牌刷新
         "adobeid-na1.services.adobe.com",         // Adobe ID 服务
@@ -218,7 +212,7 @@ function main(config) {
         "cc-api-cp.adobe.io",                     // CC 权限校验，含 Firefly 订阅验证
         "cc-api-data.adobe.io",                   // CC 生成结果存储
         "lcs-roaming.adobe.io",                   // 授权漫游，Firefly 订阅状态同步
-        "scdown.adobe.io",                        // 推断为 Firefly 依赖端点（无直接抓包证据，待观察）
+        "scdown.adobe.io",                        // 推断为 Firefly 依赖端点（无直接抓包证据，待验证）
     ];
 
     // ── Adobe 激活 / 遥测拦截 ──
@@ -246,7 +240,7 @@ function main(config) {
         "telemetry.adobe.com",                    // 遥测入口
         "lcs-cops.adobe.io",                      // 云端授权策略端点
         // "adobedtm.com",                        // Adobe DTM 旧版遥测域，可能仍有旧版 CC 存量实例使用
-        // "practivate.adobe.com",                   // 预激活服务。该域名可能已失效，待观察
+        // "practivate.adobe.com",                   // 预激活服务。该域名可能已失效，待验证
     ];
 
     const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配随机8~12位字母/数字 .adobe.io 子域
@@ -331,7 +325,7 @@ function main(config) {
         "966v26.com",                            // 后门主域
         "vposy.com",                             // 知名非官方修改补丁作者域名
         "api.pzz.cn",                            // 国内后门回传接口
-        // "cc-cdn.com",                         // 【待观测】命名形似 Adobe CC CDN，无抓包证据
+        // "cc-cdn.com",                         // 【待验证】命名形似 Adobe CC CDN，无抓包证据
     ];
     const backdoorSuffix = [...BACKDOOR_BASE_DOMAINS];
     const backdoorKeyword = ["966v26"];
@@ -659,7 +653,7 @@ function main(config) {
 
     // ── 激进阻断规则（默认关闭）──
     const aggressiveRules = [
-        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // ⚠️ 激进：所有 adobe.io 子域（SUFFIX 已兜底）
+        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // ⚠️ 激进：所有 adobe.io 子域（已由 SUFFIX 超集覆盖）
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // ⚠️ 激进：adobe.io 裸域+全部子域
         // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP", // 多平台共用域，建议审查后启用
         "DOMAIN-SUFFIX,adsk.com,REJECT-DROP",                // ⚠️ 激进：Autodesk 旧版遥测
@@ -760,7 +754,7 @@ function main(config) {
             const label = { allow:"放行层", block:"拦截层", process:"进程层", proxy:"代理层", aggressive:"激进层", direct:"直连层" };
             console.log(`      - ${label[k]} (${k})  : ${layerPools[k].length} 条`);
         }
-        console.log(`   注入规则数: ${finalPool.length} 条（含首位哨兵）`);
+        console.log(`   注入规则数: ${finalPool.length} 条（含首尾哨兵）`);
         console.log(`   总规则数: ${config.rules.length} 条`);
         console.log(`   脚本执行耗时: ${Date.now() - _startTime} ms（含指纹注入，不含 Hosts 覆写）`);
         console.log("=".repeat(28));
@@ -801,10 +795,11 @@ function main(config) {
                 }
 
                 const currentManaged = new Set(BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase()));
+                // 确认订阅中已无这些条目后可安全删除
                 const LEGACY_CLEANUP_ENTRIES = ["api.966v26.com","status.966v26.com","+.cc-cdn.com","cc-cdn.com","*.cc-cdn.com"];
                 const scriptManaged = new Set([...currentManaged, ...LEGACY_CLEANUP_ENTRIES.map(s => s.toLowerCase())]);
 
-                if (ENABLE_MAINTENANCE_CHECKS) {
+                if (DEBUG_FAKEIPFILTER_CLEANUP) {
                     const redundant = LEGACY_CLEANUP_ENTRIES.filter(e => currentManaged.has(e.toLowerCase()));
                     if (redundant.length) console.warn("⚠️ 历史托管域名中存在仍属当前活跃集合的冗余条目，建议清理:", redundant);
                 }
