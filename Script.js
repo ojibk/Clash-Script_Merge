@@ -20,7 +20,7 @@ function main(config) {
     const ENABLE_HOSTS_OVERRIDE  = true;         // Hosts DNS 覆写
     const HOSTS_MODE = "ipv4-loopback";          // 模式: ipv4-loopback | ipv4-blackhole | dual-loopback | dual-blackhole
     const ENABLE_MAINTENANCE_CHECKS = false;     // 检查 fake-ip-filter 中是否残留已废弃的历史托管域名（调试用）
-    const ENABLE_CLIENT_FINGERPRINT = true;
+    const ENABLE_CLIENT_FINGERPRINT = true;      // TLS 指纹注入开关（为代理节点批量添加 client-fingerprint）
     const DEFAULT_FINGERPRINT = "chrome";        // TLS 指纹预设
     const FINGERPRINT_SKIP = [];                 // 指纹跳过名单：节点名含这些关键词则不注入指纹
     const isFireflyActive = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 放行规则是否注入
@@ -306,7 +306,7 @@ function main(config) {
         "genuine-software.autodesk.com",         // 正版验证服务
         "edge.activity.autodesk.com",            // 活动/行为追踪
         "developer.api.autodesk.com",            // 开发者 API（含许可验证）
-        "autodesk.com.edgekey.net",              // Akamai CDN 节点（授权验证回源）
+        "autodesk.com.edgekey.net",              // Akamai CDN 节点（推断含授权回源，可能同时影响下载等服务）
         "crp.autodesk.com",                      // 云渲染授权
         "autodesk.flexnetoperations.com",        // FlexNet Operations 许可云平台
     ];
@@ -724,7 +724,7 @@ function main(config) {
         console.log(`   脚本状态: ✅ 已启用`);
         console.log(`   拦截模块: ${ENABLE_BLOCK ? "✅" : "❌"}`);
         if (ENABLE_FIREFLY) {
-            console.log(`   Firefly 放行: ${isFireflyActive ? "✅ (allow 层，走 " + proxyGroupName + ")" : "❌ (ENABLE_BLOCK=false，拦截模块未启用)"}`);
+            console.log(`   Firefly 放行: ${isFireflyActive ? `✅ (allow 层，走 ${proxyGroupName})` : "❌ (ENABLE_BLOCK=false，拦截模块未启用)"}`);
         } else {
             console.log(`   Firefly 放行: ❌`);
         }
@@ -747,13 +747,11 @@ function main(config) {
         console.log(`   Hosts 覆写: ${ENABLE_HOSTS_OVERRIDE ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
         console.warn("⚠️ [udpBlock] 所有 UDP 规则依赖域名识别（Fake-IP / Sniffer），ECH 下可能全部失效。");
         console.log(`   ▶ 注入规则条目分层统计:`);
-        console.log(`      - 放行层 (allow)     : ${layerPools.allow.length} 条`);
-        console.log(`      - 拦截层 (block)     : ${layerPools.block.length} 条`);
-        console.log(`      - 进程层 (process)   : ${layerPools.process.length} 条`);
-        console.log(`      - 代理层 (proxy)     : ${layerPools.proxy.length} 条`);
-        console.log(`      - 激进层 (aggressive): ${layerPools.aggressive.length} 条`);
-        console.log(`      - 直连层 (direct)    : ${layerPools.direct.length} 条`);
-        console.log(`   注入规则数: ${finalPool.length} 条（含哨兵）`);
+        for (const k of LAYER_ORDER) {
+            const label = { allow:"放行层", block:"拦截层", process:"进程层", proxy:"代理层", aggressive:"激进层", direct:"直连层" };
+            console.log(`      - ${label[k]} (${k})  : ${layerPools[k].length} 条`);
+        }
+        console.log(`   注入规则数: ${finalPool.length} 条（含首位哨兵）`);
         console.log(`   总规则数: ${config.rules.length} 条`);
         console.log(`   脚本执行耗时: ${Date.now() - _startTime} ms（含指纹注入，不含 Hosts 覆写）`);
         console.log("=".repeat(28));
@@ -826,6 +824,8 @@ function main(config) {
             console.error("❌ Hosts DNS 覆写失败:", err);
         }
     }
+
+    console.log(`   总耗时（含 Hosts）: ${Date.now() - _startTime} ms`);
 
     return config;
 }
