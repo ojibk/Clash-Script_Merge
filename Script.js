@@ -768,7 +768,7 @@ function main(config) {
         }
         console.log(`   注入规则数: ${finalPool.length} 条（含首尾哨兵）`);
         console.log(`   总规则数: ${config.rules.length} 条`);
-        console.log(`   脚本执行耗时: ${Date.now() - _startTime} ms（含指纹注入，不含 Hosts 覆写）`);
+        // console.log(`   脚本执行耗时: ${Date.now() - _startTime} ms（含指纹注入，不含 Hosts 覆写）`);
         console.log("=".repeat(28));
     } catch (err) {
         console.error("❌ 规则注入异常，继续执行 Hosts:", err);
@@ -841,7 +841,7 @@ function main(config) {
         }
     }
 
-    console.log(`   总耗时（含 Hosts）: ${Date.now() - _startTime} ms`);
+    console.log(`   脚本执行总耗时: ${Date.now() - _startTime} ms（含指纹和规则注入及 Hosts 覆写）`);
 
     return config;
 }
