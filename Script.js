@@ -37,6 +37,9 @@ function main(config) {
         console.warn(`⚠️ 进程规则要求 find-process-mode=strict/always，当前 [${config["find-process-mode"] ?? "未设置"}]`);
     }
 
+    // ═══════════════ 无条件清理遗留调试标记 ═══════════════
+    config.rules = config.rules.filter(r => r !== "DOMAIN,debug-script-disabled.marker.invalid,REJECT");
+
     // ═══════════════ 哨兵幂等清理 ═══════════════
     const _SENTINEL_START = "DOMAIN,START-rule-injection-sentinel.invalid,REJECT";
     const _SENTINEL_END   = "DOMAIN,END-rule-injection-sentinel.invalid,REJECT";
@@ -196,6 +199,7 @@ function main(config) {
     if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2065\u2066-\u2069\uFEFF]/u.test(proxyGroupName)) {
         console.error(`❌ 代理组名含非法字符`); return config;
     }
+    // 防御性校验：确保识别的代理组仍存在于原数组中（理论上因引用一致必然为真），此校验理论上不可达
     if (!config["proxy-groups"].some(g => g?.name === proxyGroupName)) {
         console.error(`❌ 代理组 [${proxyGroupName}] 不存在`); return config;
     }
@@ -214,7 +218,7 @@ function main(config) {
         "cc-api-cp.adobe.io",                     // CC 权限校验，含 Firefly 订阅验证
         "cc-api-data.adobe.io",                   // CC 生成结果存储
         "lcs-roaming.adobe.io",                   // 授权漫游，Firefly 订阅状态同步
-        "scdown.adobe.io",                        // 推断为 Firefly 依赖端点
+        "scdown.adobe.io",                        // 推断为 Firefly 依赖端点（无直接抓包证据，待观察）
     ];
 
     // ── Adobe 激活 / 遥测拦截 ──
@@ -245,7 +249,7 @@ function main(config) {
         // "practivate.adobe.com",                   // 预激活服务。该域名可能已失效，待观察
     ];
 
-    const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配随机8~12位字母/数字.adobe.io 子域
+    const _ADOBE_RAND_RE = "^[A-Za-z0-9]{8,12}\\.adobe\\.io$"; // 匹配随机8~12位字母/数字 .adobe.io 子域
     // const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$"; // 匹配随机10位字母/数字子域
     const adobeRegex = [
         `DOMAIN-REGEX,${_ADOBE_RAND_RE},REJECT`,
@@ -253,7 +257,8 @@ function main(config) {
     ];
 
     // ── UDP / QUIC 拦截（强制回退 TCP）──
-    // ⚠️ UDP 流量在 block 层已被 udpBlock 拦截（REJECT），因此 direct 层的 fonts/color 规则对 UDP 永远不可达；fonts/color 实际只走 TCP DIRECT
+    // ⚠️ UDP 流量在 block 层已被 udpBlock 拦截（REJECT），因此 direct 层的 fonts/color 规则对 UDP 永远不可达；fonts/color 实际只走 TCP DIRECT。
+    // 故意使用 REJECT 而非 REJECT-DROP，目的是让 QUIC 立即失败以加速回退 TCP，避免静默丢弃导致超时等待，影响 Firefly 等放行服务的首次连接速度。
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
@@ -265,6 +270,8 @@ function main(config) {
     const adobeWsDomain = ["wss.adobe.io"];
 
     // ── Firefly 生成式 AI 专属放行域名 ──
+    // 注意：senseicore.adobe.io 与 senseimds.adobe.io 形如 9~10 位字母会被下方的 _ADOBE_RAND_RE 匹配。
+    // 当前依赖 allow 层优先于 block 层来保护，若调整层序需确保这两个域名不被意外拦截。
     const adobeFireflyOnly = [
         "firefly.adobe.com",                      // Firefly 主服务入口
         "firefly.adobe.io",                       // Firefly API（.io 端点）
@@ -375,13 +382,14 @@ function main(config) {
     // ── 微软 & Office 遥测 ──
     const msTelemSuffix = [
         "telemetry.microsoft.com",               // Windows/Office 遥测主域
-        "v20.events.data.microsoft.com",         // Windows 诊断数据 v2.0
-        "v10.events.data.microsoft.com",         // Windows 诊断数据 v1.0
         "nexus.officeapps.live.com",             // Office 遥测上报
         "officeclient.microsoft.com",            // Office 客户端统计
         "vortex.data.microsoft.com",             // Windows 错误报告
         "settings-win.data.microsoft.com",       // Windows 诊断数据上报
         "watson.telemetry.microsoft.com",        // Watson 崩溃报告服务
+        // 注：当前精确匹配 v10/v20，若微软推出 v30 等新版本需手动添加。更通用的 DOMAIN-SUFFIX,events.data.microsoft.com 会覆盖未知子域。
+        "v10.events.data.microsoft.com",         // Windows 诊断数据 v1.0
+        "v20.events.data.microsoft.com",         // Windows 诊断数据 v2.0
     ];
 
     // ── 广告联盟、遥测、追踪、弹窗、强制更新 ──
@@ -557,6 +565,7 @@ function main(config) {
     const globalKeyword = ["telemetry", "analytics", "stats", "metrics"];
 
     // ── 进程规则（需 TUN + 管理员权限）──
+    // 注：上述规则中 REJECT-DROP（静默丢弃）用于让目标进程“感知不到”网络，REJECT（发送 TCP RST）用于让进程快速失败；选择依据是进程对网络超时的敏感度。
     const processBlockRules = [
         // "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 仅 UDP 443
         // "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 全部 UDP
@@ -622,7 +631,7 @@ function main(config) {
         // Adobe 常用业务放行
         "DOMAIN-SUFFIX,fonts.adobe.com,DIRECT",            // Adobe Fonts 字体同步服务
         "DOMAIN-SUFFIX,color.adobe.com,DIRECT",            // Adobe Color 配色工具
-        "DOMAIN,assets.adobe.com,DIRECT",                  // Adobe 静态资源 CDN（精确匹配以防过度放行）
+        "DOMAIN,assets.adobe.com,DIRECT",                  // Adobe 静态资源 CDN（精确匹配以防无关子域被直连）
         "DOMAIN-SUFFIX,autodesk.com,DIRECT",               // Autodesk 官网放行（下载/论坛）
         "DOMAIN-SUFFIX,corel.com,DIRECT",                  // Corel 官网放行
         "AND,((NETWORK,UDP),(DST-PORT,123)),DIRECT",       // NTP 时间同步（仅 TUN 模式有效）
