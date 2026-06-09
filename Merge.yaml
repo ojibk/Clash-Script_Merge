@@ -230,6 +230,7 @@ rule-providers:
   #   format: mrs
   #   path: "./ruleset/providers/advertising.mrs"
   #   interval: 86400   # 24小时
+  #   proxy: DIRECT     # 指定规则集下载/更新出口
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs"
   #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs" # 备用
 
@@ -239,7 +240,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/ads.mrs"
     interval: 86400   # 24小时，上游变动频繁
-    proxy: DIRECT     # 经过指定代理进行下载/更新
+    proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.mrs"
     # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs" # 备用
 
@@ -249,7 +250,7 @@ rule-providers:
   #   format: mrs
   #   path: "./ruleset/providers/threat.mrs"
   #   interval: 86400
-  #   proxy: DIRECT     # 经过指定代理进行下载/更新
+  #   proxy: DIRECT     # 指定规则集下载/更新出口
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
   #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs" # 备用
 
@@ -259,7 +260,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/cn.mrs"
     interval: 86400   # 24小时
-    proxy: DIRECT     # 经过指定代理进行下载/更新
+    proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
     # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs" # 备用
 
@@ -269,7 +270,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/non-cn.mrs"
     interval: 86400   # 24小时
-    proxy: DIRECT     # 经过指定代理进行下载/更新
+    proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs"
     # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs" # 备用
 
@@ -279,7 +280,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/hk-restricted.mrs"
     interval: 604800  # 7天，低频变动
-    proxy: DIRECT     # 经过指定代理进行下载/更新
+    proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/hk-restricted.mrs"
     # url: "https://raw.githubusercontent.com/ojibk/rules/main/hk-restricted.mrs" # 备用
 
@@ -289,7 +290,7 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/amazon.mrs"
     interval: 604800  # 7天
-    proxy: DIRECT     # 经过指定代理进行下载/更新
+    proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
     # url: "https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs" # 备用
 
