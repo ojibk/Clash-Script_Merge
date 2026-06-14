@@ -1,7 +1,6 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等清理与注入 v260609
- *
- * 功能：默认拦截 + 白名单放行特定 AI 服务（Firefly），Hosts DNS 覆写，模拟客户端指纹等。
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的幂等规则注入 v260614
+ * 功能：拦截优先 + 白名单放行特定 AI 服务（Firefly），Hosts DNS 覆写，模拟客户端指纹等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
 
@@ -23,7 +22,7 @@ function main(config) {
     const ENABLE_CLIENT_FINGERPRINT = true;      // TLS 指纹注入开关（为代理节点批量添加 client-fingerprint）
     const DEFAULT_FINGERPRINT = "chrome";        // TLS 指纹预设
     const FINGERPRINT_SKIP = [];                 // 指纹跳过名单：节点名含这些关键词则不注入指纹
-    const fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 放行规则是否注入
+    const fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 规则的路由目标与动作（allow层代理 vs block层拦截）
 
     // ═══════════════ 防御性检查 ═══════════════
     if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -121,7 +120,7 @@ function main(config) {
                 inj++;
                 return { ...p, 'client-fingerprint': _effectiveFP };
             });
-            console.log(`✅ TLS 指纹注入完成: 新增 ${inj}，跳过 ${skip}，已有 ${exist} (指纹: ${_effectiveFP})`);
+            console.log(`✅ TLS 指纹注入完成: 新增 ${inj}，跳过 ${skip}，已有 ${exist}； 指纹: ${_effectiveFP}`);
         }
     }
 
@@ -210,7 +209,8 @@ function main(config) {
     const pushDomain  = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN,${v},${a}`); });
     const pushKeyword = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN-KEYWORD,${v},${a}`); });
 
-    // Firefly 专属：仅放行 TCP，避免 UDP/QUIC 被错误代理，确保 udpBlock 能快速终止 QUIC 以回退 TCP
+    // Firefly 专属：仅对 TCP 流量生效（动作由调用方参数决定：proxy 路由或 REJECT 拦截），令 UDP/QUIC 不受影响并下沉至 udpBlock，
+    // 以 REJECT 快速终止 QUIC 强制回退 TCP。
     const pushFirefly = (d, a, p) => d.forEach(v => {
         if (typeof v === "string" && v) p.push(`AND,((NETWORK,TCP),(DOMAIN-SUFFIX,${v})),${a}`);
     });
@@ -224,7 +224,7 @@ function main(config) {
         "cc-api-cp.adobe.io",                     // CC 权限校验，含 Firefly 订阅验证
         "cc-api-data.adobe.io",                   // CC 生成结果存储
         "lcs-roaming.adobe.io",                   // 授权漫游，Firefly 订阅状态同步
-        "scdown.adobe.io",                        // 推断为 Firefly 依赖端点（无直接抓包证据，待验证）
+        "scdown.adobe.io",                        // 疑似 Firefly 依赖端点（无直接抓包证据，待验证）
     ];
 
     // ── Adobe 激活 / 遥测拦截 ──
@@ -264,7 +264,7 @@ function main(config) {
 
     // ── UDP / QUIC 拦截（强制回退 TCP）──
     // ⚠️ UDP 流量在 block 层已被 udpBlock 拦截（REJECT），因此 direct 层的 fonts/color 规则对 UDP 永远不可达；fonts/color 实际只走 TCP DIRECT。
-    // 故意使用 REJECT 而非 REJECT-DROP，目的是让 QUIC 立即失败以加速回退 TCP，避免静默丢弃导致超时等待，影响 Firefly 等放行服务的首次连接速度。
+    // 使用 REJECT 而非 REJECT-DROP，目的是让 QUIC 立即失败以加速回退 TCP，避免静默丢弃导致超时等待，拖慢 Firefly 等放行服务的首次连接速度。
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
@@ -276,7 +276,7 @@ function main(config) {
     const adobeWsDomain = ["wss.adobe.io"];
 
     // ── Firefly 生成式 AI 专属放行域名 ──
-    // 注意：senseicore.adobe.io 与 senseimds.adobe.io 形如 9~10 位字母会被下方的 _ADOBE_RAND_RE 匹配。
+    // 注意：senseicore.adobe.io 与 senseimds.adobe.io 形如 9~10 位字母、数字会被上方的 _ADOBE_RAND_RE 匹配。
     // 当前依赖 allow 层优先于 block 层来保护，若调整层序需确保这两个域名不被意外拦截。
     const adobeFireflyOnly = [
         "firefly.adobe.com",                      // Firefly 主服务入口
@@ -575,7 +575,7 @@ function main(config) {
     const processBlockRules = [
         // "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 仅 UDP 443
         // "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 全部 UDP
-        "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证。全部 TCP + 全部 UDP，兜底未知激活域
+        "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证，全部 TCP + 全部 UDP，兜底未知激活域
         "PROCESS-NAME,AdskLicensingService.exe,REJECT-DROP", // Autodesk 许可验证
         "PROCESS-NAME,AdskAccess.exe,REJECT-DROP",           // Autodesk 访问控制
         "PROCESS-NAME,AdskIdentityManager.exe,REJECT-DROP",  // Autodesk 身份认证
@@ -748,9 +748,9 @@ function main(config) {
         if (ENABLE_AGGRESSIVE) {
             console.warn(`   激进模式: ⚠️ 已开启`);
             console.warn(`   ⚠️ 激进模式可能导致以下服务不可用：`);
-            console.warn(`      adobe.io（插件市场/字体）、adsk.com（Autodesk 官网）、`);
-            console.warn(`      accounts.autodesk.com（登录）、entitlement.autodesk.com（授权）、`);
-            console.warn(`      officecdn（更新/模板）、ieonline.microsoft.com（ActiveX/旧版 OA）`);
+            console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层保护）、adsk.com（Autodesk 官网）、`);
+            console.warn(`      accounts.autodesk.com（Autodesk 账户登录）、geo.adobe.com / geo2.adobe.com（Adobe 地理区域识别）、`);
+            console.warn(`      officecdn（Office 更新/模板）、ieonline.microsoft.com（ActiveX/旧版 OA）`);
         } else {
             console.log(`   激进模式: ❌`);
         }
