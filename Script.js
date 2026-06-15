@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260615
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260616
  * 功能：拦截优先 + 白名单放行特定 AI 服务（Firefly），Hosts DNS 覆写，模拟客户端指纹等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -209,7 +209,7 @@ function main(config) {
     const pushDomain  = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN,${v},${a}`); });
     const pushKeyword = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN-KEYWORD,${v},${a}`); });
 
-    // Firefly 专属：仅对 TCP 流量生效（动作由调用方参数决定：proxy 路由或 REJECT 拦截），令 UDP/QUIC 不受影响并下沉至 udpBlock，
+    // Firefly 专属：仅对 TCP 流量生效（动作由调用方参数决定：proxy 路由或 REJECT 拦截），令 UDP/QUIC 不经本层处理，改由 udpBlock 接管拦截，
     // 以 REJECT 快速终止 QUIC 强制回退 TCP。
     const pushFirefly = (d, a, p) => d.forEach(v => {
         if (typeof v === "string" && v) p.push(`AND,((NETWORK,TCP),(DOMAIN-SUFFIX,${v})),${a}`);
@@ -668,7 +668,6 @@ function main(config) {
         // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // ⚠️ 激进：所有 adobe.io 子域（已由 SUFFIX 超集覆盖）
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // ⚠️ 激进：adobe.io 裸域+全部子域
         // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP", // 多平台共用域，建议审查后启用
-        "DOMAIN-SUFFIX,adsk.com,REJECT-DROP",                // ⚠️ 激进：Autodesk 旧版遥测
         "DOMAIN-KEYWORD,officecdn,REJECT-DROP",              // ⚠️ 激进：Office CDN
         "DOMAIN,geo.adobe.com,REJECT-DROP",                  // ⚠️ 激进：Adobe 地理区域识别
         "DOMAIN,geo2.adobe.com,REJECT-DROP",                 // ⚠️ 激进：Adobe 地理区域识别备用
@@ -748,7 +747,7 @@ function main(config) {
         if (ENABLE_AGGRESSIVE) {
             console.warn(`   激进模式: ⚠️ 已开启`);
             console.warn(`   ⚠️ 激进模式可能导致以下服务不可用：`);
-            console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层保护）、adsk.com（Autodesk 官网）、`);
+            console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层保护）、`);
             console.warn(`      accounts.autodesk.com（Autodesk 账户登录）、geo.adobe.com / geo2.adobe.com（Adobe 地理区域识别）、`);
             console.warn(`      officecdn（Office 更新/模板）、ieonline.microsoft.com（ActiveX/旧版 OA）`);
         } else {
