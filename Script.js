@@ -747,8 +747,8 @@ function main(config) {
         if (ENABLE_AGGRESSIVE) {
             console.warn(`   激进模式: ⚠️ 已开启`);
             console.warn(`   ⚠️ 激进模式可能导致以下服务不可用：`);
-            console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层保护）、`);
-            console.warn(`      accounts.autodesk.com（Autodesk 账户登录）、geo.adobe.com / geo2.adobe.com（Adobe 地理区域识别）、`);
+            console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层保护）、accounts.autodesk.com（Autodesk 账户登录）、`);
+            console.warn(`      geo.adobe.com / geo2.adobe.com（Adobe 地理区域识别）、`);
             console.warn(`      officecdn（Office 更新/模板）、ieonline.microsoft.com（ActiveX/旧版 OA）`);
         } else {
             console.log(`   激进模式: ❌`);
