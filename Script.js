@@ -147,7 +147,7 @@ function main(config) {
         return config;
     }
 
-    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2065\u2066-\u2069\uFEFF]/gu;
+    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2066-\u2069\uFEFF]/gu;
     const sanitizeName = n => (typeof n === "string" && n) ? n.replace(_SANITIZE_RE, '').trim() : "";
     const _isFallback = t => !!(t && (FALLBACK_NAMES.has(t.toUpperCase()) || FALLBACK_CN_RE.test(t)));
     const _isEligible = t => !!(t && (_isFallback(t) || (!EXCLUDED_NAMES.has(t.toUpperCase()) && !EXCLUDED_CN_RE.test(t))));
