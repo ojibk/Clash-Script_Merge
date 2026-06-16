@@ -276,7 +276,7 @@ function main(config) {
     const adobeWsDomain = ["wss.adobe.io"];
 
     // ── Firefly 生成式 AI 专属放行域名 ──
-    // 注意：senseicore.adobe.io 与 senseimds.adobe.io 形如 8~12 位字母、数字会被上方的 _ADOBE_RAND_RE 匹配。
+    // 注意：senseicore.adobe.io 与 senseimds.adobe.io 会被 _ADOBE_RAND_RE 规则（随机 8~12 位字母/数字的 adobe.io 子域）命中
     // 当前依赖 allow 层优先于 block 层来保护，若调整层序需确保这两个域名不被意外拦截。
     const adobeFireflyOnly = [
         "firefly.adobe.com",                      // Firefly 主服务入口
