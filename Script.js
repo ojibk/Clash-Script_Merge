@@ -147,7 +147,7 @@ function main(config) {
         return config;
     }
 
-    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2066-\u2069\uFEFF]/gu;
+    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/gu;
     const sanitizeName = n => (typeof n === "string" && n) ? n.replace(_SANITIZE_RE, '').trim() : "";
     const _isFallback = t => !!(t && (FALLBACK_NAMES.has(t.toUpperCase()) || FALLBACK_CN_RE.test(t)));
     const _isEligible = t => !!(t && (_isFallback(t) || (!EXCLUDED_NAMES.has(t.toUpperCase()) && !EXCLUDED_CN_RE.test(t))));
@@ -196,7 +196,7 @@ function main(config) {
             console.error(`❌ 代理组排除断言触发：[${proxyGroupName}]`); return config;
         }
     }
-    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2065\u2066-\u2069\uFEFF]/u.test(proxyGroupName)) {
+    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/u.test(proxyGroupName)) {
         console.error(`❌ 代理组名含非法字符`); return config;
     }
     // 防御性校验：确保识别的代理组仍存在于原数组中（理论上因引用一致必然为真），此校验理论上不可达
