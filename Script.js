@@ -403,7 +403,7 @@ function main(config) {
         // WPS
         "ups.k0s.gk.kingsoft.com",               // WPS 升级推送服务
         "pcfg.wps.cn",                           // WPS 配置/广告下发
-        "wps.com.cn",                            // WPS 备用主域
+        // "wps.com.cn",                            // WPS 保护性域名，未启用
         "wpsgold.wpscdn.cn",                     // WPS 广告资源 CDN
         // "sync.wps.cn",                        // ⚠️ 已注释：WPS 云文档同步，拦截后云同步失效
         // 海康威视
