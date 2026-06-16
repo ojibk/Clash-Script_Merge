@@ -69,7 +69,7 @@ dns:
     - 119.29.29.29
 
   # ── 核心开关：DNS 请求参与规则路由 ──
-  respect-rules: true  # 必须开启；与 proxy-server-nameserver 配对，后者为代理服务器提供独立解析路径，预防潜在的 DNS↔规则路由循环依赖
+  respect-rules: true  # 必须开启；与 proxy-server-nameserver 配对，后者为代理服务器提供独立解析路径，预防潜在的 DNS→规则路由→DNS 循环依赖
 
   # ── 主动精准分流（主路径） ──
   nameserver-policy:
@@ -117,7 +117,7 @@ dns:
       # - 172.16.0.0/12
       # - 192.168.0.0/16
 
-  # ── 代理节点自身域名解析（破除代理环路） ──
+  # ── 代理节点自身域名解析（规避代理环路） ──
   proxy-server-nameserver:
     - 223.5.5.5
     - 119.29.29.29
@@ -290,7 +290,7 @@ rule-providers:
     behavior: domain
     format: mrs
     path: "./ruleset/providers/amazon.mrs"
-    interval: 604800  # 7天
+    interval: 604800  # 7天，低频变动
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
     # url: "https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs" # 备用
