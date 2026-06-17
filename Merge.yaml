@@ -62,6 +62,11 @@ dns:
     # 国内应用增强兼容性
     - "+.market.xiaomi.com"              # 小米应用商店
     - "localhost.ptlogin2.qq.com"        # QQ 本地登录
+    # TURN — 中继服务器，与 STUN 同等必要
+    - "turn.*.*"
+    - "turn.*.*.*"
+    - "+.turn.*.*"
+    - "+.turn.*.*.*"
 
   # ── 引导解析器（Bootstrap DNS） ──
   default-nameserver:
