@@ -1,6 +1,6 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260616
- * 功能：拦截优先 + 白名单放行特定 AI 服务（Firefly），Hosts DNS 覆写，模拟客户端指纹等。
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260622
+ * 功能：拦截 + 白名单放行特定 AI 服务（Firefly），Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
 
@@ -269,7 +269,7 @@ function main(config) {
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
         // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT", // SUFFIX 规则的 adobestats.io（无协议条件）已覆盖所有协议，此处冗余
-        `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`,
+        `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`, // 已有遮蔽规则，此处冗余覆盖
     ];
 
     // ── Adobe WebSocket 遥测 ──
@@ -828,7 +828,7 @@ function main(config) {
                 config.dns["fake-ip-filter"] = [...cleaned, ...newEntries];
 
                 console.warn("⚠️ Hosts DNS 覆写需在 CVR 开启「启用 DNS」和「使用 Hosts」才生效");
-                console.log("💡 脚本无法检测 UI 层开关状态；未开启时仍打印成功日志");
+                console.log("💡 脚本无法检测 UI 层开关状态；未开启时仍打印写入完成日志");
                 const targetStr = Array.isArray(target) ? target.join(" / ") : target;
                 console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条，模式: [${HOSTS_MODE}] → ${targetStr}，但需 CVR 开启相关开关才能生效。`);
                 console.log(`   fake-ip-filter 清理旧条目: ${cleanedCount} 条，新增注入: ${newEntries.length} 条（订阅原有非脚本条目共 ${existing.size} 条）`);
