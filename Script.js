@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260622
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260623
  * 功能：拦截 + 白名单放行特定 AI 服务（Firefly），Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -745,13 +745,13 @@ function main(config) {
         console.log(`   进程规则: ${ENABLE_PROCESS_RULE ? "✅ (需管理员权限+TUN)" : "❌"}`);
         console.log(`   代理规则: ${ENABLE_PROXY ? "✅" : "❌"}`);
         if (ENABLE_AGGRESSIVE) {
-            console.warn(`   激进模式: ⚠️ 已开启`);
-            console.warn(`   ⚠️ 激进模式可能导致以下服务不可用：`);
+            console.warn(`   激进阻断: ⚠️ 已开启`);
+            console.warn(`   ⚠️ 激进阻断可能导致以下服务不可用：`);
             console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层保护）、accounts.autodesk.com（Autodesk 账户登录）、`);
             console.warn(`      geo.adobe.com / geo2.adobe.com（Adobe 地理区域识别）、`);
             console.warn(`      officecdn（Office 更新/模板）、ieonline.microsoft.com（ActiveX/旧版 OA）`);
         } else {
-            console.log(`   激进模式: ❌`);
+            console.log(`   激进阻断: ❌`);
         }
         if (ENABLE_GLOBAL_KEYWORD_BLOCK)
             console.warn(`   全局关键词阻断: ⚠️ 已开启 (含: ${globalKeyword.join(", ")})`);
