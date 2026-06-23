@@ -393,7 +393,7 @@ function main(config) {
         "vortex.data.microsoft.com",             // Windows 错误报告
         "settings-win.data.microsoft.com",       // Windows 诊断数据上报
         "watson.telemetry.microsoft.com",        // Watson 崩溃报告服务
-        // 注：当前精确匹配 v10/v20，若微软推出 v30 等新版本需手动添加。但更通用的 DOMAIN-SUFFIX,events.data.microsoft.com 会覆盖未知子域。
+        // 注：当前精确匹配 v10/v20，若微软推出 v30 等新版本需手动添加。但若采用更通用的 DOMAIN-SUFFIX,events.data.microsoft.com 会覆盖未知子域。
         "v10.events.data.microsoft.com",         // Windows 诊断数据 v1.0
         "v20.events.data.microsoft.com",         // Windows 诊断数据 v2.0
     ];
