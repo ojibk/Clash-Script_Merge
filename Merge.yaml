@@ -1,5 +1,5 @@
 # ============================================================
-# Clash-Merge 全局扩展覆写配置 v260625
+# Clash-Merge 全局扩展覆写配置 v260626
 # 智能路由受限网络服务
 # 静态规则链，支持独立运行。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
@@ -78,7 +78,7 @@ dns:
 
   # ── 主动精准分流（主路径） ──
   nameserver-policy:
-    # # 强制用于下载规则集的 CDN 域名使用国内安全 DoH 解析，防止冷启动时规则链尚未就绪，CDN 域名可能错误路由
+    # # 强制用于下载规则集的 CDN 域名使用国内安全 DoH 解析，防止冷启动时因规则链尚未就绪导致 CDN 域名错误路由
     # "testingcf.jsdelivr.net":
     #   - https://doh.pub/dns-query
     #   - https://dns.alidns.com/dns-query
