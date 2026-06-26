@@ -223,7 +223,7 @@ function main(config) {
         "auth.services.adobe.com",                // Adobe ID 鉴权，Firefly Token 来源
         "cc-api-cp.adobe.io",                     // CC 权限校验，含 Firefly 订阅验证
         "cc-api-data.adobe.io",                   // CC 生成结果存储
-        "lcs-roaming.adobe.io",                   // 授权漫游，Firefly 订阅状态同步
+        "lcs-roaming.adobe.io",                   // 离线许可验证 / Firefly 订阅状态同步
         "scdown.adobe.io",                        // 疑似 Firefly 依赖端点（无直接抓包证据，待验证）
     ];
 
@@ -277,7 +277,7 @@ function main(config) {
 
     // ── Firefly 生成式 AI 专属放行域名 ──
     // 注意：senseicore.adobe.io 与 senseimds.adobe.io 会被 _ADOBE_RAND_RE 规则（随机 8~12 位字母/数字的 adobe.io 子域）命中
-    // 当前依赖 allow 层优先于 block 层来保护，若调整层序需确保这两个域名不被意外拦截。
+    // 当前依赖 allow 层优先，以规避 block 层误匹配，若调整层序需确保这两个域名不被意外拦截。
     const adobeFireflyOnly = [
         "firefly.adobe.com",                      // Firefly 主服务入口
         "firefly.adobe.io",                       // Firefly API（.io 端点）
