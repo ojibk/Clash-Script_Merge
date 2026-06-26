@@ -689,6 +689,7 @@ function main(config) {
         };
 
         if (ENABLE_BLOCK) {
+            // 放行模式下注入 allow 层（先于 block 匹配），拦截模式下注入 block 层
             const [act, pool] = fireflyUseProxy ? [proxyGroupName, layerPools.allow] : ["REJECT", layerPools.block];
             pushSuffix(adobeSharedDeps, act, pool);
             pushFirefly(adobeFireflyOnly, act, pool);
