@@ -1,6 +1,6 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260623
- * 功能：拦截 + 白名单放行特定 AI 服务（Firefly），Hosts DNS 覆写，TLS 指纹注入等。
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260626
+ * 功能：白名单放行特定 AI 服务（Firefly）+ 拦截广告/遥测/激活域名，Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
 
@@ -126,7 +126,7 @@ function main(config) {
 
     // ═══════════════ 1. 识别代理策略组 ═══════════════
     let proxyGroupName = null;
-    const EXCLUDED_NAMES = new Set(["DIRECT","REJECT","COMPATIBLE","DEFAULT","MATCH","PASS"]);
+    const EXCLUDED_NAMES = new Set(["DIRECT","REJECT","REJECT-DROP","COMPATIBLE","DEFAULT","MATCH","PASS"]);
     const FALLBACK_NAMES = new Set(["GLOBAL"]);
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|球)|所有|默认)$|(?:直连|拒绝)/;
     const FALLBACK_CN_RE = /^全局$/;
