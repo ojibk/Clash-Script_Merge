@@ -1,7 +1,7 @@
 # ============================================================
 # Clash-Merge 全局扩展覆写配置 v260626
 # 智能路由受限网络服务
-# 静态规则链，支持独立运行。流程：订阅 → Merge → Script → CVR → Mihomo
+# 规则集驱动，可独立运行（依赖网络拉取 rule-providers）。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
 # ============================================================
 # ⚠️ TUN 依赖：sniffer.parse-pure-ip 要求 TUN 接管三层流量。
@@ -74,7 +74,7 @@ dns:
     - 119.29.29.29
 
   # ── 核心开关：DNS 请求参与规则路由 ──
-  respect-rules: true  # 必须开启；与 proxy-server-nameserver 配对，后者为代理服务器提供独立解析路径，预防潜在的 DNS→规则路由→DNS 循环依赖
+  respect-rules: true  # 必须开启；与 proxy-server-nameserver 配对，后者为代理服务器提供独立解析路径，规避 DNS→规则路由→DNS 的结构性解析循环
 
   # ── 主动精准分流（主路径） ──
   nameserver-policy:
@@ -133,7 +133,7 @@ dns:
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
 geodata-mode: true              # ⚙️ GeoIP 数据库格式：true = .dat（MetaCubeX），false = .mmdb；统一归属判定
 geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭则停留在出厂版本
-geo-update-interval: 24        # ⏱️ 更新间隔（小时），24=每日
+geo-update-interval: 24        # ⏱️ 更新间隔（小时），24 小时 = 每日一次
 geox-url:                       # ⚙️ geodata 下载地址（CF 加速），未声明时回退默认。该参数仅限配置文件重载等内核行为，通过 GUI 更新 GeoData 不受此限
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
