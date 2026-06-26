@@ -37,7 +37,7 @@ dns:
     - "ntp.*.com"
     - "+.ntp.org.cn"
     - "+.time.edu.cn"
-    - "+.pool.ntp.org"     # 覆盖 0.pool.ntp.org ~ 3.pool.ntp.org 等
+    - "+.pool.ntp.org"     # 覆盖 0.pool.ntp.org 至 3.pool.ntp.org 等
     # STUN / WebRTC — 必须补全直接匹配，防止 stun.l.google.com 等被分配 Fake-IP
     - "stun.*.*"
     - "stun.*.*.*"
@@ -334,10 +334,10 @@ rules:
   # - MATCH,🎛️ 动态选择                 # 🛡️ 兜底代理（Unknown→Proxy 立场）
 
 # ============================================================
-# 注释 emoji：🛡️防护 🚫拦截 🔓直连 ⚠️警告 ⚙️配置 ℹ️说明 🔍诊断 💡设计 ⏱️时间
+# 注释 emoji：🛡️防护 🚫拦截 🔓直连 ⚠️警告 ⚙️配置 ℹ️说明 💡设计 ⏱️时间
 # 维护：禁止行号/绝对坐标，标识符先声明后引用
 # ============================================================
-# 💡 DNS 说明：须声明 dns 节，如需对接外部纯 IP 订阅，确保上游含 fake-ip 或 redir-host，
+# 💡 DNS 说明：须声明 dns 节，如需对接外部纯 IP 订阅，确保订阅提供的外部配置含 fake-ip 或 redir-host，
 # 否则域名规则精度下降。请确保最终合入的配置包含合适的 DNS 段落。
 # DNS 分流与防污染分层设计：nameserver-policy（主动分流）+ nameserver（默认国内）+ fallback（兜底纠正），
 # 在长尾国内域名 CDN 优化和境外防污染之间取得良好平衡，延迟翻倍的代价仅在长尾境外域名首次访问及每次缓存失效后出现，属于有意取舍。
