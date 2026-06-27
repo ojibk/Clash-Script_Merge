@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260627
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260628
  * 功能：白名单放行特定 AI 服务（Firefly）+ 拦截广告/遥测/激活域名，Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -345,7 +345,7 @@ function main(config) {
     // ── IDM / Wondershare 等激活拦截 ──
     const idmSuffix = [
         "registeridm.com",                       // IDM 注册验证域
-        // "internetdownloadmanager.com",        // ⚠️ 已注释：拦截主域误伤官网，改用下方精确子域
+        // "internetdownloadmanager.com",        // ⚠️ 拦截主域误伤官网，改用下方精确子域
         "secure.internetdownloadmanager.com",    // 序列号验证接口
         "mirror.internetdownloadmanager.com",    // 更新镜像服务器
         "mirror2.internetdownloadmanager.com",   // 更新镜像服务器 2
@@ -359,17 +359,17 @@ function main(config) {
         "license.wondershare.com",                // 许可证验证服务
         "wondershare.cc",                         // 海外追踪/统计域
         "wondershare.cn",                         // 国内遥测/统计域
-        // "iskysoft.com",                       // ⚠️ 已注释：主域即官网，无已知专用验证子域
-        // "imyfone.com",                        // ⚠️ 已注释：同上
+        // "iskysoft.com",                       // ⚠️ 主域即官网，无已知专用验证子域
+        // "imyfone.com",                        // ⚠️ 主域即官网，无已知专用验证子域
     ];
 
     // ── 其他杂项软件授权验证 ──
     const miscSoftwareSuffix = [
-        // "bandicam.com",                       // ⚠️ 已注释：主域误伤官网，改用下方精确子域
-        // "bandisoft.com",                      // ⚠️ 已注释：同上
-        // "xmind.app",                          // ⚠️ 已注释：主域误伤官网，改用下方精确子域
-        // "xmind.net",                          // ⚠️ 已注释：主域误伤官网（XMind 8 下载/插件），改用下方精确子域
-        // "listary.com",                        // ⚠️ 已注释：主域误伤官网，改用下方精确子域
+        // "bandicam.com",                       // ⚠️ 主域误伤官网，改用下方精确子域
+        // "bandisoft.com",                      // ⚠️ 主域误伤官网，改用下方精确子域
+        // "xmind.app",                          // ⚠️ 主域误伤官网，改用下方精确子域
+        // "xmind.net",                          // ⚠️ 主域误伤官网（XMind 8 下载/插件），改用下方精确子域
+        // "listary.com",                        // ⚠️ 主域误伤官网，改用下方精确子域
     ];
     const miscSoftwareDomain = [
         "cert.bandicam.com",                      // Bandicam 正版证书验证
@@ -405,7 +405,7 @@ function main(config) {
         "pcfg.wps.cn",                           // WPS 配置/广告下发
         // "wps.com.cn",                            // WPS 保护性域名，未启用
         "wpsgold.wpscdn.cn",                     // WPS 广告资源 CDN
-        // "sync.wps.cn",                        // ⚠️ 已注释：WPS 云文档同步，拦截后云同步失效
+        // "sync.wps.cn",                        // ⚠️ WPS 云文档同步，拦截后云同步失效
         // 海康威视
         "upgrade.hikvision.com",                 // 海康固件升级检查
         "ezdns.hikvision.com",                   // 海康 DDNS 回传
@@ -418,7 +418,7 @@ function main(config) {
         // 输入法
         "shurufa.baidu.com",                     // 百度输入法云服务
         "input.baidu.com",                       // 百度输入法联网同步
-        // "api.sogoucloud.com",                 // ⚠️ 已注释：搜狗输入法云端接口，待验证
+        // "api.sogoucloud.com",                 // ⚠️ 搜狗输入法云端接口，待验证
         // Bugly
         "bugly.qq.com",                          // 腾讯 Bugly 崩溃上报 SDK
         "bugly.gtimg.com",                       // Bugly 静态资源 CDN
@@ -511,6 +511,7 @@ function main(config) {
         "sogoucdn.com",                          // 搜狗 CDN（广告素材）
         "ie.sogou.com",                          // 搜狗 IE 插件推广
         "metasogou.com",                         // 搜狗元数据追踪
+        "get.sogou.com",                       // 搜狗输入法收集并回传输入的数据。开启后会影响账号同步、词库更新、问题反馈，但语音输入等其他功能可以正常使用
         // Flash/PotPlayer
         "flash.cn",                              // Flash 国内分发域
         "kakaocorp.com",                         // PotPlayer 母公司 Kakao 统计上报
@@ -580,7 +581,7 @@ function main(config) {
         "PROCESS-NAME,AdskAccess.exe,REJECT-DROP",           // Autodesk 访问控制
         "PROCESS-NAME,AdskIdentityManager.exe,REJECT-DROP",  // Autodesk 身份认证
         "PROCESS-NAME,CorelDRW.exe,REJECT-DROP",             // CorelDRAW
-        // "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",    // 进程间通信代理，误伤风险：可能影响 Ps/Ai 启动
+        // "PROCESS-NAME,AdobeIPCBroker.exe,REJECT-DROP",    // 进程间通信代理，副作用：可能影响 Ps/Ai 启动
         "PROCESS-NAME,360sd.exe,REJECT-DROP",                // 360 杀毒
         "PROCESS-NAME,360tray.exe,REJECT",                   // 360 系统托盘
         "PROCESS-NAME,2345Mini.exe,REJECT",                  // 2345 迷你窗口
@@ -609,11 +610,12 @@ function main(config) {
         "behance.net",                            // Behance（锁区）
         "behance.adobe.com",                      // Behance Adobe 子域
         "copilot.microsoft.com",                  // Copilot AI
-        // "openai.com",                          // OpenAI，按需取消注释
-        // "gemini.google.com",                   // Gemini（⚠️ 与 google.com 须同策略组，IP 不同可能触发风控）
-        // "store.steampowered.com",             // Steam 商店
-        // "steamcommunity.com",                 // Steam 社区
-        // "steamstatic.com",                    // Steam 商店静态资源
+        "services.googleapis.cn",                 // 修复国行设备因使用 services.googleapis.cn 域名导致的 Google Play 下载应用时的「等待中…」问题
+        // "openai.com",                             // OpenAI，按需取消注释
+        // "gemini.google.com",                      // Gemini（⚠️ 与 google.com 须同策略组，IP 不同可能触发风控）
+        // "store.steampowered.com",                 // Steam 商店
+        // "steamcommunity.com",                     // Steam 社区
+        // "steamstatic.com",                        // Steam 商店静态资源
     ];
 
     // ── 直连规则 ──
@@ -748,7 +750,7 @@ function main(config) {
         if (ENABLE_AGGRESSIVE) {
             console.warn(`   激进阻断: ⚠️ 已开启`);
             console.warn(`   ⚠️ 激进阻断可能导致以下服务不可用：`);
-            console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层保护）、accounts.autodesk.com（Autodesk 账户登录）、`);
+            console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层处理）、accounts.autodesk.com（Autodesk 账户登录）、`);
             console.warn(`      geo.adobe.com / geo2.adobe.com（Adobe 地理区域识别）、`);
             console.warn(`      officecdn（Office 更新/模板）、ieonline.microsoft.com（ActiveX/旧版 OA）`);
         } else {
@@ -762,7 +764,7 @@ function main(config) {
         console.log(`   Hosts 覆写: ${ENABLE_HOSTS_OVERRIDE ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
         console.warn("⚠️ [udpBlock] 所有 UDP 规则依赖域名识别（Fake-IP / Sniffer），ECH 下可能全部失效。");
         console.log(`   ▶ 注入规则条目分层统计:`);
-        const _LAYER_LABELS = { allow:"放行层", block:"拦截层", process:"进程层", proxy:"代理层", aggressive:"激进层", direct:"直连层" };
+        const _LAYER_LABELS = { allow:"白名单/优先层", block:"拦截层", process:"进程层", proxy:"代理层", aggressive:"激进层", direct:"直连层" };
         for (const k of LAYER_ORDER) {
             console.log(`      - ${_LAYER_LABELS[k]} (${k})  : ${layerPools[k].length} 条`);
         }
