@@ -43,18 +43,18 @@ function main(config) {
     const _SENTINEL_START = "DOMAIN,START-rule-injection-sentinel.invalid,REJECT";
     const _SENTINEL_END   = "DOMAIN,END-rule-injection-sentinel.invalid,REJECT";
     {
-        const newRules = [], stack = [];
+        const newRules = [], _blockStartLengths = [];
         let _orphanEndCount = 0;
         for (const rule of config.rules) {
-            if (rule === _SENTINEL_START) { stack.push(newRules.length); continue; }
+            if (rule === _SENTINEL_START) { _blockStartLengths.push(newRules.length); continue; }
             if (rule === _SENTINEL_END) {
-                if (stack.length) newRules.length = stack.pop();
+                if (_blockStartLengths.length) newRules.length = _blockStartLengths.pop();
                 else _orphanEndCount++;
                 continue;
             }
             newRules.push(rule);
         }
-        if (stack.length) console.warn(`⚠️ ${stack.length} 个未闭合哨兵块`);
+        if (_blockStartLengths.length) console.warn(`⚠️ ${_blockStartLengths.length} 个未闭合哨兵块`);
         if (_orphanEndCount) console.warn(`⚠️ ${_orphanEndCount} 个孤立 END`);
         config.rules = newRules;
     }
@@ -511,7 +511,7 @@ function main(config) {
         "sogoucdn.com",                          // 搜狗 CDN（广告素材）
         "ie.sogou.com",                          // 搜狗 IE 插件推广
         "metasogou.com",                         // 搜狗元数据追踪
-        "get.sogou.com",                       // 搜狗输入法收集并回传输入的数据。开启后会影响账号同步、词库更新、问题反馈，但语音输入等其他功能可以正常使用
+        "get.sogou.com",                       // 搜狗输入法收集并回传输入的数据。拦截后会影响账号同步、词库更新、问题反馈，但语音输入等其他功能可以正常使用
         // Flash/PotPlayer
         "flash.cn",                              // Flash 国内分发域
         "kakaocorp.com",                         // PotPlayer 母公司 Kakao 统计上报
