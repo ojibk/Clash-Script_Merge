@@ -269,7 +269,7 @@ function main(config) {
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
         // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT", // SUFFIX 规则的 adobestats.io（无协议条件）已覆盖所有协议，此处冗余
-        `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`, // 已有遮蔽规则，此处冗余覆盖
+        // `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`, // 已有遮蔽规则，此处冗余覆盖
     ];
 
     // ── Adobe WebSocket 遥测 ──
@@ -424,7 +424,7 @@ function main(config) {
         "bugly.gtimg.com",                       // Bugly 静态资源 CDN
         // 字节系
         "log.snssdk.com",                        // 字节系客户端日志上报
-        "i.snssdk.com",                          // 字节跳动国内 SDK 主接口
+        // "i.snssdk.com",                          // 字节跳动国内 SDK 主接口
         "log.byteoversea.com",                   // 字节跳动海外日志上报
         // 剪映
         "metrics.capcut.com",                    // 剪映遥测上报
