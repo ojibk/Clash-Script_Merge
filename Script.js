@@ -210,7 +210,7 @@ function main(config) {
     const pushKeyword = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN-KEYWORD,${v},${a}`); });
 
     // Firefly 专属：仅对 TCP 流量生效（动作由调用方参数决定：proxy 路由或 REJECT 拦截），令 UDP/QUIC 不经本层处理，改由 udpBlock 接管拦截，
-    // 以 REJECT 快速终止 QUIC 强制回退 TCP。
+    // 以 REJECT 快速终止 QUIC 强制回退 TCP。注：adobeSharedDeps 走 pushSuffix（全协议），其 UDP 在 allow 层直接路由至代理组，不经 udpBlock。
     const pushFirefly = (d, a, p) => d.forEach(v => {
         if (typeof v === "string" && v) p.push(`AND,((NETWORK,TCP),(DOMAIN-SUFFIX,${v})),${a}`);
     });
@@ -268,11 +268,12 @@ function main(config) {
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
+         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobelogin.com)),REJECT", // 补全 adobeSharedDeps 中非 adobe.com/io 后缀域名的 UDP 拦截
         // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT", // SUFFIX 规则的 adobestats.io（无协议条件）已覆盖所有协议，此处冗余
         // `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`, // 已有遮蔽规则，此处冗余覆盖
     ];
 
-    // ── Adobe WebSocket 遥测 ──
+    // ── Adobe 遥测子域（wss 为子域名前缀，非协议标识）──
     const adobeWsDomain = ["wss.adobe.io"];
 
     // ── Firefly 生成式 AI 专属放行域名 ──
@@ -319,7 +320,7 @@ function main(config) {
         "genuine-software.autodesk.com",         // 正版验证服务
         "edge.activity.autodesk.com",            // 活动/行为追踪
         "developer.api.autodesk.com",            // 开发者 API（含许可验证）
-        "autodesk.com.edgekey.net",              // Akamai CDN 节点（推断含授权回源，可能同时影响下载等服务）
+        "autodesk.com.edgekey.net",              // Akamai CDN 节点（含授权回源；拦截后可能影响下载速度，但授权验证优先级更高）
         "crp.autodesk.com",                      // 云渲染授权
         "autodesk.flexnetoperations.com",        // FlexNet Operations 许可云平台
     ];
