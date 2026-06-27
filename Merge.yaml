@@ -111,7 +111,7 @@ dns:
   fallback-filter:
     geoip: true
     geoip-code: CN                       # 非 CN IP 触发 fallback 重查
-    ipcidr:                              # 补充不合法/保留 IP 段
+    ipcidr:                              # 补充明确污染 IP 网段（不合法/保留 IP 段）
       - 240.0.0.0/4                      # E 类保留地址
       - 0.0.0.0/8                        # 本网络保留段
       - 127.0.0.0/8                      # 本地回环
