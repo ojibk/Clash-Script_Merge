@@ -668,8 +668,8 @@ function main(config) {
 
     // ── 激进阻断规则（默认关闭）──
     const aggressiveRules = [
-        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // 所有 adobe.io 子域（已由 SUFFIX 超集覆盖）
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // adobe.io 裸域+全部子域
+        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // 所有 adobe.io 子域（已由 SUFFIX 超集覆盖，此条冗余）
         "DOMAIN,cclibraries-defaults-cdn.adobe.com,REJECT", // CC Libraries 默认资源 CDN（功能性端点，拦截后默认画笔/色板不可加载）
         // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP", // 多平台共用域，建议审查后启用
         "DOMAIN-KEYWORD,officecdn,REJECT-DROP",              // Office CDN
