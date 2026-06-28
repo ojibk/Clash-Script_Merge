@@ -217,7 +217,7 @@ function main(config) {
 
     // ── Adobe 共用鉴权端点（包括 Firefly 和 CC） ──
     // 受控于 fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK 两个开关，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
-    // 注意：此处走 pushSuffix（无协议限定），UDP 流量同样路由至代理组，不经 udpBlock 拦截——与 adobeFireflyOnly 的 TCP 限定行为不同。
+    // 此处走 pushSuffix（无协议限定），UDP 流量同样路由至代理组，不经 udpBlock 拦截——与 adobeFireflyOnly 的 TCP 限定行为不同。
     const adobeSharedDeps = [
         "ims-na1.adobelogin.com",                 // 登录令牌刷新
         "adobeid-na1.services.adobe.com",         // Adobe ID 服务
@@ -236,7 +236,6 @@ function main(config) {
         "prod.adobegenuine.com",                  // 正版完整性验证服务
         "na1e.services.adobe.com",                // Genuine 服务备用
         "crs.cr.adobe.com",                       // 许可证检查
-        "cclibraries-defaults-cdn.adobe.com",     // CC Libraries 默认资源 CDN
         "adobesearch.adobe.io",                   // 搜索遥测
         "p13n.adobe.io",                          // 个性化遥测
         "ic.adobe.io",                            // 洞察收集器
@@ -269,7 +268,7 @@ function main(config) {
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
-        "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobelogin.com)),REJECT", // 补全 adobeSharedDeps 中非 adobe.com/io 后缀域名的 UDP 拦截
+        "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobelogin.com)),REJECT", // 防御性补全：Firefly 禁用时已由 SUFFIX 规则覆盖，Firefly 启用时 UDP 由 allow 层路由至代理组
         // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT", // SUFFIX 规则的 adobestats.io（无协议条件）已覆盖所有协议，此处冗余
         // `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`, // 已有遮蔽规则，此处冗余覆盖
     ];
@@ -513,7 +512,7 @@ function main(config) {
         "sogoucdn.com",                          // 搜狗 CDN（广告素材）
         "ie.sogou.com",                          // 搜狗 IE 插件推广
         "metasogou.com",                         // 搜狗元数据追踪
-        "get.sogou.com",                       // 搜狗输入法收集并回传输入的数据。拦截后会影响账号同步、词库更新、问题反馈，但语音输入等其他功能可以正常使用
+        "get.sogou.com",                         // 搜狗输入法收集并回传输入的数据。拦截后会影响账号同步、词库更新、问题反馈，但语音输入等其他功能可以正常使用
         // Flash/PotPlayer
         "flash.cn",                              // Flash 国内分发域
         "kakaocorp.com",                         // PotPlayer 母公司 Kakao 统计上报
@@ -671,6 +670,7 @@ function main(config) {
     const aggressiveRules = [
         // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // ⚠️ 激进：所有 adobe.io 子域（已由 SUFFIX 超集覆盖）
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // ⚠️ 激进：adobe.io 裸域+全部子域
+        "DOMAIN-SUFFIX,cclibraries-defaults-cdn.adobe.com,REJECT-DROP", // CC Libraries 默认资源 CDN（功能性端点，拦截后默认画笔/色板不可加载）
         // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP", // 多平台共用域，建议审查后启用
         "DOMAIN-KEYWORD,officecdn,REJECT-DROP",              // ⚠️ 激进：Office CDN
         "DOMAIN,geo.adobe.com,REJECT-DROP",                  // ⚠️ 激进：Adobe 地理区域识别
