@@ -209,14 +209,15 @@ function main(config) {
     const pushDomain  = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN,${v},${a}`); });
     const pushKeyword = (d, a, p) => d.forEach(v => { if (typeof v === "string" && v) p.push(`DOMAIN-KEYWORD,${v},${a}`); });
 
-    // Firefly 专属：仅对 TCP 流量生效（动作由调用方参数决定：proxy 路由或 REJECT 拦截），令 UDP/QUIC 不经本层处理，改由 udpBlock 接管拦截，
-    // 以 REJECT 快速终止 QUIC 强制回退 TCP。注：adobeSharedDeps 走 pushSuffix（全协议），其 UDP 在 allow 层直接路由至代理组，不经 udpBlock。
+    // Firefly 专属域名的 TCP 限定规则：仅对 adobeFireflyOnly 中的域名生成 TCP 条件匹配，令这些域名的 UDP/QUIC 不经本层，
+    // 交由 udpBlock 的 adobe.io/adobe.com 规则拦截，以 REJECT 快速失败强制回退 TCP。
     const pushFirefly = (d, a, p) => d.forEach(v => {
         if (typeof v === "string" && v) p.push(`AND,((NETWORK,TCP),(DOMAIN-SUFFIX,${v})),${a}`);
     });
 
     // ── Adobe 共用鉴权端点（包括 Firefly 和 CC） ──
-    // 注意：受控于 fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK 两个开关，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
+    // 受控于 fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK 两个开关，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
+    // 注意：此处走 pushSuffix（无协议限定），UDP 流量同样路由至代理组，不经 udpBlock 拦截——与 adobeFireflyOnly 的 TCP 限定行为不同。
     const adobeSharedDeps = [
         "ims-na1.adobelogin.com",                 // 登录令牌刷新
         "adobeid-na1.services.adobe.com",         // Adobe ID 服务
@@ -224,7 +225,7 @@ function main(config) {
         "cc-api-cp.adobe.io",                     // CC 权限校验，含 Firefly 订阅验证
         "cc-api-data.adobe.io",                   // CC 生成结果存储
         "lcs-roaming.adobe.io",                   // 离线许可验证 / Firefly 订阅状态同步
-        "scdown.adobe.io",                        // 疑似 Firefly 依赖端点（无直接抓包证据，待验证）
+        "scdown.adobe.io",                        // 疑似 Firefly 依赖端点（无直接抓包证据；保守放行，误拦截导致功能异常的代价高于误放行风险）
     ];
 
     // ── Adobe 激活 / 遥测拦截 ──
