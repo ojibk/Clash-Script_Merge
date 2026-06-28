@@ -668,16 +668,16 @@ function main(config) {
 
     // ── 激进阻断规则（默认关闭）──
     const aggressiveRules = [
-        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // ⚠️ 激进：所有 adobe.io 子域（已由 SUFFIX 超集覆盖）
-        "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // ⚠️ 激进：adobe.io 裸域+全部子域
-        "DOMAIN-SUFFIX,cclibraries-defaults-cdn.adobe.com,REJECT-DROP", // CC Libraries 默认资源 CDN（功能性端点，拦截后默认画笔/色板不可加载）
+        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // 所有 adobe.io 子域（已由 SUFFIX 超集覆盖）
+        "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // adobe.io 裸域+全部子域
+        "DOMAIN,cclibraries-defaults-cdn.adobe.com,REJECT", // CC Libraries 默认资源 CDN（功能性端点，拦截后默认画笔/色板不可加载）
         // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP", // 多平台共用域，建议审查后启用
-        "DOMAIN-KEYWORD,officecdn,REJECT-DROP",              // ⚠️ 激进：Office CDN
-        "DOMAIN,geo.adobe.com,REJECT-DROP",                  // ⚠️ 激进：Adobe 地理区域识别
-        "DOMAIN,geo2.adobe.com,REJECT-DROP",                 // ⚠️ 激进：Adobe 地理区域识别备用
-        "DOMAIN-SUFFIX,accounts.autodesk.com,REJECT-DROP",   // ⚠️ 激进：Autodesk 账户登录
-        "DOMAIN,ieonline.microsoft.com,REJECT-DROP",         // ⚠️ 激进：IE 内核在线检测 / 旧版 Office 激活
-        // "DOMAIN-SUFFIX,entitlement.autodesk.com,REJECT-DROP",// ⚠️ 激进：Autodesk 授权端点；被 autodeskKeyword 层规则遮蔽
+        "DOMAIN-KEYWORD,officecdn,REJECT-DROP",              // Office CDN
+        "DOMAIN,geo.adobe.com,REJECT-DROP",                  // Adobe 地理区域识别
+        "DOMAIN,geo2.adobe.com,REJECT-DROP",                 // Adobe 地理区域识别备用
+        "DOMAIN-SUFFIX,accounts.autodesk.com,REJECT-DROP",   // Autodesk 账户登录
+        "DOMAIN,ieonline.microsoft.com,REJECT-DROP",         // IE 内核在线检测 / 旧版 Office 激活
+        // "DOMAIN-SUFFIX,entitlement.autodesk.com,REJECT-DROP",// Autodesk 授权端点；被 autodeskKeyword 层规则遮蔽
     ];
 
     // ═══════════════ 3. 规则组装与注入 ═══════════════
