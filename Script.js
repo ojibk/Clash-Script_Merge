@@ -162,6 +162,7 @@ function main(config) {
         // 多级降级识别
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true"));
+        // 关键词/include-all 是强信号，必须独占第一优先档；下面这档退化为弱启发式，只在强信号全表落空后才介入
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             Array.isArray(e.g?.proxies) && e.g.proxies.length > 3);
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
