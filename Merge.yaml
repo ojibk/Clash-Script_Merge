@@ -1,5 +1,5 @@
 # ============================================================
-# Clash-Merge 全局扩展覆写配置 v260627
+# Clash-Merge 全局扩展覆写配置 v260705
 # 智能路由受限网络服务
 # 规则集驱动，可独立运行（依赖网络拉取 rule-providers）。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
@@ -61,7 +61,10 @@ dns:
     - "+.ip6.arpa"
     # 国内应用增强兼容性
     - "+.market.xiaomi.com"              # 小米应用商店
-    - "localhost.ptlogin2.qq.com"        # QQ 本地登录
+    - "localhost.ptlogin2.qq.com"        # QQ 快速登录检测
+    - "localhost.sec.qq.com"             # QQ 快速登录检测
+    - "localhost.work.weixin.qq.com"     # 微信快速登录检测
+    
     # TURN — 中继服务器，与 STUN 同等必要
     - "turn.*.*"
     - "turn.*.*.*"
