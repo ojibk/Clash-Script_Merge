@@ -224,7 +224,7 @@ function main(config) {
         "auth.services.adobe.com",                // Adobe ID 鉴权，Firefly Token 来源
         "cc-api-cp.adobe.io",                     // CC 权限校验，含 Firefly 订阅验证
         "cc-api-data.adobe.io",                   // CC 生成结果存储
-        "lcs-roaming.adobe.io",                   // 离线许可验证 / Firefly 订阅状态同步
+        "lcs-roaming.adobe.io",                   // 云端许可漫游同步（联网同步后可临时离线使用）/ Firefly 订阅状态同步
         "scdown.adobe.io",                        // 疑似 Firefly 依赖端点（无直接抓包证据；保守放行，误拦截导致功能异常的代价高于误放行风险）
     ];
 
@@ -389,11 +389,11 @@ function main(config) {
     // ── 微软 & Office 遥测 ──
     const msTelemSuffix = [
         "telemetry.microsoft.com",               // Windows/Office 遥测主域
+        // "watson.telemetry.microsoft.com",        // Watson 崩溃报告服务，冗余覆盖，被上条遮蔽
         "nexus.officeapps.live.com",             // Office 遥测上报
         "officeclient.microsoft.com",            // Office 客户端统计
         "vortex.data.microsoft.com",             // Windows 错误报告
-        "settings-win.data.microsoft.com",       // Windows 诊断数据上报
-        "watson.telemetry.microsoft.com",        // Watson 崩溃报告服务
+        "settings-win.data.microsoft.com",       // Windows 诊断数据上报        
         // 注：当前精确匹配 v10/v20，若微软推出 v30 等新版本需手动添加。但若采用更通用的 DOMAIN-SUFFIX,events.data.microsoft.com 会覆盖未知子域。
         "v10.events.data.microsoft.com",         // Windows 诊断数据 v1.0
         "v20.events.data.microsoft.com",         // Windows 诊断数据 v2.0
@@ -408,9 +408,9 @@ function main(config) {
         "wpsgold.wpscdn.cn",                     // WPS 广告资源 CDN
         // "sync.wps.cn",                        // ⚠️ WPS 云文档同步，拦截后云同步失效
         // 海康威视
-        "upgrade.hikvision.com",                 // 海康固件升级检查
-        "ezdns.hikvision.com",                   // 海康 DDNS 回传
-        "cloudmsg.hikvision.com",                // 海康云消息推送
+        "upgrade.hikvision.com",                 // 海康固件升级检查（拦截后固件更新通知失效）
+        "ezdns.hikvision.com",                   // 海康 DDNS 回传（拦截后 HiDDNS 远程访问失效）
+        "cloudmsg.hikvision.com",                // 海康云消息推送（拦截后移动端报警推送失效）
         // 向日葵/ToDesk
         "sunloginlog.oray.com",                  // 向日葵日志上报
         "report.oray.com",                       // 向日葵行为上报
