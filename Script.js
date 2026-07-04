@@ -72,7 +72,7 @@ function main(config) {
         .map(n => String(n).padStart(2, "0")).join(":");
     console.log(`📊 配置注入开始 [${_ts}]`);
     console.log("=".repeat(28));
-    
+
     // ═══════════════ client-fingerprint 注入 ═══════════════
     if (!ENABLE_CLIENT_FINGERPRINT) {
         console.log("ℹ️ TLS 指纹注入已禁用");
@@ -265,7 +265,7 @@ function main(config) {
     ];
 
     // ── UDP / QUIC 拦截（强制回退 TCP）──
-    // ⚠️ UDP 流量在 block 层已被 udpBlock 拦截（REJECT），因此 direct 层的 fonts/color 规则对 UDP 永远不可达；fonts/color 实际只走 TCP DIRECT。
+    // ⚠️ UDP 流量在 block 层已被 udpBlock 拦截（REJECT），因此 direct 层的 fonts/color/assets 规则对 UDP 永远不可达，实际只走 TCP DIRECT。
     // 使用 REJECT 而非 REJECT-DROP，目的是让 QUIC 立即失败以加速回退 TCP，避免静默丢弃导致超时等待，拖慢 Firefly 等放行服务的首次连接速度。
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
@@ -395,7 +395,7 @@ function main(config) {
         "nexus.officeapps.live.com",             // Office 遥测上报
         "officeclient.microsoft.com",            // Office 客户端统计
         "vortex.data.microsoft.com",             // Windows 错误报告
-        "settings-win.data.microsoft.com",       // Windows 诊断数据上报        
+        "settings-win.data.microsoft.com",       // Windows 诊断数据上报
         // 注：当前精确匹配 v10/v20，若微软推出 v30 等新版本需手动添加。但若采用更通用的 DOMAIN-SUFFIX,events.data.microsoft.com 会覆盖未知子域。
         "v10.events.data.microsoft.com",         // Windows 诊断数据 v1.0
         "v20.events.data.microsoft.com",         // Windows 诊断数据 v2.0
