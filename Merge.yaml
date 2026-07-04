@@ -62,9 +62,8 @@ dns:
     # 国内应用增强兼容性
     - "+.market.xiaomi.com"              # 小米应用商店
     - "localhost.ptlogin2.qq.com"        # QQ 快速登录检测
-    - "localhost.sec.qq.com"             # QQ 快速登录检测
-    - "localhost.work.weixin.qq.com"     # 微信快速登录检测
-    
+    - "localhost.sec.qq.com"             # QQ 安全检测
+    - "localhost.work.weixin.qq.com"     # 企业微信登录检测
     # TURN — 中继服务器，与 STUN 同等必要
     - "turn.*.*"
     - "turn.*.*.*"
