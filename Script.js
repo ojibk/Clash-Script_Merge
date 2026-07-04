@@ -153,7 +153,7 @@ function main(config) {
     const _isEligible = t => !!(t && (_isFallback(t) || (!EXCLUDED_NAMES.has(t.toUpperCase()) && !EXCLUDED_CN_RE.test(t))));
 
     if (config["proxy-groups"].length) {
-        const _KW_RE = /节点(?:选择)?|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅|代理|选择/i;
+        const _KW_RE = /节点选择|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅|代理|选择/i;
         const prepped = config["proxy-groups"].map(g => {
             const clean = sanitizeName(g?.name);
             return { g, clean, fallback: _isFallback(clean), eligible: _isEligible(clean) };
@@ -161,7 +161,9 @@ function main(config) {
 
         // 多级降级识别
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            (_KW_RE.test(e.clean) || (e.g?.["include-all"] === true || e.g?.["include-all"] === "true") || (Array.isArray(e.g?.proxies) && e.g.proxies.length > 3)));
+            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true"));
+        if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
+            Array.isArray(e.g?.proxies) && e.g.proxies.length > 3);
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
         if (!entry) {
             entry = prepped.find(e => e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
@@ -816,7 +818,15 @@ function main(config) {
                 const scriptManaged = new Set([...currentManaged, ...LEGACY_CLEANUP_ENTRIES.map(s => s.toLowerCase())]);
 
                 if (DEBUG_FAKEIPFILTER_CLEANUP) {
-                    const redundant = LEGACY_CLEANUP_ENTRIES.filter(e => currentManaged.has(e.toLowerCase()));
+                    // 语义匹配：剥离通配符前缀后，判断是否为 BACKDOOR_BASE_DOMAINS 中某项本身或其子域
+                    const isCoveredByCurrent = (entry) => {
+                        const bare = entry.replace(/^[+*]\./, "").toLowerCase();
+                        return BACKDOOR_BASE_DOMAINS.some(d => {
+                            const domain = d.toLowerCase();
+                            return bare === domain || bare.endsWith("." + domain);
+                        });
+                    };
+                    const redundant = LEGACY_CLEANUP_ENTRIES.filter(e => isCoveredByCurrent(e));
                     if (redundant.length) console.warn("⚠️ 历史托管域名中存在仍属当前活跃集合的冗余条目，建议清理:", redundant);
                 }
 
