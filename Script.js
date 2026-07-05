@@ -161,7 +161,8 @@ function main(config) {
 
         // 多级降级识别
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true"));
+            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true") &&
+            Array.isArray(e.g?.proxies) && e.g.proxies.length > 0); // 节点非空校验
         // 关键词/include-all 是强信号，必须独占第一优先档；下面这档退化为弱启发式，只在强信号全表落空后才介入
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             Array.isArray(e.g?.proxies) && e.g.proxies.length > 3);
@@ -176,7 +177,7 @@ function main(config) {
         }
 
         if (entry?.g?.name) {
-            if (entry.g.name !== entry.clean) { console.error(`❌ 代理组含不可见字符`); return config; }
+            if (entry.g.name !== entry.clean) { console.error(`❌ 代理组名含首尾空格或不可见字符`); return config; }
             proxyGroupName = entry.g.name;
             console.log(`${entry.fallback ? "⚠️" : "✅"} 代理组: [${proxyGroupName}] (type: ${entry.g.type ?? "?"})`);
         } else {
@@ -220,7 +221,8 @@ function main(config) {
 
     // ── Adobe 共用鉴权端点（包括 Firefly 和 CC） ──
     // 受控于 fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK 两个开关，Firefly 启用时路由至代理组，Firefly 禁用时以 REJECT 拦截。
-    // 此处走 pushSuffix（无协议限定），UDP 流量同样路由至代理组，不经 udpBlock 拦截——与 adobeFireflyOnly 的 TCP 限定行为不同。
+    // 此处走 pushSuffix(无协议限定)，故 UDP 与 TCP 遵循相同的目标动作(Firefly 启用时二者皆走代理组，
+    // 禁用时二者皆被 REJECT)，不像 adobeFireflyOnly 那样单独对 UDP 做 udpBlock 强制拦截。
     const adobeSharedDeps = [
         "ims-na1.adobelogin.com",                 // 登录令牌刷新
         "adobeid-na1.services.adobe.com",         // Adobe ID 服务
@@ -266,7 +268,7 @@ function main(config) {
     ];
 
     // ── UDP / QUIC 拦截（强制回退 TCP）──
-    // ⚠️ UDP 流量在 block 层已被 udpBlock 拦截（REJECT），因此 direct 层的 fonts/color/assets 规则对 UDP 永远不可达，实际只走 TCP DIRECT。
+    // ⚠️ 当 ENABLE_BLOCK=true 时，UDP 流量在 block 层已被 udpBlock 拦截（REJECT），因此 direct 层的 fonts/color/assets 规则对 UDP 永远不可达，实际只走 TCP DIRECT。
     // 使用 REJECT 而非 REJECT-DROP，目的是让 QUIC 立即失败以加速回退 TCP，避免静默丢弃导致超时等待，拖慢 Firefly 等放行服务的首次连接速度。
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
@@ -754,7 +756,7 @@ function main(config) {
         console.log(`   代理规则: ${ENABLE_PROXY ? "✅" : "❌"}`);
         if (ENABLE_AGGRESSIVE) {
             console.warn(`   激进阻断: ⚠️ 已开启`);
-            console.warn(`   ⚠️ 激进阻断可能导致以下服务不可用：`);
+            console.warn(`   ⚠️ 激进阻断可能导致以下服务不可用(仅当 ENABLE_BLOCK=true 时成立)：`);
             console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层处理）、accounts.autodesk.com（Autodesk 账户登录）、`);
             console.warn(`      geo.adobe.com / geo2.adobe.com（Adobe 地理区域识别）、`);
             console.warn(`      officecdn（Office 更新/模板）、ieonline.microsoft.com（ActiveX/旧版 OA）`);
