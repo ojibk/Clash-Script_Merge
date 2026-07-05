@@ -81,7 +81,7 @@ function main(config) {
     } else if (!Array.isArray(config.proxies)) {
         console.log("ℹ️ config.proxies 不是数组，跳过指纹注入");
     } else {
-        const _VALID = new Set(["chrome","firefox","safari","iOS","android","edge","360","qq","random","none"]);
+        const _VALID = new Set(["chrome","firefox","safari","iOS","android","edge","360","qq","random","none"]); // none 值理论不可达,保留仅为枚举完整性
         let _rawFP;
         if (_VALID.has(DEFAULT_FINGERPRINT)) {
             _rawFP = DEFAULT_FINGERPRINT;
@@ -161,8 +161,7 @@ function main(config) {
 
         // 多级降级识别
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true") &&
-            Array.isArray(e.g?.proxies) && e.g.proxies.length > 0); // 节点非空校验
+            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true"));
         // 关键词/include-all 是强信号，必须独占第一优先档；下面这档退化为弱启发式，只在强信号全表落空后才介入
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             Array.isArray(e.g?.proxies) && e.g.proxies.length > 3);
