@@ -76,7 +76,7 @@ dns:
     - 119.29.29.29
 
   # ── 核心开关：DNS 请求参与规则路由 ──
-  respect-rules: true  # 必须开启；与 proxy-server-nameserver 配对，后者为代理服务器提供独立解析路径，规避 DNS→规则路由→DNS 的结构性解析循环
+  respect-rules: true  # 必须开启；与 proxy-server-nameserver 配对，后者为代理服务器提供独立解析路径，避免出现解析 DNS 服务器地址又需要先做一次 DNS 解析的死循环
 
   # ── 主动精准分流（主路径） ──
   nameserver-policy:
@@ -133,7 +133,7 @@ dns:
 # ░░ 全局行为配置
 # ============================================================
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
-geodata-mode: true              # ⚙️ GeoIP 数据库格式：true = .dat（MetaCubeX），false = .mmdb；统一归属判定
+geodata-mode: true              # ⚙️ GeoIP 数据库格式：true = .dat（MetaCubeX），false = .mmdb；统一 IP 地理归属判定
 geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭则停留在出厂版本
 geo-update-interval: 24        # ⏱️ 更新间隔（小时），24 小时 = 每日一次
 geox-url:                       # ⚙️ geodata 下载地址（CF 加速），未声明时回退默认。该参数仅限配置文件重载等内核行为，通过 GUI 更新 GeoData 不受此限
