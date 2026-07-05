@@ -159,19 +159,31 @@ function main(config) {
             return { g, clean, fallback: _isFallback(clean), eligible: _isEligible(clean) };
         });
 
+        // 节点非空校验：覆盖 Mihomo 全部五种节点引入方式
+        const hasNodes = e =>
+            (Array.isArray(e.g?.proxies) && e.g.proxies.length > 0) ||
+            (Array.isArray(e.g?.use) && e.g.use.length > 0) ||
+            e.g?.["include-all"] === true || e.g?.["include-all"] === "true" ||
+            e.g?.["include-all-proxies"] === true || e.g?.["include-all-proxies"] === "true" ||
+            e.g?.["include-all-providers"] === true || e.g?.["include-all-providers"] === "true";
+
         // 多级降级识别
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true"));
+            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true") &&
+            hasNodes(e));
         // 关键词/include-all 是强信号，必须独占第一优先档；下面这档退化为弱启发式，只在强信号全表落空后才介入
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            Array.isArray(e.g?.proxies) && e.g.proxies.length > 3);
-        if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
+            hasNodes(e) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 3);
+        if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
+            hasNodes(e) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
         if (!entry) {
-            entry = prepped.find(e => e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
+            entry = prepped.find(e => e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
+                hasNodes(e) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
             if (entry) console.warn(`⚠️ 降级使用兜底组 [${entry.g.name}]`);
         }
         if (!entry) {
-            entry = prepped.find(e => e.eligible && !NONROUTABLE_TYPES.has(e.g?.type) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
+            entry = prepped.find(e => e.eligible && !NONROUTABLE_TYPES.has(e.g?.type) &&
+                hasNodes(e) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
             if (entry) console.warn(`🚨 最终容错选取 [${entry.g.name}]`);
         }
 
