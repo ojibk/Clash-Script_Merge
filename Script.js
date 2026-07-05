@@ -173,17 +173,15 @@ function main(config) {
             hasNodes(e));
         // 关键词/include-all 是强信号，必须独占第一优先档；下面这档退化为弱启发式，只在强信号全表落空后才介入
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            hasNodes(e) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 3);
-        if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            hasNodes(e) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
+            hasNodes(e));
         if (!entry) {
             entry = prepped.find(e => e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-                hasNodes(e) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
+                hasNodes(e));
             if (entry) console.warn(`⚠️ 降级使用兜底组 [${entry.g.name}]`);
         }
         if (!entry) {
             entry = prepped.find(e => e.eligible && !NONROUTABLE_TYPES.has(e.g?.type) &&
-                hasNodes(e) && Array.isArray(e.g?.proxies) && e.g.proxies.length > 0);
+                hasNodes(e));
             if (entry) console.warn(`🚨 最终容错选取 [${entry.g.name}]`);
         }
 
@@ -782,7 +780,7 @@ function main(config) {
         console.log(`   Hosts 覆写: ${ENABLE_HOSTS_OVERRIDE ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
         console.warn("⚠️ [udpBlock] 所有 UDP 规则依赖域名识别（Fake-IP / Sniffer），ECH 下可能全部失效。");
         console.log(`   ▶ 注入规则条目分层统计:`);
-        const _LAYER_LABELS = { allow:"白名单/优先层", block:"拦截层", process:"进程层", proxy:"代理层", aggressive:"激进层", direct:"直连层" };
+        const _LAYER_LABELS = { allow:"白名单/条件代理优先层", block:"拦截层", process:"进程层", proxy:"代理层", aggressive:"激进层", direct:"直连层" };
         for (const k of LAYER_ORDER) {
             console.log(`      - ${_LAYER_LABELS[k]} (${k})  : ${layerPools[k].length} 条`);
         }
