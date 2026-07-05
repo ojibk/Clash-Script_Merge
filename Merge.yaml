@@ -211,7 +211,7 @@ proxy-groups:
 # ⚠️ 注释 provider 必须同步注释对应 RULE-SET；反之则不必。
 rule-providers:
   # '': {} # 若订阅有空键 '' ，Mihomo 报错 '' has unset fields。取消注释覆盖空条目
-  private: # 🔓 私有/保留域名 (localhost/local/router.asus.com 等)，DustinWin 构建 MRS
+  private: # 🔓 私有/保留域名 (如 localhost、*.local 后缀、router.asus.com 硬件厂商管理域名等)，DustinWin 构建 MRS
     type: http        # ℹ️ 远程 HTTP 资源
     behavior: domain  # ℹ️ 域名后缀匹配树
     format: mrs       # ℹ️ MRS 二进制直接映射
@@ -317,9 +317,9 @@ rules:
   # - RULE-SET,lan-cidr,DIRECT,no-resolve # 🔓 局域网 IP 直连（需启用对应 rule-provider）
 
   # ── 综合拦截 ──
-  - RULE-SET,ads,REJECT                 # 🚫 综合拦截集拒绝
-  # - RULE-SET,advertising,REJECT       # 🚫 广告拦截（需启用）
-  # - RULE-SET,threat,REJECT            # 🚫 威胁阻断（需启用）
+  - RULE-SET,ads,REJECT                 # 🚫 综合拦截集
+  # - RULE-SET,advertising,REJECT       # 🚫 广告拦截（按需启用）
+  # - RULE-SET,threat,REJECT            # 🚫 威胁阻断（按需启用）
 
   # ── 域名分流（国内优先，规避 CDN 误判） ──
   - RULE-SET,cn,DIRECT                  # 🔓 国内域名直连
