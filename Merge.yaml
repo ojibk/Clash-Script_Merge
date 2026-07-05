@@ -135,8 +135,8 @@ dns:
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
 geodata-mode: true              # ⚙️ GeoIP 数据库格式：true = .dat（MetaCubeX），false = .mmdb；统一 IP 地理归属判定
 geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭则停留在出厂版本
-geo-update-interval: 24        # ⏱️ 更新间隔（小时），24 小时 = 每日一次
-geox-url:                       # ⚙️ geodata 下载地址（CF 加速），未声明时回退默认。该参数仅限配置文件重载等内核行为，通过 GUI 更新 GeoData 不受此限
+geo-update-interval: 24         # ⏱️ 更新间隔（小时），24 小时 = 每日一次
+geox-url:                       # ⚙️ geodata 下载地址（CF 加速），未声明时回退默认。该参数仅在配置文件重载等内核行为中生效，通过 GUI 更新 GeoData 不受此限
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
   # mmdb: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb" # geodata-mode:true 时 mmdb 不参与查询，注释可省下载
@@ -178,7 +178,7 @@ proxy-groups:
   - name: 🎛️ 动态选择 # 🛡️ 主出口，硬编码组名。修改组名须同步更新所有 rules 引用
     include-all: true # ⚙️ 引入所有裸出站节点
     type: url-test    # 自动延迟优选，IP 频繁变动可能触发风控
-    interval: 600     # 健康检查间隔(秒)，控制节点变动频率
+    interval: 600     # ⏱️ 健康检查间隔(秒)，控制节点变动频率
     tolerance: 50     # 切换容差(ms)，新节点比当前节点低超过 50ms 才切换
     lazy: true        # 惰性探测，按需触发健康检查
     url: http://www.gstatic.com/generate_204 # HTTP 测试链接，避免 TLS 开销
@@ -190,7 +190,7 @@ proxy-groups:
   - name: 🔀 绕港优选 # 🇭🇰 排除香港的优选组 (ChatGPT/Claude/Gemini/TikTok)
     include-all: true # ⚙️ 引入所有裸出站节点
     type: url-test    # 自动延迟优选
-    interval: 1800    # 健康检查间隔(秒)，半小时降低风控可能
+    interval: 1800    # ⏱️ 健康检查间隔(秒)，半小时降低风控可能
     tolerance: 50     # 切换容差(ms)
     lazy: true        # 惰性探测
     url: http://www.gstatic.com/generate_204
@@ -226,7 +226,7 @@ rule-providers:
   #   behavior: ipcidr  # ℹ️ IP 网段前缀匹配树
   #   format: mrs
   #   path: "./ruleset/providers/lan-cidr.mrs" # 重命名避免 geosite/private 冲突
-  #   interval: 604800
+  #   interval: 604800  # ⏱️ 7天，低频变动
   #   proxy: DIRECT     # 指定规则集下载/更新出口
   #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
   #   # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs" # 备用
@@ -236,7 +236,7 @@ rule-providers:
   #   behavior: domain
   #   format: mrs
   #   path: "./ruleset/providers/advertising.mrs"
-  #   interval: 86400   # 24小时
+  #   interval: 86400   # ⏱️ 24小时
   #   proxy: DIRECT     # 指定规则集下载/更新出口
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs"
   #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs" # 备用
@@ -246,7 +246,7 @@ rule-providers:
     behavior: domain
     format: mrs
     path: "./ruleset/providers/ads.mrs"
-    interval: 86400   # 24小时，上游变动频繁
+    interval: 86400   # ⏱️ 24小时，上游变动频繁
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.mrs"
     # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs" # 备用
@@ -256,7 +256,7 @@ rule-providers:
   #   behavior: domain
   #   format: mrs
   #   path: "./ruleset/providers/threat.mrs"
-  #   interval: 86400
+  #   interval: 86400   # ⏱️ 24小时
   #   proxy: DIRECT     # 指定规则集下载/更新出口
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
   #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs" # 备用
@@ -266,7 +266,7 @@ rule-providers:
     behavior: domain
     format: mrs
     path: "./ruleset/providers/cn.mrs"
-    interval: 86400   # 24小时
+    interval: 86400   # ⏱️ 24小时
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
     # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs" # 备用
@@ -276,7 +276,7 @@ rule-providers:
     behavior: domain
     format: mrs
     path: "./ruleset/providers/non-cn.mrs"
-    interval: 86400   # 24小时
+    interval: 86400   # ⏱️ 24小时
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs"
     # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs" # 备用
@@ -286,7 +286,7 @@ rule-providers:
     behavior: domain
     format: mrs
     path: "./ruleset/providers/hk-restricted.mrs"
-    interval: 604800  # 7天，低频变动
+    interval: 604800  # ⏱️ 7天，低频变动
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/hk-restricted.mrs"
     # url: "https://raw.githubusercontent.com/ojibk/rules/main/hk-restricted.mrs" # 备用
@@ -296,7 +296,7 @@ rule-providers:
     behavior: domain
     format: mrs
     path: "./ruleset/providers/amazon.mrs"
-    interval: 604800  # 7天，低频变动
+    interval: 604800  # ⏱️ 7天，低频变动
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
     # url: "https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs" # 备用
@@ -375,4 +375,4 @@ rules:
 #     如需兼容公共域名被内网 DNS 解析到私有 IP 的特殊场景，
 #     勿将私有段加入 ipcidr，否则内网域名每次 DNS 查询都将触发 fallback 重查；
 #     境外 DoH 无内网解析能力，返回错误结果并覆盖内网 IP，导致内网服务不可用。
-# ======================================================================
+# ============================================================
