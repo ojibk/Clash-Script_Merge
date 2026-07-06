@@ -272,7 +272,7 @@ function main(config) {
         "auth.services.adobe.com",                // Adobe ID 鉴权，Firefly Token 来源
         "cc-api-cp.adobe.io",                     // CC 权限校验，含 Firefly 订阅验证
         "cc-api-data.adobe.io",                   // CC 生成结果存储
-        "lcs-roaming.adobe.io",                   // 云端许可漫游同步（联网同步后可临时离线使用）/ Firefly 订阅状态同步
+        "lcs-roaming.adobe.io",                   // 云端许可漫游同步（联网同步后可暂时离线使用相关功能）/ Firefly 订阅状态同步
         "scdown.adobe.io",                        // 疑似 Firefly 依赖端点（无直接抓包证据；保守放行，误拦截导致功能异常的代价高于误放行风险）
     ];
 
@@ -307,7 +307,7 @@ function main(config) {
     // const _ADOBESTATS_RAND_RE = "^[A-Za-z0-9]{10}\\.adobestats\\.io$"; // 匹配随机10位字母/数字子域
     const adobeRegex = [
         `DOMAIN-REGEX,${_ADOBE_RAND_RE},REJECT`,
-        // `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE},REJECT`, // 已被 adobeSuffix 的 "adobestats.io" 覆盖
+        // `DOMAIN-REGEX,${_ADOBESTATS_RAND_RE},REJECT`, // 已被 adobeSuffix 的 "adobestats.io" 规则遮蔽
     ];
 
     // ── UDP / QUIC 拦截（强制回退 TCP）──
@@ -717,7 +717,7 @@ function main(config) {
     // ── 激进阻断规则（默认关闭）──
     const aggressiveRules = [
         "DOMAIN-SUFFIX,adobe.io,REJECT-DROP",                // adobe.io 裸域+全部子域
-        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // 所有 adobe.io 子域（已由 SUFFIX 超集覆盖，此条冗余）
+        // "DOMAIN-REGEX,^.+\\.adobe\\.io$,REJECT-DROP",     // 所有 adobe.io 子域（已由上条 SUFFIX 超集覆盖，此条冗余）
         "DOMAIN,cclibraries-defaults-cdn.adobe.com,REJECT", // CC Libraries 默认资源 CDN（功能性端点，拦截后默认画笔/色板不可加载）；需快速失败避免面板挂起
         // "DOMAIN-SUFFIX,workflowusercontent.com,REJECT-DROP", // 多平台共用域，建议审查后启用
         "DOMAIN-KEYWORD,officecdn,REJECT-DROP",              // Office CDN
