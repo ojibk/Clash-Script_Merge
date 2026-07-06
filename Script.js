@@ -191,6 +191,7 @@ function main(config) {
             const _invalid = NODE_SOURCE_CHECKS.filter(c => typeof c.test !== "function" || typeof c.desc !== "function");
             if (_invalid.length) {
                 console.error(`❌ NODE_SOURCE_CHECKS 配置错误：${_invalid.length} 条记录缺少 test/desc 函数`);
+                return config;
             }
         }
 
