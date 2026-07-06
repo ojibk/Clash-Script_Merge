@@ -776,7 +776,7 @@ function main(config) {
         console.log(`   代理规则: ${ENABLE_PROXY ? "✅" : "❌"}`);
         if (ENABLE_AGGRESSIVE) {
             console.warn(`   激进阻断: ⚠️ 已开启`);
-            console.warn(`   ⚠️ 激进阻断可能导致以下服务不可用(仅当 ENABLE_BLOCK=true 时成立)：`);
+            console.warn(`   ⚠️ 激进阻断可能导致以下服务不可用：`);
             console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层处理）、accounts.autodesk.com（Autodesk 账户登录）、`);
             console.warn(`      geo.adobe.com / geo2.adobe.com（Adobe 地理区域识别）、`);
             console.warn(`      officecdn（Office 更新/模板）、ieonline.microsoft.com（ActiveX/旧版 OA）`);
@@ -797,7 +797,6 @@ function main(config) {
         }
         console.log(`   注入规则数: ${finalPool.length} 条（含首尾哨兵）`);
         console.log(`   总规则数: ${config.rules.length} 条`);
-        // console.log(`   脚本执行耗时: ${Date.now() - _startTime} ms（含指纹注入，不含 Hosts 覆写）`);
         console.log("=".repeat(28));
     } catch (err) {
         console.error("❌ 规则注入异常，继续执行 Hosts:", err);
