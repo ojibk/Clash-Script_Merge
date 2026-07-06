@@ -128,6 +128,8 @@ function main(config) {
     let proxyGroupName = null;
     const EXCLUDED_NAMES = new Set(["DIRECT","REJECT","REJECT-DROP","COMPATIBLE","DEFAULT","MATCH","PASS"]);
     const FALLBACK_NAMES = new Set(["GLOBAL"]);
+    // "全部/全网/全球/所有/默认" 采用精确匹配（^...$），"直连/拒绝" 采用子串匹配：
+    // 前一类是完整的策略组语义名，必须精确匹配避免误伤；后一类是功能描述词，可能嵌在复合名称中（如"手动选择-直连"），子串匹配更安全。
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|球)|所有|默认)$|(?:直连|拒绝)/;
     const FALLBACK_CN_RE = /^全局$/;
     const VALID_PROXY_TYPES = new Set(["select","url-test","fallback","load-balance","smart"]);
@@ -166,7 +168,6 @@ function main(config) {
             e.g?.["include-all"] === true || e.g?.["include-all"] === "true" ||
             e.g?.["include-all-proxies"] === true || e.g?.["include-all-proxies"] === "true" ||
             e.g?.["include-all-providers"] === true || e.g?.["include-all-providers"] === "true";
-        
         // 诊断用的节点来源描述（与 hasNodes 解耦，各自独立维护）
         const _nodeDesc = g => {
             if (Array.isArray(g?.proxies) && g.proxies.length > 0) return `${g.proxies.length} 节点(静态)`;
@@ -292,7 +293,7 @@ function main(config) {
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
-        // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobelogin.com)),REJECT", // 防御性冗余：Firefly 禁用时已由 SUFFIX 规则覆盖，Firefly 启用时 UDP 由 allow 层路由至代理组
+        // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobelogin.com)),REJECT", // 防御性冗余：Firefly 禁用时已由共享端点规则覆盖，Firefly 启用时 UDP 由 allow 层路由至代理组
         // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT", // SUFFIX 规则的 adobestats.io（无协议条件）已覆盖所有协议，此处冗余
         // `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`, // 已有遮蔽规则，此处冗余覆盖
     ];
