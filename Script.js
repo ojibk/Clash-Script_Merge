@@ -288,7 +288,7 @@ function main(config) {
         "p13n.adobe.io",                          // 个性化遥测
         "ic.adobe.io",                            // 洞察收集器
         "lcs-mobile.adobe.io",                    // 新版 CC 移动端授权
-        "adobe-dns.adobe.com",                    // Adobe 自有 DNS 服务
+        "adobe-dns.adobe.com",                    // Adobe 自有 DNS 服务（可能用于内部服务发现或授权查询，拦截以增强隔离）
         "adobe-dns-2.adobe.com",                  // 同上，备用节点 2
         "adobe-dns-3.adobe.com",                  // 同上，备用节点 3
         "lm.licenses.adobe.com",                  // 许可证管理器
@@ -456,9 +456,9 @@ function main(config) {
         "wpsgold.wpscdn.cn",                     // WPS 广告资源 CDN
         // "sync.wps.cn",                        // ⚠️ WPS 云文档同步，拦截后云同步失效
         // 海康威视
-        "upgrade.hikvision.com",                 // 海康固件升级检查（拦截后固件更新通知失效）
-        "ezdns.hikvision.com",                   // 海康 DDNS 回传（拦截后 HiDDNS 远程访问失效）
-        "cloudmsg.hikvision.com",                // 海康云消息推送（拦截后移动端报警推送失效）
+        // "upgrade.hikvision.com",                 // 海康固件升级检查（拦截后固件更新通知失效）
+        // "ezdns.hikvision.com",                   // 海康 DDNS 回传（拦截后 HiDDNS 远程访问失效）
+        // "cloudmsg.hikvision.com",                // 海康云消息推送（拦截后移动端报警推送失效）
         // 向日葵/ToDesk
         "sunloginlog.oray.com",                  // 向日葵日志上报
         "report.oray.com",                       // 向日葵行为上报
