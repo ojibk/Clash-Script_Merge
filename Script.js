@@ -166,6 +166,16 @@ function main(config) {
             e.g?.["include-all"] === true || e.g?.["include-all"] === "true" ||
             e.g?.["include-all-proxies"] === true || e.g?.["include-all-proxies"] === "true" ||
             e.g?.["include-all-providers"] === true || e.g?.["include-all-providers"] === "true";
+        
+        // 诊断用的节点来源描述（与 hasNodes 解耦，各自独立维护）
+        const _nodeDesc = g => {
+            if (Array.isArray(g?.proxies) && g.proxies.length > 0) return `${g.proxies.length} 节点(静态)`;
+            if (Array.isArray(g?.use) && g.use.length > 0) return `use:${g.use.length} 个 provider`;
+            if (g?.["include-all"] === true || g?.["include-all"] === "true") return "include-all";
+            if (g?.["include-all-proxies"] === true || g?.["include-all-proxies"] === "true") return "include-all-proxies";
+            if (g?.["include-all-providers"] === true || g?.["include-all-providers"] === "true") return "include-all-providers";
+            return "0 节点";
+        };
 
         // 多级降级识别
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
@@ -193,7 +203,7 @@ function main(config) {
             console.error("❌ 无可用代理组，中止注入");
             prepped.forEach(({ g, eligible, fallback }, idx) => {
                 const status = !eligible ? "❌" : (fallback ? "⚠️" : "✅");
-                console.log(`   ${idx + 1}. ${status} [${g?.name}] (${g?.type ?? "?"}, ${g?.proxies?.length ?? 0} 节点)`);
+                console.log(`   ${idx + 1}. ${status} [${g?.name}] (${g?.type ?? "?"}, ${_nodeDesc(g)})`);
             });
             return config;
         }
