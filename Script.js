@@ -171,7 +171,7 @@ function main(config) {
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true") &&
             hasNodes(e));
-        // 关键词/include-all 是强信号，必须独占第一优先档；下面这档退化为弱启发式，只在强信号全表落空后才介入
+        // 关键词/include-all 是强信号，独占第一优先档；下面这档不要求关键词命中，只要求有节点即可，只在第一档全表落空后才介入
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             hasNodes(e));
         if (!entry) {
