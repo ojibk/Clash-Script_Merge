@@ -8,21 +8,21 @@ function main(config) {
     const _startTime = Date.now();
 
     // ═══════════════ 配置区（按需调整） ═══════════════
-    const ENABLE_SCRIPT       = true;            // 脚本总开关
-    const ENABLE_BLOCK        = true;            // 拦截模块
-    const ENABLE_FIREFLY      = true;            // Firefly 放行（需 ENABLE_BLOCK=true）
-    const ENABLE_PROCESS_RULE = true;            // 进程规则（需 TUN + 管理员权限）
-    const ENABLE_PROXY        = true;            // 代理模块
-    const ENABLE_AGGRESSIVE   = false;           // 激进阻断（谨慎开启）
-    const ENABLE_GLOBAL_KEYWORD_BLOCK = false;   // 全局关键词阻断（极度激进）
-    const ENABLE_DIRECT          = true;         // 直连模块
-    const ENABLE_HOSTS_OVERRIDE  = true;         // Hosts DNS 覆写
-    const HOSTS_MODE = "ipv4-loopback";          // 模式: ipv4-loopback | ipv4-blackhole | dual-loopback | dual-blackhole
-    const DEBUG_FAKEIPFILTER_CLEANUP = false;    // 检查 fake-ip-filter 中是否残留已废弃的历史托管域名（调试用）
-    const ENABLE_CLIENT_FINGERPRINT = true;      // TLS 指纹注入开关（为代理节点批量添加 client-fingerprint）
-    const DEFAULT_FINGERPRINT = "chrome";        // TLS 指纹预设
-    const FINGERPRINT_SKIP = [];                 // 指纹跳过名单：节点名含这些关键词则不注入指纹
-    const fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 规则的路由目标与动作（allow层代理 vs block层拦截）
+    const ENABLE_SCRIPT                = true;            // 脚本总开关
+    const ENABLE_BLOCK                 = true;            // 拦截模块
+    const ENABLE_FIREFLY               = true;            // Firefly 放行（需 ENABLE_BLOCK=true）
+    const ENABLE_PROCESS_RULE          = true;            // 进程规则（需 TUN + 管理员权限）
+    const ENABLE_PROXY                 = true;            // 代理模块
+    const ENABLE_AGGRESSIVE            = false;           // 激进阻断（谨慎开启）
+    const ENABLE_GLOBAL_KEYWORD_BLOCK  = false;           // 全局关键词阻断（极度激进）
+    const ENABLE_DIRECT                = true;            // 直连模块
+    const ENABLE_HOSTS_OVERRIDE        = true;            // Hosts DNS 覆写
+    const HOSTS_MODE                   = "ipv4-loopback"; // 模式: ipv4-loopback | ipv4-blackhole | dual-loopback | dual-blackhole
+    const DEBUG_FAKEIPFILTER_CLEANUP   = false;           // 检查 fake-ip-filter 中是否残留已废弃的历史托管域名（调试用）
+    const ENABLE_CLIENT_FINGERPRINT    = true;            // TLS 指纹注入开关（为代理节点批量添加 client-fingerprint）
+    const DEFAULT_FINGERPRINT          = "chrome";        // TLS 指纹预设
+    const FINGERPRINT_SKIP             = [];              // 指纹跳过名单：节点名含这些关键词则不注入指纹
+    const fireflyUseProxy              = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 规则的路由目标与动作（allow层代理 vs block层拦截）
 
     // ═══════════════ 防御性检查 ═══════════════
     if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -128,9 +128,7 @@ function main(config) {
     let proxyGroupName = null;
     const EXCLUDED_NAMES = new Set(["DIRECT","REJECT","REJECT-DROP","COMPATIBLE","DEFAULT","MATCH","PASS"]);
     const FALLBACK_NAMES = new Set(["GLOBAL"]);
-    // "全部/全网/全球/所有/默认" 采用精确匹配（^...$），"直连/拒绝" 采用子串匹配：
-    // 前一类是完整的策略组语义名，必须精确匹配避免误伤；后一类是功能描述词，可能嵌在复合名称中（如"手动选择-直连"），子串匹配更安全。
-    const EXCLUDED_CN_RE = /^(?:全(?:部|网|球)|所有|默认)$|(?:直连|拒绝)/;
+    const EXCLUDED_CN_RE = /^(?:全(?:部|网|球)|所有|默认|直连|拒绝)$/;
     const FALLBACK_CN_RE = /^全局$/;
     const VALID_PROXY_TYPES = new Set(["select","url-test","fallback","load-balance","smart"]);
     const NONROUTABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
@@ -149,7 +147,10 @@ function main(config) {
         return config;
     }
 
-    const _SANITIZE_RE = /[\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/gu;
+    // ═══════════════ 基础控制字符集（清洗和校验共用） ═══════════════
+    const _CONTROL_CHARS = "\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\uFEFF";
+
+    const _SANITIZE_RE = new RegExp(`[${_CONTROL_CHARS}]`, "gu");
     const sanitizeName = n => (typeof n === "string" && n) ? n.replace(_SANITIZE_RE, '').trim() : "";
     const _isFallback = t => !!(t && (FALLBACK_NAMES.has(t.toUpperCase()) || FALLBACK_CN_RE.test(t)));
     const _isEligible = t => !!(t && (_isFallback(t) || (!EXCLUDED_NAMES.has(t.toUpperCase()) && !EXCLUDED_CN_RE.test(t))));
@@ -161,28 +162,48 @@ function main(config) {
             return { g, clean, fallback: _isFallback(clean), eligible: _isEligible(clean) };
         });
 
-        // 节点非空校验：覆盖 Mihomo 全部五种节点引入方式
-        const hasNodes = e =>
-            (Array.isArray(e.g?.proxies) && e.g.proxies.length > 0) ||
-            (Array.isArray(e.g?.use) && e.g.use.length > 0) ||
-            e.g?.["include-all"] === true || e.g?.["include-all"] === "true" ||
-            e.g?.["include-all-proxies"] === true || e.g?.["include-all-proxies"] === "true" ||
-            e.g?.["include-all-providers"] === true || e.g?.["include-all-providers"] === "true";
-        // 诊断用的节点来源描述（与 hasNodes 解耦，各自独立维护）
+        // 节点来源单一数据源（hasNodes 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可
+        const NODE_SOURCE_CHECKS = [
+            {
+                test: g => Array.isArray(g?.proxies) && g.proxies.length > 0,
+                desc: g => `${g.proxies.length} 节点(静态)`,
+            },
+            {
+                test: g => Array.isArray(g?.use) && g.use.length > 0,
+                desc: g => `use:${g.use.length} 个 provider`,
+            },
+            {
+                test: g => g?.["include-all"] === true || g?.["include-all"] === "true",
+                desc: () => "include-all",
+            },
+            {
+                test: g => g?.["include-all-proxies"] === true || g?.["include-all-proxies"] === "true",
+                desc: () => "include-all-proxies",
+            },
+            {
+                test: g => g?.["include-all-providers"] === true || g?.["include-all-providers"] === "true",
+                desc: () => "include-all-providers",
+            },
+        ];
+
+        // 运行时自检
+        {
+            const _invalid = NODE_SOURCE_CHECKS.filter(c => typeof c.test !== "function" || typeof c.desc !== "function");
+            if (_invalid.length) {
+                console.error(`❌ NODE_SOURCE_CHECKS 配置错误：${_invalid.length} 条记录缺少 test/desc 函数`);
+            }
+        }
+
+        const hasNodes = e => NODE_SOURCE_CHECKS.some(c => c.test(e.g));
         const _nodeDesc = g => {
-            if (Array.isArray(g?.proxies) && g.proxies.length > 0) return `${g.proxies.length} 节点(静态)`;
-            if (Array.isArray(g?.use) && g.use.length > 0) return `use:${g.use.length} 个 provider`;
-            if (g?.["include-all"] === true || g?.["include-all"] === "true") return "include-all";
-            if (g?.["include-all-proxies"] === true || g?.["include-all-proxies"] === "true") return "include-all-proxies";
-            if (g?.["include-all-providers"] === true || g?.["include-all-providers"] === "true") return "include-all-providers";
-            return "0 节点";
+            const hit = NODE_SOURCE_CHECKS.find(c => c.test(g));
+            return hit ? hit.desc(g) : "0 节点";
         };
 
         // 多级降级识别
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true") &&
             hasNodes(e));
-        // 关键词/include-all 是强信号，独占第一优先档；下面这档不要求关键词命中，只要求有节点即可，只在第一档全表落空后才介入
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             hasNodes(e));
         if (!entry) {
@@ -220,10 +241,11 @@ function main(config) {
             console.error(`❌ 代理组排除断言触发：[${proxyGroupName}]`); return config;
         }
     }
-    if (/[,\[\]{}\u0000-\u001F\u007F\u0085\u00AD\u061C\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/u.test(proxyGroupName)) {
+    // 控制字符 + 代理组名中不允许的结构字符 ,[]{}（与 _SANITIZE_RE 共享 _CONTROL_CHARS）
+    if (new RegExp(`[,\\[\\]{}${_CONTROL_CHARS}]`, "u").test(proxyGroupName)) {
         console.error(`❌ 代理组名含非法字符`); return config;
     }
-    // 防御性校验：确保识别的代理组仍存在于原数组中（理论上因引用一致必然为真），此校验理论上不可达
+    // 防御性校验：确保识别的代理组仍存在于原数组中
     if (!config["proxy-groups"].some(g => g?.name === proxyGroupName)) {
         console.error(`❌ 代理组 [${proxyGroupName}] 不存在`); return config;
     }
@@ -450,7 +472,7 @@ function main(config) {
         "bugly.gtimg.com",                       // Bugly 静态资源 CDN
         // 字节系
         "log.snssdk.com",                        // 字节系客户端日志上报
-        // "i.snssdk.com",                          // 字节跳动国内 SDK 主接口
+        // "i.snssdk.com",                          // 字节跳动国内 SDK 主接口，拦截后可能导致字节系应用 SDK 初始化异常
         "log.byteoversea.com",                   // 字节跳动海外日志上报
         // 剪映
         "metrics.capcut.com",                    // 剪映遥测上报
@@ -825,9 +847,8 @@ function main(config) {
                 config.dns.hosts = { ...ensureObj(config.dns.hosts), ...customHosts };
                 _dnsValid = true;
             } else {
-                console.warn("⚠️ config.dns 类型异常，已写入顶层 hosts，跳过 dns.hosts 注入");
+                console.warn("⚠️ config.dns 类型异常，已写入顶层 hosts，dns.hosts 注入及 fake-ip-filter 维护均已跳过");
             }
-
             // 仅当 dns 对象合法时维护 fake-ip-filter
             if (_dnsValid) {
                 if (!Array.isArray(config.dns["fake-ip-filter"])) {
@@ -869,8 +890,6 @@ function main(config) {
                 const targetStr = Array.isArray(target) ? target.join(" / ") : target;
                 console.log(`🛡️ Hosts DNS 覆写已写入: ${hijackDomains.length} 条，模式: [${HOSTS_MODE}] → ${targetStr}，但需 CVR 开启相关开关才能生效。`);
                 console.log(`   fake-ip-filter 清理旧条目: ${cleanedCount} 条，新增注入: ${newEntries.length} 条（订阅原有非脚本条目共 ${existing.size} 条）`);
-            } else {
-                console.warn("⚠️ config.dns 类型异常，跳过 fake-ip-filter 维护");
             }
         } catch (err) {
             console.error("❌ Hosts DNS 覆写失败:", err);
