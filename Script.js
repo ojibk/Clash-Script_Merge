@@ -22,7 +22,7 @@ function main(config) {
     const ENABLE_CLIENT_FINGERPRINT    = true;            // TLS 指纹注入开关（为代理节点批量添加 client-fingerprint）
     const DEFAULT_FINGERPRINT          = "chrome";        // TLS 指纹预设
     const FINGERPRINT_SKIP             = [];              // 指纹跳过名单：节点名含这些关键词则不注入指纹
-    const fireflyUseProxy              = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 规则的路由目标与动作（allow层代理 vs block层拦截）
+    const fireflyUseProxy              = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 规则的路由目标与动作（allow层代理 / block层拦截）
 
     // ═══════════════ 防御性检查 ═══════════════
     if (!config || typeof config !== "object" || Array.isArray(config)) {
