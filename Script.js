@@ -293,7 +293,7 @@ function main(config) {
     const udpBlock = [
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.io)),REJECT",
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
-        // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobelogin.com)),REJECT", // 防御性冗余：Firefly 禁用时已由共享端点规则覆盖，Firefly 启用时 UDP 由 allow 层路由至代理组
+        // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobelogin.com)),REJECT", // Firefly 禁用时已由 adobeSharedDeps 子域规则覆盖，Firefly 启用时 UDP 由 allow 层路由至代理组
         // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT", // SUFFIX 规则的 adobestats.io（无协议条件）已覆盖所有协议，此处冗余
         // `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`, // 已有遮蔽规则，此处冗余覆盖
     ];
