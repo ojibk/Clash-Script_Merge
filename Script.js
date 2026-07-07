@@ -209,19 +209,14 @@ function main(config) {
         // tier（层级）多级降级识别：tier1 优先匹配名称含关键词的合格策略组，tier2 放宽名称限制，tier3 降级使用兜底组，tier4 最终容错
         // tier1: 优先匹配名称含关键词的合格策略组
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true") &&
-            hasNodes(e));
-
+            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true") && hasNodes(e));
         // tier2: 放宽名称限制
-        if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            hasNodes(e));
-
+        if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && hasNodes(e));
         // tier3: 降级使用兜底组
         if (!entry) {
             entry = prepped.find(e => e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && hasNodes(e));
             if (entry) console.warn(`⚠️ 降级使用兜底组 [${entry.g.name}]`);
         }
-
         // tier4: 最终容错
         if (!entry) {
             entry = prepped.find(e => e.eligible && !NONROUTABLE_TYPES.has(e.g?.type) && hasNodes(e));
@@ -328,7 +323,7 @@ function main(config) {
         "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobe.com)),REJECT",
         // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobelogin.com)),REJECT", // Firefly 禁用时已由 adobeSharedDeps 子域规则覆盖，Firefly 启用时 UDP 由 allow 层路由至代理组
         // "AND,((NETWORK,UDP),(DOMAIN-SUFFIX,adobestats.io)),REJECT", // SUFFIX 规则的 adobestats.io（无协议条件）已覆盖所有协议，此处冗余
-        // `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`, // 已有遮蔽规则，此处冗余覆盖
+        // `AND,((NETWORK,UDP),(DOMAIN-REGEX,${_ADOBE_RAND_RE})),REJECT`, // 已被同层 adobe.io 的 UDP SUFFIX 规则覆盖，此处冗余
     ];
 
     // ── Adobe 遥测子域（wss 为子域名前缀，非协议标识）──
