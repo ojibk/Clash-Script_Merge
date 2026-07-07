@@ -163,26 +163,31 @@ function main(config) {
         });
 
         // 节点来源单一数据源（hasNodes 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可
+        // ⚠️ 设计取舍说明：
+        // hasNodes 使用 some() 按数组顺序短路判断，仅检查“是否至少有一个来源能提供节点”，不比较不同组的节点数量。这意味着：
+        //   若组A仅有1个静态节点，组B有50个 provider 节点，some() 对两者均返回 true；在 tier1/tier2 的 find() 中，匹配的第一个有节点组即被选中，而非“节点最多”的组。
+        // 原因：1. 静态节点通常是用户精选的高质量节点，“少而精”可能优于“多而杂”；2. 避免为统计节点总数引入额外遍历开销；
+        //   3. tier 降级机制（tier2→tier3→tier4）已提供兜底，极端情况下仍能选出可用组
         const NODE_SOURCE_CHECKS = [
             {
                 test: g => Array.isArray(g?.proxies) && g.proxies.length > 0,
-                desc: g => `${g.proxies.length} 节点(静态)`,
+                desc: g => `${g.proxies.length} 节点(静态)`,           // 静态节点列表
             },
             {
                 test: g => Array.isArray(g?.use) && g.use.length > 0,
-                desc: g => `use:${g.use.length} 个 provider`,
+                desc: g => `use:${g.use.length} 个 provider`,         // 引用 proxy-providers
             },
             {
                 test: g => g?.["include-all"] === true || g?.["include-all"] === "true",
-                desc: () => "include-all",
+                desc: () => "include-all",                             // 包含所有节点（旧版语法）
             },
             {
                 test: g => g?.["include-all-proxies"] === true || g?.["include-all-proxies"] === "true",
-                desc: () => "include-all-proxies",
+                desc: () => "include-all-proxies",                     // 包含所有代理节点
             },
             {
                 test: g => g?.["include-all-providers"] === true || g?.["include-all-providers"] === "true",
-                desc: () => "include-all-providers",
+                desc: () => "include-all-providers",                   // 包含所有 provider
             },
         ];
 
@@ -201,20 +206,25 @@ function main(config) {
             return hit ? hit.desc(g) : "0 节点";
         };
 
-        // 多级降级识别
+        // tier（层级）多级降级识别：tier1 优先匹配名称含关键词的合格策略组，tier2 放宽名称限制，tier3 降级使用兜底组，tier4 最终容错
+        // tier1: 优先匹配名称含关键词的合格策略组
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true") &&
             hasNodes(e));
+
+        // tier2: 放宽名称限制
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
             hasNodes(e));
+
+        // tier3: 降级使用兜底组
         if (!entry) {
-            entry = prepped.find(e => e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-                hasNodes(e));
+            entry = prepped.find(e => e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && hasNodes(e));
             if (entry) console.warn(`⚠️ 降级使用兜底组 [${entry.g.name}]`);
         }
+
+        // tier4: 最终容错
         if (!entry) {
-            entry = prepped.find(e => e.eligible && !NONROUTABLE_TYPES.has(e.g?.type) &&
-                hasNodes(e));
+            entry = prepped.find(e => e.eligible && !NONROUTABLE_TYPES.has(e.g?.type) && hasNodes(e));
             if (entry) console.warn(`🚨 最终容错选取 [${entry.g.name}]`);
         }
 
