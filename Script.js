@@ -162,15 +162,14 @@ function main(config) {
             return { g, clean, fallback: _isFallback(clean), eligible: _isEligible(clean) };
         });
 
-        // 节点来源单一数据源（hasNodes 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可
-        // ⚠️ 设计取舍说明：
-        // hasNodes 使用 some() 按数组顺序短路判断，仅检查“是否至少有一个来源能提供节点”，不比较不同组的节点数量。这意味着：
+        // 节点来源单一数据源（hasNodes 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可。
+        // ⚠️ 设计取舍说明：hasNodes 使用 some() 按数组顺序短路判断，仅检查“是否至少有一个来源能提供节点”，不比较不同组的节点数量。这意味着：
         //   若组A仅有1个静态节点，组B有50个 provider 节点，some() 对两者均返回 true；在 tier1/tier2 的 find() 中，匹配的第一个有节点组即被选中，而非“节点最多”的组。
         // 原因：1. 静态节点通常是用户精选的高质量节点，“少而精”可能优于“多而杂”；2. 避免为统计节点总数引入额外遍历开销。
         // ═══════════════ 伪目标常量（用于区分真实节点与 DIRECT/REJECT 等伪目标） ═══════════════
-        const _PSEUDO_TARGETS = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"]);
         // 仅做单层字面量检测：若 proxies 指向另一个策略组、而该组本身才是纯伪目标终点，此处不会递归展开发现。
         // 现实中的"伪装组"绝大多数是平铺写法（如 Remnawave 的 "No Proxy" 示例），此为已知、可接受的残余边界。
+        const _PSEUDO_TARGETS = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"]);
         const hasRealProxies = g => Array.isArray(g?.proxies) && g.proxies.some(p => typeof p === "string" && !_PSEUDO_TARGETS.has(p.trim().toUpperCase()));
 
         const NODE_SOURCE_CHECKS = [
