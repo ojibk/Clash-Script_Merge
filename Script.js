@@ -166,8 +166,7 @@ function main(config) {
         // ⚠️ 设计取舍说明：
         // hasNodes 使用 some() 按数组顺序短路判断，仅检查“是否至少有一个来源能提供节点”，不比较不同组的节点数量。这意味着：
         //   若组A仅有1个静态节点，组B有50个 provider 节点，some() 对两者均返回 true；在 tier1/tier2 的 find() 中，匹配的第一个有节点组即被选中，而非“节点最多”的组。
-        // 原因：1. 静态节点通常是用户精选的高质量节点，“少而精”可能优于“多而杂”；2. 避免为统计节点总数引入额外遍历开销；
-        //   3. tier 降级机制（tier2→tier3→tier4）已提供兜底，极端情况下仍能选出可用组
+        // 原因：1. 静态节点通常是用户精选的高质量节点，“少而精”可能优于“多而杂”；2. 避免为统计节点总数引入额外遍历开销
         const NODE_SOURCE_CHECKS = [
             {
                 test: g => Array.isArray(g?.proxies) && g.proxies.length > 0,
@@ -179,7 +178,7 @@ function main(config) {
             },
             {
                 test: g => g?.["include-all"] === true || g?.["include-all"] === "true",
-                desc: () => "include-all",                             // 包含所有节点（旧版语法）
+                desc: () => "include-all",                             // 包含所有节点和 provider
             },
             {
                 test: g => g?.["include-all-proxies"] === true || g?.["include-all-proxies"] === "true",
