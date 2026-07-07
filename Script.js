@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260706
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260707
  * 功能：白名单放行特定 AI 服务（Firefly）+ 拦截广告/遥测/激活域名，Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -800,7 +800,8 @@ function main(config) {
         if (ENABLE_AGGRESSIVE) {
             console.warn(`   激进阻断: ⚠️ 已开启`);
             console.warn(`   ⚠️ 激进阻断可能导致以下服务不可用：`);
-            console.warn(`      adobe.io（CC 插件/API 端点，Firefly 域名已由 allow 层处理）、accounts.autodesk.com（Autodesk 账户登录）、`);
+            console.warn(`      adobe.io（CC 插件/API 端点；Firefly 域名仅当 ENABLE_BLOCK=true 时已被上游规则处理`
+            + `（放行或拦截，视 ENABLE_FIREFLY 而定），否则同样被本规则无差别拦截）、accounts.autodesk.com（Autodesk 账户登录）、`);
             console.warn(`      geo.adobe.com / geo2.adobe.com（Adobe 地理区域识别）、`);
             console.warn(`      officecdn（Office 更新/模板）、ieonline.microsoft.com（ActiveX/旧版 OA）`);
         } else {
