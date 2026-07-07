@@ -656,7 +656,7 @@ function main(config) {
         // `PROCESS-NAME,Slack.exe,${proxyGroupName}`,
     ];
     const processDirectRules = [
-        "PROCESS-NAME,BaiduNetdisk.exe,DIRECT",              // 百度网盘
+        // "PROCESS-NAME,BaiduNetdisk.exe,DIRECT",              // 百度网盘
         "PROCESS-NAME,filezilla.exe,DIRECT",                 // FileZilla
     ];
 
