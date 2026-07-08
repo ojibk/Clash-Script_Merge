@@ -166,7 +166,8 @@ function main(config) {
         const _PSEUDO_TARGETS = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"]);
         // 仅做单层字面量检测：若 proxies 指向另一个策略组、而该组本身才是纯伪目标终点，此处不会递归展开发现。
         // 现实中的"伪装组"绝大多数是平铺写法（如 Remnawave 的 "No Proxy" 示例），此为已知、可接受的残余边界。
-        const hasRealProxies = g => Array.isArray(g?.proxies) && g.proxies.some(p => typeof p === "string" && !_PSEUDO_TARGETS.has(p.trim().toUpperCase()));
+        const isRealProxyEntry = p => typeof p === "string" && !_PSEUDO_TARGETS.has(p.trim().toUpperCase());
+        const hasRealProxies = g => Array.isArray(g?.proxies) && g.proxies.some(isRealProxyEntry);
 
         // 节点来源单一数据源（hasNodes 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可。
         // ⚠️ 设计取舍说明：hasNodes 使用 some() 按数组顺序短路判断，仅检查“是否至少有一个来源能提供节点”，不比较不同组的节点数量。这意味着：
@@ -175,8 +176,7 @@ function main(config) {
         const NODE_SOURCE_CHECKS = [
             {
                 test: g => hasRealProxies(g),
-                desc: g => `${g.proxies.filter(p => typeof p === "string" &&
-                !_PSEUDO_TARGETS.has(p.trim().toUpperCase())).length} 节点(静态)`,  // 静态节点列表（排除纯 DIRECT/REJECT 伪装组）
+                desc: g => `${g.proxies.filter(isRealProxyEntry).length} 节点(静态)`,  // 静态节点列表（排除纯 DIRECT/REJECT 伪装组）
             },
             {
                 test: g => Array.isArray(g?.use) && g.use.length > 0,
