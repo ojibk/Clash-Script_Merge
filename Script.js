@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260707
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260708
  * 功能：白名单放行特定 AI 服务（Firefly）+ 拦截广告/遥测/激活域名，Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -175,7 +175,8 @@ function main(config) {
         const NODE_SOURCE_CHECKS = [
             {
                 test: g => hasRealProxies(g),
-                desc: g => `${g.proxies.length} 节点(静态)`,           // 静态节点列表（排除纯 DIRECT/REJECT 伪装组）
+                desc: g => `${g.proxies.filter(p => typeof p === "string" &&
+                !_PSEUDO_TARGETS.has(p.trim().toUpperCase())).length} 节点(静态)`,  // 静态节点列表（排除纯 DIRECT/REJECT 伪装组）
             },
             {
                 test: g => Array.isArray(g?.use) && g.use.length > 0,
