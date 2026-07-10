@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260709
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260710
  * 功能：白名单放行特定 AI 服务（Firefly）+ 拦截广告/遥测/激活域名，Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -118,7 +118,8 @@ function main(config) {
                 const name = (p.name || "").toLowerCase();
                 if (_skipKw.some(k => name.includes(k)) || _skipRe.some(r => r.test(p.name || ""))) { skip++; return p; }
                 inj++;
-                return { ...p, 'client-fingerprint': _effectiveFP };
+                p['client-fingerprint'] = _effectiveFP;
+                return p;
             });
             console.log(`✅ TLS 指纹注入完成: 新增 ${inj}，跳过 ${skip}，已有 ${exist}； 指纹: ${_effectiveFP}`);
         }
