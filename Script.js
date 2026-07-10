@@ -213,9 +213,12 @@ function main(config) {
         };
 
         // tier（层级）多级降级识别：tier1 优先匹配名称含关键词的合格策略组，tier2 放宽名称限制，tier3 降级使用兜底组，tier4 最终容错
-        // tier1: 优先匹配名称含关键词的合格策略组
+        // tier1-A: 关键词命中，独占最高优先级——不受数组声明顺序影响
         let entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            (_KW_RE.test(e.clean) || e.g?.["include-all"] === true || e.g?.["include-all"] === "true") && hasNodes(e));
+            _KW_RE.test(e.clean) && hasNodes(e));
+        // tier1-B: 仅当 tier1a 全表落空时，才接受纯 include-all（此时数组顺序才会成为决定因素）
+        if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
+            (e.g?.["include-all"] === true || e.g?.["include-all"] === "true") && hasNodes(e));
         // tier2: 放宽名称限制
         if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && hasNodes(e));
         // tier3: 降级使用兜底组
