@@ -163,11 +163,11 @@ function main(config) {
             return { g, clean, fallback: _isFallback(clean), eligible: _isEligible(clean) };
         });
 
-        // ═══════════════ 伪目标常量（用于区分真实节点与 DIRECT/REJECT 等伪目标） ═══════════════
-        const _PSEUDO_TARGETS = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"]);
+        // ═══════════════ 逻辑动作常量（用于区分真实节点与 DIRECT/REJECT 等内置逻辑动作） ═══════════════
+        const _LOGICAL_ACTIONS = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"]);
         // 仅做单层字面量检测：若 proxies 指向另一个策略组、而该组本身才是纯伪目标终点，此处不会递归展开发现。
         // 现实中的"伪装组"绝大多数是平铺写法（如 Remnawave 的 "No Proxy" 示例），此为已知、可接受的残余边界。
-        const isRealProxyEntry = p => typeof p === "string" && !_PSEUDO_TARGETS.has(p.trim().toUpperCase());
+        const isRealProxyEntry = p => typeof p === "string" && !_LOGICAL_ACTIONS.has(p.trim().toUpperCase());
         const hasRealProxies = g => Array.isArray(g?.proxies) && g.proxies.some(isRealProxyEntry);
 
         // 节点来源单一数据源（hasNodes 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可。
