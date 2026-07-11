@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260710
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260712
  * 功能：白名单放行特定 AI 服务（Firefly）+ 拦截广告/遥测/激活域名，Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -382,7 +382,7 @@ function main(config) {
         "genuine-software.autodesk.com",         // 正版验证服务
         "edge.activity.autodesk.com",            // 活动/行为追踪
         "developer.api.autodesk.com",            // 开发者 API（含许可验证）
-        "autodesk.com.edgekey.net",              // Akamai CDN 节点（推断承载授权验证；拦截后可能影响下载等服务，但授权验证优先级更高）
+        "autodesk.com.edgekey.net",              // Akamai CDN 节点（推断授权校验请求会经此节点回源；拦截后可能影响下载等服务，但授权验证优先级更高）
         "crp.autodesk.com",                      // 云渲染授权
         "autodesk.flexnetoperations.com",        // FlexNet Operations 许可云平台
     ];
