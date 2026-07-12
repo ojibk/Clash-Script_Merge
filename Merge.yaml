@@ -330,7 +330,8 @@ rules:
   # ── 归属地映射（弥补长尾盲区，存在 CDN/Anycast 误判风险） ──
   - GEOIP,PRIVATE,DIRECT,no-resolve     # 🔓 私有/保留 IP 直连（确定性集合），no-resolve 禁止为域名主动解析 IP，目标为域名时本规则直接跳过。
   - GEOIP,CN,DIRECT,no-resolve          # 🔓 国内 IP 直连（统计性集合），⚠️ no-resolve 会导致未知域名直接穿透此规则：
-                                        # MATCH,DIRECT 架构下属于性能优化（避免一次无意义 DNS 查询）；若兜底为 MATCH,PROXY 则国内长尾域名将被代理。
+                                        # 兜底为 MATCH,DIRECT 架构下属于性能优化（快速命中纯 IP 请求，并避免无意义 DNS 查询）；
+                                        # ⚠️ 若兜底为 MATCH,代理（Unknown → Proxy），应移除 no-resolve，否则未被 GEOSITE 收录的国内域名将跳过 GEOIP 检查并落入代理。
 
   # ── 无条件兜底 ──
   - MATCH,DIRECT                        # 🔓 兜底直连（国内为主场景）
