@@ -1,5 +1,5 @@
 # ============================================================
-# Clash-Merge 全局扩展覆写配置 v260710
+# Clash-Merge 全局扩展覆写配置 v260712
 # 自适应路由受限网络服务
 # 规则集驱动，可独立运行（依赖网络拉取 rule-providers）。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
@@ -328,8 +328,9 @@ rules:
   - RULE-SET,non-cn,🎛️ 动态选择         # 🛡️ 境外域名代理
 
   # ── 归属地映射（弥补长尾盲区，存在 CDN/Anycast 误判风险） ──
-  - GEOIP,PRIVATE,DIRECT,no-resolve     # 🔓 私有/保留 IP 直连（确定性集合）
-  - GEOIP,CN,DIRECT,no-resolve          # 🔓 国内 IP 直连（统计性集合），no-resolve 目标为域名时本规则直接跳过，不执行 DNS 解析
+  - GEOIP,PRIVATE,DIRECT,no-resolve     # 🔓 私有/保留 IP 直连（确定性集合），no-resolve 禁止为域名主动解析 IP，目标为域名时本规则直接跳过。
+  - GEOIP,CN,DIRECT,no-resolve          # 🔓 国内 IP 直连（统计性集合），⚠️ no-resolve 会导致未知域名直接穿透此规则：
+                                        # MATCH,DIRECT 架构下属于性能优化（避免一次无意义 DNS 查询）；若兜底为 MATCH,PROXY 则国内长尾域名将被代理。
 
   # ── 无条件兜底 ──
   - MATCH,DIRECT                        # 🔓 兜底直连（国内为主场景）
