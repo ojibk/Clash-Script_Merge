@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260712
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260713
  * 功能：白名单放行特定 AI 服务（Firefly）+ 拦截广告/遥测/激活域名，Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -639,7 +639,7 @@ function main(config) {
     const processBlockRules = [
         // "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 仅 UDP 443
         // "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 全部 UDP
-        "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证，全部 TCP + 全部 UDP，兜底未知激活域
+        "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证，除 allow 层白名单域名外全部拦截（TCP+UDP），兜底未知激活域
         "PROCESS-NAME,AdskLicensingService.exe,REJECT-DROP", // Autodesk 许可验证
         "PROCESS-NAME,AdskAccess.exe,REJECT-DROP",           // Autodesk 访问控制
         "PROCESS-NAME,AdskIdentityManager.exe,REJECT-DROP",  // Autodesk 身份认证
