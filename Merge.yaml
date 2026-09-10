@@ -1,11 +1,11 @@
 # ============================================================
-# Clash-Merge 全局扩展覆写配置 v260910
+# Clash-Merge 全局扩展覆写配置 v260911
 # 自适应路由受限的网络服务
 # 规则集驱动；首次运行依赖 rule-providers 下载，已有缓存时可离线继续运行。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
 # ============================================================
-# ⚠️ 流量接管依赖：sniffer.parse-pure-ip 用于纯 IP 连接的域名嗅探，需配合 TUN、Redir 或 TProxy 等透明代理/流量接管模式。若最终配置未启用相应的流量接管，
-#    parse-pure-ip 对未被正常接管的流量不会发挥预期作用。当前桌面环境通常由 CVR 或主配置启用 TUN；若使用其他透明代理接管方式，也可能满足 parse-pure-ip 的流量处理条件。
+# ⚠️ 流量接管条件：sniffer.parse-pure-ip 用于纯 IP 连接的域名嗅探，需配合 TUN、Redir 或 TProxy 等透明代理模式被接管进入 Mihomo。
+#    若流量未被正常接管，parse-pure-ip 不会发挥预期作用。当前桌面环境通常由 CVR 或主配置启用 TUN；若使用其他透明代理接管方式，也可能满足 parse-pure-ip 的流量处理条件。
 #    tun:
 #      enable: true
 #      stack: gvisor
@@ -16,6 +16,7 @@
 # ============================================================
 # ░░ DNS 最终平衡配置 — 国内优先 · 防污染兜底
 # ============================================================
+# ⚠️ 若 CVR 的「DNS 覆写」开关开启，CVR 可能以自身配置覆盖本节；具体覆盖范围依 CVR 版本而定。若被完全覆盖，DNS 定制需转移至 CVR 对应配置或 Script.js。
 dns:
   # ── 基础设置 ──
   enable: true
@@ -113,7 +114,7 @@ dns:
   # ── 回退过滤器 ──
   fallback-filter:
     geoip: true
-    geoip-code: CN                       # 默认解析结果为非 CN IP 时，触发 fallback 结果判定
+    geoip-code: CN                       # nameserver 默认解析结果的 IP 非 CN 时，判定为异常并采用 fallback 结果
     ipcidr:                              # nameserver 结果命中以下特殊/保留/共享地址网段时，满足 fallback 条件
       - 240.0.0.0/4                      # E 类保留地址
       - 0.0.0.0/8                        # 本网络保留段
@@ -131,12 +132,15 @@ dns:
     - 223.5.5.5
     - 119.29.29.29
 
+  # 💡 刻意未声明 direct-nameserver：DIRECT 出口因此复用本节现有解析链（nameserver-policy / nameserver / fallback）。
+  #    配置 direct-nameserver 后，DIRECT 出口将改用独立的解析器路径；若需保持当前解析策略，需另行同步维护该路径。
+
 # ============================================================
 # ░░ 全局行为配置
 # ============================================================
 find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always，进程规则依赖此项
 geodata-mode: true              # ⚙️ GeoIP 数据库格式：true = .dat（MetaCubeX），false = .mmdb；统一 IP 地理归属判定
-geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭则停留在出厂版本
+geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭后不再按 geo-update-interval 自动更新
 geo-update-interval: 24         # ⏱️ 更新间隔（小时），24 小时 = 每日一次
 geox-url:                       # ⚙️ 指定 Mihomo 获取 GeoData 的地址；未声明时使用默认地址。该参数仅在重载配置文件等内核行为中生效，通过 GUI 更新 GeoData 不受此限
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
@@ -154,7 +158,7 @@ profile:
 sniffer:
   enable: true                  # ⚙️ 启用嗅探，提取域名供规则匹配
   force-dns-mapping: true       # ⚙️ 使 sniffer 在 DNSMapping 状态下介入，并利用域名信息参与后续连接处理与规则匹配
-  parse-pure-ip: true           # ⚙️ 对目标为纯 IP 的连接尝试进行域名嗅探；需配合 TUN、Redir 或 TProxy 等流量接管模式
+  parse-pure-ip: true           # ⚙️ 对未获得域名的纯 IP 流量尝试域名嗅探；是否能处理系统流量取决于相应流量入口是否已接管该流量
   sniff:
     HTTP:
       ports: [80, 8080, 8880, 2052, 2082, 2086, 2095]    # HTTP + CF 备用端口
@@ -208,8 +212,8 @@ proxy-groups:
 # ░░ 规则集 (Rule Providers) — Map 合并，保留订阅条目
 # ============================================================
 # 失败降级：首次下载失败且无缓存时规则集可能为空（0 条规则）；已有缓存时继续使用缓存文件。下载失败不会阻止其余配置继续运行，但内核仍可能输出错误/警告日志；后续成功下载后生效。
-# 规则集采用 MRS 二进制格式；domain / ipcidr 类型按各 provider 的实际规则内容选择。MRS 格式避免运行时从文本/YAML 重建规则树，内存映射，启动快。规则文件无内置策略，动作由 rules 段决定。
-# ⚠️ 注释 provider 必须同步注释对应 RULE-SET；反之则不必。
+# 规则集采用 MRS 预构建二进制格式；可避免运行时从文本/YAML 重建规则树，内存映射，降低规则加载开销。domain / ipcidr 类型按各 provider 的实际规则内容选择。
+# 规则文件无内置策略，动作由 rules 段决定。⚠️ 注释 provider 必须同步注释对应 RULE-SET；反之则不必。
 rule-providers:
   # '': {} # 若订阅有空键 '' ，Mihomo 报错 '' has unset fields。取消注释覆盖空条目
   private: # 🔓 私有/保留域名 (如 localhost、*.local 后缀、router.asus.com 硬件厂商管理域名等)，DustinWin 构建 MRS
@@ -330,12 +334,12 @@ rules:
 
   # ── 归属地映射（弥补长尾盲区，存在 CDN/Anycast 误判风险） ──
   - GEOIP,PRIVATE,DIRECT,no-resolve     # 🔓 私有/保留 IP 直连（确定性集合），no-resolve 禁止为域名主动解析 IP，目标为域名时本规则直接跳过。
-  - GEOIP,CN,DIRECT,no-resolve          # 🔓 国内 IP 直连（统计性集合），⚠️ no-resolve 会导致未获得目标 IP 的域名流量会穿透此规则并继续向后匹配：
+  - GEOIP,CN,DIRECT,no-resolve          # 🔓 国内 IP 直连（统计性集合），⚠️ no-resolve 不为域名主动触发解析；未解析为 IP 的域名连接跳过本规则并继续向后匹配：
                                         # 兜底为“MATCH,DIRECT”架构下属于性能优化（快速命中纯 IP 请求，并避免无意义 DNS 查询）；
                                         # ⚠️ 若兜底为“MATCH,代理（Unknown → Proxy）”，应移除 no-resolve，否则未被 GEOSITE 收录的国内域名将跳过 GEOIP 检查并落入代理。
 
   # ── 无条件兜底 ──
-  - MATCH,DIRECT                        # 🔓 兜底直连（国内为主场景）
+  - MATCH,DIRECT                        # 🔓 兜底直连（适用于国内流量为主的场景）
   # - MATCH,🎛️ 动态选择                 # 🛡️ 兜底代理（Unknown→Proxy 立场）
 
 # ============================================================
