@@ -1,11 +1,11 @@
 # ============================================================
-# Clash-Merge 全局扩展覆写配置 v260908
+# Clash-Merge 全局扩展覆写配置 v260910
 # 自适应路由受限的网络服务
-# 规则集驱动，可独立运行；首次运行依赖 rule-providers 下载，已有缓存时可离线继续运行。流程：订阅 → Merge → Script → CVR → Mihomo
+# 规则集驱动；首次运行依赖 rule-providers 下载，已有缓存时可离线继续运行。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
 # ============================================================
-# ⚠️ TUN 依赖：sniffer.parse-pure-ip 依赖 TUN 模式接管第三层（IP 层）网络流量。
-#    必须由 CVR 或主配置注入 tun，否则 parse-pure-ip: true 静默无效。若未由上层注入，可取消注释下方 tun 配置块手动启用。
+# ⚠️ 流量接管依赖：sniffer.parse-pure-ip 用于纯 IP 连接的域名嗅探，需配合 TUN、Redir 或 TProxy 等透明代理/流量接管模式。若最终配置未启用相应的流量接管，
+#    parse-pure-ip 对未被正常接管的流量不会发挥预期作用。当前桌面环境通常由 CVR 或主配置启用 TUN；若使用其他透明代理接管方式，也可能满足 parse-pure-ip 的流量处理条件。
 #    tun:
 #      enable: true
 #      stack: gvisor
@@ -19,10 +19,10 @@
 dns:
   # ── 基础设置 ──
   enable: true
-  listen: 0.0.0.0:53                     # 监听所有 IPv4 接口的 53 端口，供 TUN DNS 劫持或系统 DNS 指向使用。 ⚠️ 安全风险：若不需要向局域网提供 DNS 服务，建议改为 127.0.0.1:53
+  listen: 0.0.0.0:53                     # 监听所有 IPv4 接口的 53 端口，供 TUN DNS 劫持或系统 DNS 指向使用。⚠️ 安全风险：若不需要向局域网提供 DNS 服务，建议改为 127.0.0.1:53
   # listen: 127.0.0.1:53                   # 仅监听本机回环接口，供 TUN DNS 劫持或系统 DNS 指向使用。⚠️ 避免向局域网暴露 DNS 服务
-  enhanced-mode: fake-ip                 # 与 sniffer 联动，Fake-IP 下规则匹配更精确
-  fake-ip-filter-mode: blacklist         # Fake-IP 过滤名单模式。可选值：blacklist/whitelist/rule
+  enhanced-mode: fake-ip                 # Fake-IP 模式；通过 DNS 映射保留域名与 Fake-IP 的关联，便于连接阶段进行域名识别与规则匹配
+  fake-ip-filter-mode: blacklist         # Fake-IP 过滤名单模式，修改此模式时需同步确认过滤名单的规则语义。可选值：blacklist/whitelist/rule
   ipv6: false                            # 关闭 IPv6，避免纯 IPv4 代理环境下连接错误，若全链路支持 IPv6 且代理可出站，可改为 true
 
   # ── Fake-IP 范围 ──
@@ -78,7 +78,7 @@ dns:
     - 119.29.29.29
 
   # ── 核心开关：DNS 请求参与规则路由 ──
-  respect-rules: true  # 必须开启；与 proxy-server-nameserver 配对，后者为代理服务器提供独立解析路径，避免解析 DoH 服务器域名本身又依赖 DNS 解析的死循环
+  respect-rules: true  # 当前设计需要开启；DNS 请求遵守路由规则，并配合 proxy-server-nameserver 为代理节点提供独立解析路径，避免代理节点自身解析再次依赖代理出口
 
   # ── 主动精准分流（主路径） ──
   nameserver-policy:
@@ -95,18 +95,17 @@ dns:
       - https://1.1.1.1/dns-query
       - https://8.8.8.8/dns-query
 
-  # ── 默认解析器（处理 nameserver-policy 未收录的长尾/新域名） ──
-  # 使用国内 DoH 作为默认解析器：国内长尾域名通常可获得更适合国内网络的 CDN 调度结果；境外长尾域名若被国内 DoH 污染，则由 fallback 重新查询纠正。
+  # ── 默认解析器（处理 nameserver-policy 未命中的长尾/新域名） ──
+  # 使用国内 DoH 作为默认 Resolver：国内长尾域名通常可获得更适合国内网络的 CDN 调度结果；对实际进入 Resolver 且默认解析结果满足 fallback-filter 条件的查询，采用 fallback 结果。
   nameserver:
     - https://doh.pub/dns-query          # 腾讯 DoH
     - https://dns.alidns.com/dns-query   # 阿里 DoH
 
   # ── 回退解析器（防污染兜底） ──
-  # 触发条件（满足任一即用 fallback 重查）：
-  #   1. geoip: true + geoip-code: CN → 解析结果 GeoIP 非 CN；
-  #   2. 解析结果 IP 命中 fallback-filter.ipcidr 列表；
-  # 当国内 DoH 返回境外 IP 或明确污染 IP 时，启用此解析器重新查询。
-  # ⚠️ 仅对 nameserver（默认解析器）的结果生效；nameserver-policy 命中的查询结果不经此过滤。
+  # 与 nameserver 并发的解析路径，由 fallback-filter 决定是否采用其返回结果。
+  #   1. geoip: true + geoip-code: CN → 按解析结果的 IP 地理归属判断是否采用 fallback；
+  #   2. nameserver 返回的 IP 命中 fallback-filter.ipcidr → 满足对应 fallback 条件。
+  # ⚠️ 仅对进入 Resolver 的查询生效；nameserver-policy 命中的查询结果不经此过滤。
   fallback:
     - https://1.1.1.1/dns-query
     - https://8.8.8.8/dns-query
@@ -114,14 +113,15 @@ dns:
   # ── 回退过滤器 ──
   fallback-filter:
     geoip: true
-    geoip-code: CN                       # 非 CN IP 触发 fallback 重查
-    ipcidr:                              # 命中以下特殊/保留/共享地址网段的 nameserver 结果时，改用 fallback 结果
+    geoip-code: CN                       # 默认解析结果为非 CN IP 时，触发 fallback 结果判定
+    ipcidr:                              # nameserver 结果命中以下特殊/保留/共享地址网段时，满足 fallback 条件
       - 240.0.0.0/4                      # E 类保留地址
       - 0.0.0.0/8                        # 本网络保留段
       - 127.0.0.0/8                      # 本地回环
       - 169.254.0.0/16                   # APIPA / 链路本地
       - 100.64.0.0/10                    # IANA Shared Address Space
       # 以下私有地址段特意不包含，以免影响校园网/企业内网解析：
+      # 代价：若公网域名被错误解析到 RFC1918 地址，仅凭该地址本身不会触发 fallback；这是兼顾校园网/企业内网兼容性的主动取舍。
       # - 10.0.0.0/8
       # - 172.16.0.0/12
       # - 192.168.0.0/16
@@ -138,7 +138,7 @@ find-process-mode: strict       # ⚙️ 进程信息获取：off/strict/always�
 geodata-mode: true              # ⚙️ GeoIP 数据库格式：true = .dat（MetaCubeX），false = .mmdb；统一 IP 地理归属判定
 geo-auto-update: true           # ⚙️ 自动更新 geodata，关闭则停留在出厂版本
 geo-update-interval: 24         # ⏱️ 更新间隔（小时），24 小时 = 每日一次
-geox-url:                       # ⚙️ geodata 下载地址（CF 加速），未声明时回退默认。该参数仅在配置文件重载等内核行为中生效，通过 GUI 更新 GeoData 不受此限
+geox-url:                       # ⚙️ 指定 Mihomo 获取 GeoData 的地址；未声明时使用默认地址。该参数仅在重载配置文件等内核行为中生效，通过 GUI 更新 GeoData 不受此限
   geoip:   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
   geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
   # mmdb: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb" # geodata-mode:true 时 mmdb 不参与查询，注释可省下载
@@ -146,15 +146,15 @@ geox-url:                       # ⚙️ geodata 下载地址（CF 加速），�
 
 profile:
   store-selected: true          # ⚙️ 策略组选择持久化到 cache.db，防止重启后被重置
-  store-fake-ip: false          # ⚙️ Fake-IP 映射持久化设置，仅 fake-ip 模式有效（需 dns.enhanced-mode: fake-ip），true 可防重启后映射丢失
+  store-fake-ip: false          # ⚙️ Fake-IP 映射持久化设置，仅 fake-ip 模式有效（需 dns.enhanced-mode: fake-ip）。true 可保留重启前的映射，减少重启后重新建立映射的需要
 
 # ░░ 嗅探器 — 纯 IP 连接命中域名规则的关键
-# ⚠️ ECH 盲区：支持 ECH（Encrypted Client Hello）的连接无法嗅探 SNI，若无法获得可用 SNI/域名信息，则依赖域名识别的规则可能无法命中，随后依赖 IP 规则或 MATCH 兜底。
-#    Cloudflare 托管服务已广泛部署 ECH，影响不可忽视。
+# ⚠️ ECH 盲区：支持 ECH（Encrypted Client Hello）的连接可能无法获得可用 SNI；若无法获得可用 SNI/域名信息，则依赖域名识别的规则可能无法命中，随后依赖 IP 规则或 MATCH 兜底。
+#    ECH 的实际部署范围会随服务端与客户端环境变化。当前 Cloudflare 托管服务已广泛部署 ECH，影响不可忽视。
 sniffer:
   enable: true                  # ⚙️ 启用嗅探，提取域名供规则匹配
-  force-dns-mapping: true       # ⚙️ 嗅探域名写入映射表，优先利用域名进行规则匹配
-  parse-pure-ip: true           # ⚙️ 纯 IP 也嗅探（需 TUN 模式）
+  force-dns-mapping: true       # ⚙️ 使 sniffer 在 DNSMapping 状态下介入，并利用域名信息参与后续连接处理与规则匹配
+  parse-pure-ip: true           # ⚙️ 对目标为纯 IP 的连接尝试进行域名嗅探；需配合 TUN、Redir 或 TProxy 等流量接管模式
   sniff:
     HTTP:
       ports: [80, 8080, 8880, 2052, 2082, 2086, 2095]    # HTTP + CF 备用端口
@@ -169,7 +169,7 @@ sniffer:
 # ░░ 策略组 (Proxy Groups) — 锚点组，rules 出口保障
 # ============================================================
 # Array 类型，声明即全量替换订阅策略组。
-# include-all 引入所有出站节点（不含嵌套组），切换订阅免维护；若无裸节点则组为空，所有经此组的连接立即失败。
+# include-all 引入所有出站节点及 Proxy Provider 中的节点（不含策略组、嵌套组），切换订阅免维护；若过滤条件导致候选节点为空，行为由 empty-fallback 决定。
 
 x-anchors:            # YAML 锚点定义区；非 Mihomo 配置项，仅用于集中声明可复用值，供正式配置字段通过别名引用。
   basic: &filter_basic '^(?!.*(剩余|流量|到期|过期|官网|网址|网站|套餐|重置|群|客服)).+$'
@@ -177,21 +177,21 @@ x-anchors:            # YAML 锚点定义区；非 Mihomo 配置项，仅用于�
 
 proxy-groups:
   - name: 🎛️ 动态选择 # 🛡️ 主出口，硬编码组名。修改组名须同步更新所有 rules 引用
-    include-all: true # ⚙️ 引入所有裸出站节点
-    type: url-test    # 自动延迟优选，IP 频繁变动可能触发风控
+    include-all: true # ⚙️ 引入所有出站节点及 Proxy Provider 中的节点（不含策略组、嵌套组）
+    type: url-test    # 自动延迟优选，节点切换会改变出口 IP，可能增加部分服务的风控触发概率
     interval: 600     # ⏱️ 健康检查间隔(秒)，控制节点变动频率
     tolerance: 50     # 切换容差(ms)，新节点比当前节点低超过 50ms 才切换
     lazy: true        # 惰性探测，按需触发健康检查
     url: http://www.gstatic.com/generate_204 # HTTP 测试链接，避免 TLS 开销
     # url: http://cp.cloudflare.com/generate_204 # 备用
     expected-status: 204 # 期望响应码，不符合认为不可用
-    # filter: '^(?!.*(剩余|到期|官网|套餐|重置|群|客服)).+$' # 排除流量/套餐信息等非代理节点
+    # filter: '^(?!.*(剩余|到期|官网|套餐|重置|群|客服)).+$' # 排除流量/套餐信息/订阅状态等非代理节点
     filter: *filter_basic
 
   - name: 🔀 绕港优选 # 🇭🇰 排除香港的优选组 (ChatGPT/Claude/Gemini/TikTok)
-    include-all: true # ⚙️ 引入所有裸出站节点
+    include-all: true # ⚙️ 引入所有出站节点及 Proxy Provider 中的节点（不含策略组、嵌套组）
     type: url-test    # 自动延迟优选
-    interval: 1800    # ⏱️ 健康检查间隔(秒)，半小时降低风控可能
+    interval: 1800    # ⏱️ 健康检查间隔(秒)，半小时，降低节点探测与出口切换频率
     tolerance: 50     # 切换容差(ms)
     lazy: true        # 惰性探测
     url: http://www.gstatic.com/generate_204
@@ -202,6 +202,7 @@ proxy-groups:
     # proxies:        # 🛡️ 节点紧急降级方案：过滤后无节点时降级到主出口（有穿透含港节点风险）
     #   - 🎛️ 动态选择 # ⚠️ 降级风险：含香港节点，可能导致服务不可用
     filter: *filter_no_hk # 使用前务必确保订阅中存在非港节点
+    empty-fallback: REJECT # 仅纳入非香港节点；过滤后无可用节点时拒绝连接，避免回退到其他节点；需 Mihomo v1.19.27+
 
 # ============================================================
 # ░░ 规则集 (Rule Providers) — Map 合并，保留订阅条目
@@ -341,34 +342,32 @@ rules:
 # 注释 emoji：🛡️防护 🚫拦截 🔓直连 ⚠️警告 ⚙️配置 ℹ️说明 💡设计 ⏱️时间
 # 维护：禁止行号/绝对坐标，标识符先声明后引用
 # ============================================================
-# 💡 DNS 说明：须声明 dns 节，如需对接外部纯 IP 订阅，确保订阅提供的外部配置含 fake-ip 或 redir-host，
-# 否则域名规则精度下降。请确保最终合入的配置包含合适的 DNS 段落。
-# DNS 分流与防污染分层设计：nameserver-policy（主动分流）+ nameserver（默认国内）+ fallback（兜底纠正），
-# 在长尾国内域名 CDN 优化和境外防污染之间取得良好平衡，延迟翻倍的代价仅在长尾境外域名首次访问及每次缓存失效后出现，属于有意取舍。
+# 💡 DNS 说明：须声明 dns 节，如需对接外部纯 IP 订阅，确保订阅提供的外部配置含 fake-ip 或 redir-host，否则域名规则精度下降。请确保最终合入的配置包含合适的 DNS 段落。
+# 💡 DNS 分流与防污染分层设计：nameserver-policy 负责已知域名集合的主动解析分流；nameserver 负责未命中策略的默认解析；fallback 仅参与实际进入 Resolver 的查询，
+#   并按 fallback-filter 条件决定是否采用回退结果。普通 Fake-IP A/AAAA 查询由 Fake-IP middleware 直接生成映射，不经过 nameserver/fallback；
+#   被 fake-ip-filter 排除的查询，以及规则匹配或内核内部需要真实 IP 时进入 Resolver，再由具体解析路径与查询类型决定是否经过 nameserver-policy、nameserver 或 fallback 判定。
 # ============================================================
 # 设计哲学：
-#   1. 主动精准分流：geosite:cn 走国内明文，!cn 走境外 DoH
-#   2. 长尾域名信任国内：nameserver 使用国内 DoH，保证国内小众网站 CDN 最优
-#   3. 防污染兜底：当国内 DoH 返回境外 IP 时，通过 fallback 用境外 DoH 重查
+#   1. 主动精准分流：geosite:cn 走国内明文 DNS，geolocation-!cn 走境外 DoH
+#   2. 长尾域名信任国内：未命中 nameserver-policy 的查询使用国内 DoH，保证国内小众网站 CDN 最优
+#   3. 防污染兜底：当 fallback-filter 判定 nameserver 结果异常时，采用 fallback 结果
 #
 # 💡 设计取舍说明：
-#   - 长尾境外域名延迟翻倍，该延迟仅发生在首次访问及缓存过期后，后续命中 fake-ip 无额外延迟：
-#     未收录在 geosite:geolocation-!cn 中的境外域名，会先由国内 DoH 解析，
-#     返回境外 IP 后触发 fallback 二次查询，首包延迟翻倍于直接走境外 DoH。
-#     这是为了换取国内长尾域名 CDN 最优调度的结构性权衡。
+#   - 长尾域名的默认解析优先使用国内 DoH，以兼顾国内 CDN 调度；
+#   - 若该查询实际进入 Resolver 且默认解析结果满足 fallback-filter 条件，则采用 fallback 结果；
+#   - fallback 并非普通 Fake-IP A/AAAA 查询的必经路径，因此不应将其描述为所有境外长尾域名访问都会产生一次“二次 DNS 查询”或固定的延迟翻倍。
 #
 #   - 国内 DoH 的轻微隐私暴露：
 #     长尾域名会先向腾讯/阿里 DoH 发起一次加密查询，运营商无法直接读取查询域名内容，但仍可观察 DoH 服务连接行为。
 #     且 DNS 服务商（腾讯/阿里）可能会在日志中留存查询记录。若追求极致隐私，可将 nameserver 也改为境外 DoH。
 #
-#   - 强依赖代理节点：
-#     geosite:geolocation-!cn 及 fallback 的 DoH 请求均走代理规则链。
-#     若代理节点不可用，境外域名解析在本配置路由设计下将全部失败。
+#   - 境外解析依赖代理：
+#     geolocation-!cn 的 DoH 解析及 fallback DoH 解析需要具备可用的境外网络出口；若代理出口不可用，对这些解析路径的域名解析将受到影响。
 #     务必确保路由规则将 geolocation-!cn 和 DNS DoH 流量正确导向代理。
 #
 #   - DNS 引导查询：
 #     default-nameserver 使用国内明文 DNS 解析 DoH 服务域名（如 doh.pub、dns.alidns.com），仅承担加密 DNS 的引导解析。
-#     会产生少量 DoH 服务域名的明文引导查询；通常不暴露实际业务查询内容，但 DNS 服务商仍可观察并记录该引导请求。隐私风险极微，实际可忽略。
+#     会产生少量 DoH 服务域名的明文引导查询；通常不暴露实际业务查询内容，但 DNS 服务商仍可观察并记录该引导请求。暴露的信息量通常有限，但是否可接受取决于具体威胁模型。
 #
 #   - 校园网/企业内网兼容性：
 #     本配置的 fallback-filter 未包含 RFC 1918 私有地址段（10/8, 172.16/12, 192.168/16），
