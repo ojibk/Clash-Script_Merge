@@ -1,5 +1,5 @@
 # ============================================================
-# Clash-Merge 全局扩展覆写配置 v260911
+# Clash-Merge 全局扩展覆写配置 v260912
 # 自适应路由受限的网络服务
 # 规则集驱动；首次运行依赖 rule-providers 下载，已有缓存时可离线继续运行。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
@@ -114,7 +114,7 @@ dns:
   # ── 回退过滤器 ──
   fallback-filter:
     geoip: true
-    geoip-code: CN                       # nameserver 默认解析结果的 IP 非 CN 时，判定为异常并采用 fallback 结果
+    geoip-code: CN                       # nameserver 默认解析结果的 IP 非 CN 时，按当前防污染策略视为需回退检查的结果
     ipcidr:                              # nameserver 结果命中以下特殊/保留/共享地址网段时，满足 fallback 条件
       - 240.0.0.0/4                      # E 类保留地址
       - 0.0.0.0/8                        # 本网络保留段
@@ -208,6 +208,12 @@ proxy-groups:
     filter: *filter_no_hk # 使用前务必确保订阅中存在非港节点
     empty-fallback: REJECT # 仅纳入非香港节点；过滤后无可用节点时拒绝连接，避免回退到其他节点；需 Mihomo v1.19.27+
 
+  - name: 📍 属地归因 # 🛡️ 手动选择社交平台使用的出口属地
+    proxies:
+      - DIRECT        # 👈 节点列表显式加入固定出口；其他需手动指定的固定选项也可放在 include-all 上方
+    include-all: true # ⚙️ 引入所有出站节点及 Proxy Provider 中的节点（不含策略组、嵌套组）
+    type: select      # 手动选择，切换节点会改变出口 IP，可能增加部分服务的风控触发概率
+
 # ============================================================
 # ░░ 规则集 (Rule Providers) — Map 合并，保留订阅条目
 # ============================================================
@@ -224,7 +230,7 @@ rule-providers:
     interval: 604800  # ⏱️ 7天，低频变动
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/private.mrs"
-    # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/private.mrs" # 备用
+    # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/private.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
   # lan-cidr: # 🔓 局域网私有 IP 段，与 private 互补。MetaCubeX geoip/private
   #   type: http        # ℹ️ 远程 HTTP 资源
@@ -234,7 +240,7 @@ rule-providers:
   #   interval: 604800  # ⏱️ 7天，低频变动
   #   proxy: DIRECT     # 指定规则集下载/更新出口
   #   url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geoip/private.mrs"
-  #   # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs" # 备用
+  #   # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
   # advertising: # 🚫 广告域名 (Blackmatrix7 完整版，peiyingyao 构建 MRS)，备用
   #   type: http
@@ -244,7 +250,7 @@ rule-providers:
   #   interval: 86400   # ⏱️ 24小时
   #   proxy: DIRECT     # 指定规则集下载/更新出口
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs"
-  #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs" # 备用
+  #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/Advertising/Advertising_OCD_Domain.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
   ads: # 🚫 综合拦截 (广告/跟踪/隐私/恶意/挖矿)，anti-AD 源，DustinWin 构建 MRS
     type: http
@@ -254,7 +260,7 @@ rule-providers:
     interval: 86400   # ⏱️ 24小时，上游变动频繁
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.mrs"
-    # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs" # 备用
+    # url: "https://github.com/DustinWin/ruleset_geodata/raw/refs/heads/mihomo-ruleset/ads.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
   # threat: # 🚫 威胁阻断 (EasyPrivacy 抽取，peiyingyao 构建 MRS)，备用
   #   type: http
@@ -264,7 +270,7 @@ rule-providers:
   #   interval: 86400   # ⏱️ 24小时
   #   proxy: DIRECT     # 指定规则集下载/更新出口
   #   url: "https://testingcf.jsdelivr.net/gh/peiyingyao/Rule-for-OCD@master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs"
-  #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs" # 备用
+  #   # url: "https://github.com/peiyingyao/Rule-for-OCD/raw/refs/heads/master/rule/Clash/EasyPrivacy/EasyPrivacy_OCD_Domain.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
   cn: # 🔓 国内域名直连 (主流+长尾)，MetaCubeX geosite/cn，盲区由 GeoIP 补
     type: http
@@ -274,7 +280,7 @@ rule-providers:
     interval: 86400   # ⏱️ 24小时
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
-    # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs" # 备用
+    # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/cn.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
   non-cn: # 🛡️ 境外域名代理 (Google/GitHub/Telegram 等)，MetaCubeX geolocation-!cn
     type: http
@@ -284,7 +290,7 @@ rule-providers:
     interval: 86400   # ⏱️ 24小时
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/geolocation-!cn.mrs"
-    # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs" # 备用
+    # url: "https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/geolocation-!cn.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
   hk-restricted: # 🇭🇰 港区受限服务 (ChatGPT/Claude/Gemini/TikTok)
     type: http
@@ -294,7 +300,7 @@ rule-providers:
     interval: 604800  # ⏱️ 7天，低频变动
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/hk-restricted.mrs"
-    # url: "https://raw.githubusercontent.com/ojibk/rules/main/hk-restricted.mrs" # 备用
+    # url: "https://raw.githubusercontent.com/ojibk/rules/main/hk-restricted.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
   amazon: # 🔓 亚马逊购物域名 (不含 AWS)
     type: http
@@ -304,7 +310,17 @@ rule-providers:
     interval: 604800  # ⏱️ 7天，低频变动
     proxy: DIRECT     # 指定规则集下载/更新出口
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
-    # url: "https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs" # 备用
+    # url: "https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs" # 备用，启用时需注释掉 proxy: DIRECT
+
+  social-ip-attribution: # 📍 中国社媒平台 IP 属地归因规则集
+    type: http
+    behavior: domain
+    format: mrs
+    path: "./ruleset/providers/social-ip-attribution.mrs"
+    interval: 604800  # ⏱️ 7天，低频变动
+    # proxy: DIRECT     # 指定规则集下载/更新出口
+    url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/anti-ip-attribution.mrs"
+    # url: "https://raw.githubusercontent.com/ojibk/rules/main/anti-ip-attribution.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
 # ============================================================
 # ░░ 路由规则 (Rules) — 全量替换，First-Match 即止
@@ -326,7 +342,8 @@ rules:
   # - RULE-SET,advertising,REJECT       # 🚫 广告拦截（按需启用）
   # - RULE-SET,threat,REJECT            # 🚫 威胁阻断（按需启用）
 
-  # ── 域名分流（国内优先，规避 CDN 误判） ──
+  # ── 域名分流（规避 CDN 误判） ──
+  - RULE-SET,social-ip-attribution,📍 属地归因  # 🔓 中国社媒平台 IP 属地归因
   - RULE-SET,cn,DIRECT                  # 🔓 国内域名直连
   - RULE-SET,hk-restricted,🔀 绕港优选  # 🇭🇰 港区受限服务走已过滤香港节点的自动优选组
   - RULE-SET,amazon,DIRECT              # 🔓 亚马逊购物直连
