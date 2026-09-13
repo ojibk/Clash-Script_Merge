@@ -1,6 +1,6 @@
 # ============================================================
 # Clash-Merge 全局扩展覆写配置 v260913
-# 自适应路由受限的网络服务、自定义社媒 IP 属地归因
+# 自适应路由受限的网络服务、重定向社媒 IP 属地归因
 # 规则集驱动；首次运行依赖 rule-providers 下载，已有缓存时可离线继续运行。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
 # ============================================================
@@ -208,7 +208,7 @@ proxy-groups:
     filter: *filter_no_hk # 使用前务必确保订阅中存在非港节点
     empty-fallback: REJECT # 仅纳入非香港节点；过滤后无可用节点时拒绝连接，避免回退到其他节点；需 Mihomo v1.19.27+
 
-  - name: 📍 属地归因 # 🛡️ 手动选择社交平台使用的出口属地
+  - name: 📍 社媒属地 # 🛡️ 手动选择社交平台使用的出口属地
     proxies:
       - DIRECT        # 👈 节点列表显式加入固定出口；其他需手动指定的固定选项也可放在 include-all 上方
     include-all: true # ⚙️ 引入所有出站节点及 Proxy Provider 中的节点（不含策略组、嵌套组）
@@ -312,7 +312,7 @@ rule-providers:
     url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/amazon.mrs"
     # url: "https://raw.githubusercontent.com/ojibk/rules/main/amazon.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
-  social-ip-attribution: # 📍 中国社媒平台 IP 属地归因规则集
+  social-ip-attribution: # 📍 国内社媒平台 IP 属地归因规则集
     type: http
     behavior: domain
     format: mrs
@@ -343,7 +343,7 @@ rules:
   # - RULE-SET,threat,REJECT            # 🚫 威胁阻断（按需启用）
 
   # ── 域名分流（规避 CDN 误判） ──
-  - RULE-SET,social-ip-attribution,📍 属地归因  # 🔓 中国社媒平台 IP 属地归因；默认 DIRECT，需手动切换至目标地区节点才能改变属地
+  - RULE-SET,social-ip-attribution,📍 社媒属地  # 🔓 国内社媒平台 IP 属地归因；默认 DIRECT，需手动切换至目标地区节点才能改变属地
   - RULE-SET,cn,DIRECT                  # 🔓 国内域名直连
   - RULE-SET,hk-restricted,🔀 绕港优选  # 🇭🇰 港区受限服务走已过滤香港节点的自动优选组
   - RULE-SET,amazon,DIRECT              # 🔓 亚马逊购物直连
