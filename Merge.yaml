@@ -343,7 +343,7 @@ rules:
   # - RULE-SET,threat,REJECT            # 🚫 威胁阻断（按需启用）
 
   # ── 域名分流（规避 CDN 误判） ──
-  - RULE-SET,social-ip-attribution,📍 属地归因  # 🔓 中国社媒平台 IP 属地归因
+  - RULE-SET,social-ip-attribution,📍 属地归因  # 🔓 中国社媒平台 IP 属地归因；默认 DIRECT，需手动切换至目标地区节点才能改变属地
   - RULE-SET,cn,DIRECT                  # 🔓 国内域名直连
   - RULE-SET,hk-restricted,🔀 绕港优选  # 🇭🇰 港区受限服务走已过滤香港节点的自动优选组
   - RULE-SET,amazon,DIRECT              # 🔓 亚马逊购物直连
