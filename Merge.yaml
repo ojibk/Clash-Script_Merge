@@ -1,6 +1,6 @@
 # ============================================================
-# Clash-Merge 全局扩展覆写配置 v260912
-# 自适应路由受限的网络服务
+# Clash-Merge 全局扩展覆写配置 v260913
+# 自适应路由受限的网络服务、自定义社媒 IP 属地归因
 # 规则集驱动；首次运行依赖 rule-providers 下载，已有缓存时可离线继续运行。流程：订阅 → Merge → Script → CVR → Mihomo
 # ⚠️ 严禁声明 mode 字段（CVR 独占，冲突崩溃）
 # ============================================================
@@ -318,9 +318,9 @@ rule-providers:
     format: mrs
     path: "./ruleset/providers/social-ip-attribution.mrs"
     interval: 604800  # ⏱️ 7天，低频变动
-    # proxy: DIRECT     # 指定规则集下载/更新出口
-    url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/anti-ip-attribution.mrs"
-    # url: "https://raw.githubusercontent.com/ojibk/rules/main/anti-ip-attribution.mrs" # 备用，启用时需注释掉 proxy: DIRECT
+    proxy: DIRECT     # 指定规则集下载/更新出口
+    url: "https://testingcf.jsdelivr.net/gh/ojibk/rules@main/social-ip-attribution.mrs"
+    # url: "https://raw.githubusercontent.com/ojibk/rules/main/social-ip-attribution.mrs" # 备用，启用时需注释掉 proxy: DIRECT
 
 # ============================================================
 # ░░ 路由规则 (Rules) — 全量替换，First-Match 即止
