@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260909
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260914
  * 功能：拦截广告/遥测/正版校验 + 白名单豁免特定 AI 服务（Adobe Firefly），Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -191,11 +191,11 @@ function main(config) {
         };
         const hasAnyNonReservedProxyTarget = g => Array.isArray(g?.proxies) && g.proxies.some(isNonReservedProxyTarget); // proxies 可以是节点，也可以是其他策略组；此函数不递归。
 
-        // 配置节点来源单一数据源（hasConfiguredNodeSource 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可。
+        // 配置代理目标来源单一数据源（hasConfiguredNodeSource 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可。
         // ⚠️ 设计取舍说明：hasConfiguredNodeSource 使用 some() 按数组顺序短路判断，仅检查“是否至少有一个来源能提供节点”，不比较不同组的节点数量。这意味着：
         //   若组A仅有1个静态节点，组B有50个 provider 节点，some() 对两者均返回 true；在 tier2/tier4 的 find() 中，匹配的第一个检测到节点来源组即被选中，而非“节点最多”的组。
         // 原因：1. 静态节点通常是用户精选的高质量节点，“少而精”可能优于“多而杂”；2. 避免为统计节点总数引入额外遍历开销。
-        // ⚠️ 配置节点来源检测只判断配置中存在一种可接受的节点来源形态：不检查实际节点数量、过滤结果、健康状态或 provider 加载状态。新增节点来源方式时，在此追加 test/desc。
+        // ⚠️ 配置代理目标来源检测只判断配置中存在一种可接受的节点来源形态：不检查实际节点数量、过滤结果、健康状态或 provider 加载状态。新增节点来源方式时，在此追加 test/desc。
         const NODE_SOURCE_CHECKS = [
             {
                 test: g => hasAnyNonReservedProxyTarget(g),
@@ -231,11 +231,11 @@ function main(config) {
         const hasConfiguredNodeSource = e => NODE_SOURCE_CHECKS.some(c => c.test(e.g));
         const _nodeDesc = g => {
             const hit = NODE_SOURCE_CHECKS.find(c => c.test(g));
-            return hit ? hit.desc(g) : "未检测到配置节点来源";
+            return hit ? hit.desc(g) : "未检测到配置代理目标来源";
         };
 
         // tier（层级）多级降级识别：tier1 优先采用手动精确指定，tier2 匹配名称含关键词的合格策略组，tier3 包含 include-all，tier4 放宽名称限制，tier5 降级使用兜底组，tier6 最终容错
-        // tier1：手动精确指定（PRIMARY_GROUP_NAME 非空时）——指定组验证成功后直接采用并跳过 tier2~tier6 的启发式识别；验证失败则回退自动识别
+        // tier1：手动精确指定（PRIMARY_GROUP_NAME 非空时）——指定组验证成功后直接采用并跳过 tier2~tier6 的启发式识别；基础候选验证失败时回退自动识别；命中后若代理组名存在非法空白/不可见字符则直接中止。
         let entry = null;
         if (PRIMARY_GROUP_NAME) {
             const _hit = prepped.find(e => e.g?.name === PRIMARY_GROUP_NAME);
@@ -245,7 +245,7 @@ function main(config) {
                 // 提前用 eligible 拦一道，避免"这里预选成功、下面排除断言又将其剔除"这种前后矛盾的日志
                 console.warn(`⚠️ PRIMARY_GROUP_NAME=[${PRIMARY_GROUP_NAME}] 不符合代理组要求（命中保留目标/排除词，或不允许作为总控组），回退到自动识别`);
             } else if (!VALID_PROXY_TYPES.has(_hit.g?.type) || !hasConfiguredNodeSource(_hit)) {
-                console.warn(`⚠️ PRIMARY_GROUP_NAME=[${PRIMARY_GROUP_NAME}] 存在，但类型不受支持或未检测到配置节点来源（type: ${_hit.g?.type}, ${_nodeDesc(_hit.g)}），回退到自动识别`);
+                console.warn(`⚠️ PRIMARY_GROUP_NAME=[${PRIMARY_GROUP_NAME}] 存在，但类型不受支持或未检测到配置代理目标来源（type: ${_hit.g?.type}, ${_nodeDesc(_hit.g)}），回退到自动识别`);
             } else {
                 entry = _hit;
                 console.log(`✅ 代理组（手动指定 PRIMARY_GROUP_NAME）: [${entry.g.name}]`);
