@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260914
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260915
  * 功能：拦截广告/遥测/正版校验 + 白名单豁免特定 AI 服务（Adobe Firefly），Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -18,9 +18,8 @@ function main(config) {
     const ENABLE_DIRECT                = true;            // 直连模块
     const ENABLE_HOSTS_OVERRIDE        = true;            // Hosts DNS 覆写
     const HOSTS_MODE                   = "ipv4-loopback"; // 模式: ipv4-loopback | ipv4-blackhole | dual-loopback | dual-blackhole
-    const DEBUG_FAKEIPFILTER_CLEANUP   = false;           // 调试检查：检测历史清理项与当前自动生成托管项是否存在精确重复，防止清理具体子域时误判。
-    const ENABLE_CLIENT_FINGERPRINT    = true;            // TLS 指纹注入开关（为未设置 client-fingerprint 的代理配置批量写入；仅对支持该字段的协议实际生效）
-    const DEFAULT_FINGERPRINT          = "chrome";        // TLS 指纹默认预设（仅对未设置 client-fingerprint 且支持该字段的代理节点生效）
+    const ENABLE_CLIENT_FINGERPRINT    = true;            // TLS 指纹注入开关（为未设置 client-fingerprint 的代理配置批量写入；不按协议类型是否支持指纹注入情况过滤）
+    const DEFAULT_FINGERPRINT          = "chrome";        // TLS 指纹默认预设（对未设置 client-fingerprint 的代理配置统一注入；不按协议类型是否支持指纹注入情况过滤）
     const FINGERPRINT_SKIP             = [];              // 指纹跳过名单：节点名包含这些关键词（汉字按子串匹配；非汉字按预定义分隔符边界匹配，避免误伤更长子串）
     const PRIMARY_GROUP_NAME           = "";              // tier1：手动精确指定总控代理组名（留空时跳过 tier1，进入 tier2~tier6 自动识别）；填写时必须与代理组名完全一致（区分大小写），仅此一处生效，不做模糊匹配
     const fireflyUseProxy              = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 规则的路由目标与动作（allow层代理 / block层拦截）
@@ -29,8 +28,24 @@ function main(config) {
     if (!config || typeof config !== "object" || Array.isArray(config)) {
         throw new Error("[Script] 非法 config");
     }
-    if (!Array.isArray(config.rules))           config.rules = [];
-    if (!Array.isArray(config["proxy-groups"])) config["proxy-groups"] = [];
+    // rules：缺失/null 为正常场景，静默重置；类型异常为异常场景，警告后重置。
+    // 重置而非跳过，是因为空数组是合法的 Mihomo 输入，
+    // 而保留非法类型会导致本函数内后续对 config.rules 的数组操作
+    // （filter、for...of、concat 等）抛出 TypeError。
+    if (config.rules == null) {
+        config.rules = [];
+    } else if (!Array.isArray(config.rules)) {
+        console.warn(`⚠️ config.rules 类型异常（${typeof config.rules}），已重置为空数组以继续处理`);
+        config.rules = [];
+    }
+
+    // proxy-groups：同上；注意 key 含连字符，必须用方括号访问
+    if (config["proxy-groups"] == null) {
+        config["proxy-groups"] = [];
+    } else if (!Array.isArray(config["proxy-groups"])) {
+        console.warn(`⚠️ proxy-groups 类型异常（${typeof config["proxy-groups"]}），已重置为空数组以继续处理`);
+        config["proxy-groups"] = [];
+    }
 
     if (ENABLE_FIREFLY && !ENABLE_BLOCK) console.warn("⚠️ Firefly 放行需 ENABLE_BLOCK=true");
     if (ENABLE_FIREFLY && ENABLE_AGGRESSIVE && !ENABLE_BLOCK) console.warn(`⚠️ ENABLE_BLOCK=false 时 Firefly 专属规则不会注入；若同时启用 ENABLE_AGGRESSIVE，可被识别为 adobe.io 的相关端点将命中 aggressiveRules 的 DOMAIN-SUFFIX 规则并 REJECT-DROP`);
@@ -406,7 +421,7 @@ function main(config) {
     {
         const _uncovered = adobeFireflyOnly.filter(d => !/\.(adobe\.com|adobe\.io)$/i.test(d));
         if (_uncovered.length) {
-            console.error(`❌ adobeFireflyOnly 存在无法被 udpBlock 覆盖的域名，相关 UDP/QUIC 流量将失去预期的 TCP fallback 条件: ${_uncovered.join(", ")}`);
+            console.warn(`⚠️ adobeFireflyOnly 存在无法被 udpBlock 覆盖的域名，相关 UDP/QUIC 流量将失去预期的 TCP fallback 条件: ${_uncovered.join(", ")}`);
         }
     }
 
@@ -900,15 +915,15 @@ function main(config) {
             console.log(`   全局关键词阻断: ❌`);
         console.log(`   直连规则: ${ENABLE_DIRECT ? "✅" : "❌"}`);
         console.log(`   Hosts 覆写: ${ENABLE_HOSTS_OVERRIDE ? "✅ [" + HOSTS_MODE + "]" : "❌"}`);
-        console.warn("⚠️ [udpBlock] 规则依赖域名识别（Fake-IP / Sniffer），当目标域名无法被可靠识别（如 ECH 等场景），相关 UDP 规则可能无法命中，Firefly 的 UDP/QUIC 强制回退效果也会受影响。");
-        console.log(`   ▶ 注入规则条目分层统计:`);
         const _LAYER_LABELS = { allow:"白名单/条件代理优先层", block:"拦截层", process:"进程层", proxy:"代理层", aggressive:"激进层", direct:"直连层" };
         for (const k of LAYER_ORDER) {
             console.log(`      - ${_LAYER_LABELS[k]} (${k})  : ${layerPools[k].length} 条`);
         }
-        console.log(`   注入规则数: ${finalPool.length} 条（含首尾哨兵）`);
-        console.log(`   总规则数: ${config.rules.length} 条`);
         console.log("=".repeat(28));
+
+        if (ENABLE_BLOCK) {
+            console.log("ℹ️ [udpBlock] 相关 UDP 规则依赖域名识别；无法可靠获得目标域名时，相关规则可能无法命中（包括 ECH 等场景），Firefly 的 UDP/QUIC 回退亦受影响。");
+        }
     }
     } catch (err) {
         if (err instanceof Error && err.message.startsWith("proxy-group-setup-aborted")) {
@@ -928,10 +943,19 @@ function main(config) {
 
             const hijackDomains = BACKDOOR_BASE_DOMAINS.map(d => `+.${d}`);
             const customHosts = Object.fromEntries(hijackDomains.map(d => [d, target]));
-            const ensureObj = v => (typeof v === "object" && v !== null && !Array.isArray(v)) ? v : {};
-
-            // 顶层 hosts：Mihomo 唯一有效的 hosts 配置字段；运行时是否生效由 use-hosts 控制
-            config.hosts = { ...ensureObj(config.hosts), ...customHosts };
+            // config.hosts：缺失/null 为正常场景，静默创建空对象；
+            // 类型异常时忽略非法值并继续写入脚本指定的 Hosts 条目，
+            // 以保证 Hosts 覆写这一核心功能不被跳过。
+            let _hostsBase;
+            if (config.hosts == null) {
+                _hostsBase = {};
+            } else if (typeof config.hosts === "object" && !Array.isArray(config.hosts)) {
+                _hostsBase = config.hosts;
+            } else {
+                console.warn(`⚠️ config.hosts 类型异常（${typeof config.hosts}），已忽略非法值并继续写入脚本指定的 Hosts 条目`);
+                _hostsBase = {};
+            }
+            config.hosts = { ..._hostsBase, ...customHosts };
 
             // Hosts 配置写入日志（独立，不依赖 DNS 对象状态）
             console.warn("⚠️ Hosts DNS 覆写需在 CVR 开启「启用 DNS」和「使用 Hosts」才生效");
@@ -968,23 +992,15 @@ function main(config) {
                     );
                 } else {
                     if (config.dns["fake-ip-filter"] == null) {
-                        // 字段缺失，创建空数组供脚本维护
                         config.dns["fake-ip-filter"] = [];
-                    } else if (!Array.isArray(config.dns["fake-ip-filter"])) {
-                        // 字段存在但类型异常，跳过维护以免覆盖用户配置
-                        console.warn("⚠️ fake-ip-filter 类型异常，跳过维护以避免覆盖用户配置");
-                    } else {
-                        // 字段为数组，正常执行清理与注入
+                    }
+                    if (Array.isArray(config.dns["fake-ip-filter"])) {
+                        // 字段为数组，执行清理与注入
                         const currentManaged = new Set(BACKDOOR_BASE_DOMAINS.flatMap(d => [`+.${d}`, d, `*.${d}`]).map(s => s.toLowerCase()));
+                        // 注意：fake-ip-filter 清理是字符串精确匹配，不是语义匹配。
+                        // 966v26.com 的生成形式不包含 api.966v26.com / status.966v26.com，因此这些历史子域必须单独保留在 LEGACY_CLEANUP_ENTRIES 中。
                         const LEGACY_CLEANUP_ENTRIES = ["api.966v26.com","status.966v26.com","+.cc-cdn.com","cc-cdn.com","*.cc-cdn.com"];
                         const scriptCleanupEntries = new Set([...currentManaged, ...LEGACY_CLEANUP_ENTRIES.map(s => s.toLowerCase())]);
-
-                        if (DEBUG_FAKEIPFILTER_CLEANUP) {
-                            // DEBUG：检查当前管理条目与历史清理条目的精确交集；结果为空≠检查失效。
-                            // 语义覆盖不等于字符串存在：966v26.com 的生成形式不包含 api.966v26.com，勿据此删除对应 LEGACY_CLEANUP_ENTRIES。
-                            const redundant = LEGACY_CLEANUP_ENTRIES.filter(e => currentManaged.has(e.toLowerCase()));
-                            if (redundant.length) console.warn("⚠️ 历史托管域名中存在与当前自动生成集合完全重复的冗余条目，建议手动从 LEGACY_CLEANUP_ENTRIES 中移除", redundant);
-                        }
 
                         const existing = new Set(), cleaned = [];
                         let cleanedCount = 0;
@@ -999,6 +1015,8 @@ function main(config) {
                         config.dns["fake-ip-filter"] = [...cleaned, ...newEntries];
 
                         console.log(`   fake-ip-filter 清理旧条目: ${cleanedCount} 条，新增注入: ${newEntries.length} 条，保留清理后非脚本条目 ${existing.size} 条`);
+                    } else {
+                        console.warn("⚠️ fake-ip-filter 类型异常，跳过维护以避免覆盖用户配置");
                     }
                 }
             }
