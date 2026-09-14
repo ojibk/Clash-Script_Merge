@@ -135,7 +135,14 @@ function main(config) {
             let inj = 0, skip = 0, exist = 0;
             config.proxies = config.proxies.map(p => {
                 if (typeof p !== 'object' || !p) return p;
-                if (Object.prototype.hasOwnProperty.call(p, 'client-fingerprint')) { exist++; return p; }
+                if (Object.prototype.hasOwnProperty.call(p, 'client-fingerprint')) {
+                    const fpVal = p['client-fingerprint'];
+                    if (!(typeof fpVal === "string" && _VALID.has(fpVal))) {
+                        console.warn(`⚠️ 节点 [${p.name || "?"}] 的 client-fingerprint 值 ${JSON.stringify(fpVal)} 不在已知有效值集合内，已保留原值不做覆盖`);
+                    }
+                    exist++;
+                    return p;
+                }
                 const name = (typeof p.name === "string" ? p.name : "").toLowerCase(); // 防御：节点名若被 YAML 解析为非字符串（如纯数字未加引号），避免 .toLowerCase() 抛异常导致整脚本失败
                 if (_skipKw.some(k => name.includes(k)) || _skipRe.some(r => r.test(p.name || ""))) { skip++; return p; }
                 inj++;
