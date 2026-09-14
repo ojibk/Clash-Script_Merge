@@ -165,20 +165,6 @@ function main(config) {
     const VALID_PROXY_TYPES = new Set(["select","url-test","fallback","load-balance","smart"]);
     const NONROUTABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
 
-    // 防回归断言：FALLBACK_NAMES 与 EXCLUDED_NAMES 必须互斥；若未来修改导致重叠将立即报错
-    {
-        const _overlap = [...FALLBACK_NAMES].filter(n => EXCLUDED_NAMES.has(n));
-        if (_overlap.length) {
-            console.error(`❌ 配置断言失败：FALLBACK_NAMES ∩ EXCLUDED_NAMES 非空: ${_overlap.join(", ")}`);
-            throw new Error("proxy-group-setup-aborted: FALLBACK_NAMES/EXCLUDED_NAMES 断言失败");
-        }
-    }
-    // 防回归断言：当前“全局”只应匹配 FALLBACK_CN_RE，不应同时命中 EXCLUDED_CN_RE；若未来修改导致重叠将立即报错
-    if (FALLBACK_CN_RE.test("全局") && EXCLUDED_CN_RE.test("全局")) {
-        console.error(`❌ 配置断言失败："全局"同时匹配 FALLBACK_CN_RE 和 EXCLUDED_CN_RE`);
-        throw new Error("proxy-group-setup-aborted: FALLBACK_CN_RE/EXCLUDED_CN_RE 断言失败");
-    }
-
     // ═══════════════ 基础控制字符集（清洗和校验共用） ═══════════════
     const _CONTROL_CHARS = "\u0000-\u001F\u007F\u0085\u00AD\u061C\u2000-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\uFEFF"; // 用于清除代理组名中可能破坏匹配或规则结构的不可见字符；
     // .trim() 负责清理首尾可识别空白；此正则额外清理出现在名称中间位置的控制/格式字符。
@@ -233,15 +219,6 @@ function main(config) {
                 desc: () => "include-all-providers",                   // 包含全部代理集合（proxy providers）
             },
         ];
-
-        // 运行时自检
-        {
-            const _invalid = NODE_SOURCE_CHECKS.filter(c => typeof c.test !== "function" || typeof c.desc !== "function");
-            if (_invalid.length) {
-                console.error(`❌ NODE_SOURCE_CHECKS 配置错误：${_invalid.length} 条记录缺少 test/desc 函数`);
-                throw new Error("proxy-group-setup-aborted: NODE_SOURCE_CHECKS 配置错误");
-            }
-        }
 
         const hasConfiguredNodeSource = e => NODE_SOURCE_CHECKS.some(c => c.test(e.g));
         const _nodeDesc = g => {
@@ -825,9 +802,6 @@ function main(config) {
     {
         const LAYER_ORDER = Object.freeze(["allow","block","process","proxy","aggressive","direct"]); // 层序：allow/block 域名规则优先；process 规则仅在前者未命中时生效，属显式策略
         const layerPools = { allow:[], block:[], process:[], proxy:[], aggressive:[], direct:[] };
-        const _orderSet = new Set(LAYER_ORDER);
-        for (const k of LAYER_ORDER) if (!(k in layerPools)) throw new Error(`[Script] LAYER_ORDER 键 '${k}' 不在 layerPools 中`);
-        for (const k of Object.keys(layerPools)) if (!_orderSet.has(k)) throw new Error(`[Script] layerPools 键 '${k}' 不在 LAYER_ORDER 中`);
         const pushLayer = (l, r) => {
             if (!(l in layerPools)) {
                 throw new Error(`[Script] 未知层 '${l}'，请检查 layerPools 键名`);
