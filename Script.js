@@ -1,5 +1,5 @@
 /**
- * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260915
+ * Clash-Script 全局扩展脚本 · 基于哨兵标记的规则幂等注入 v260916
  * 功能：拦截广告/遥测/正版校验 + 白名单豁免特定 AI 服务（Adobe Firefly），Hosts DNS 覆写，TLS 指纹注入等。
  * 使用：调整顶部配置区开关，在对应数组中增删域名，保存后重载订阅即可生效。
  */
@@ -170,7 +170,7 @@ function main(config) {
     const FALLBACK_NAMES = new Set(["GLOBAL"]);
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|球)|所有|默认|直连|拒绝)$/;
     const FALLBACK_CN_RE = /^全局$/;
-    // 展示性组名负筛选：启发式，非完备识别器；仅覆盖已知高置信度中文命名模式。覆盖 tier1/2/3/4/6；tier5 走 fallback 路径不读 eligible，不受此约束。
+    // 展示性组名负筛选：启发式，非完备识别器；覆盖已知展示性/信息面板命名模式，其中部分为低置信度。覆盖 tier1/2/3/4/6；tier5 走 fallback 路径不读 eligible，不受此约束。
     // 与 Merge.yaml 的 filter_basic 概念相关但独立维护，不应强制镜像词表。⚠️ 距离.{0,4}重置 未锚定、官网/网址 为低置信度，均可能误伤真实功能组名。
     const DECORATIVE_GROUP_NAME_RE =
         /订阅信息|流量信息|流量查询|剩余流量|到期时间|套餐(?:信息|到期)|距离.{0,4}重置|使用说明|免责声明|官网|网址/;
@@ -210,6 +210,7 @@ function main(config) {
             //   若组A仅有1个静态节点，组B有50个 provider 节点，some() 对两者均返回 true；在 tier2/tier4 的 find() 中，匹配的第一个检测到节点来源组即被选中，而非“节点最多”的组。
             // 原因：1. 静态节点通常是用户精选的高质量节点，“少而精”可能优于“多而杂”；2. 避免为统计节点总数引入额外遍历开销。
             // ⚠️ 配置代理目标来源检测只判断配置中存在一种可接受的节点来源形态：不检查实际节点数量、过滤结果、健康状态或 provider 加载状态。新增节点来源方式时，在此追加 test/desc。
+            // 对于 proxies 来源，仅判断存在非保留字符串，不验证该字符串是否确实对应 config.proxies / proxy-provider 或有效策略组成员，因此可能产生伪节点来源假阳性。
             const NODE_SOURCE_CHECKS = [
                 {
                     test: g => hasAnyNonReservedProxyTarget(g),
@@ -303,6 +304,7 @@ function main(config) {
         }
 
         // 代理组排除断言
+        // ⚠️ 本断言不检查 DECORATIVE_GROUP_NAME_RE。当前 DECORATIVE 名称无法到达此处（普通路径已被 eligible 过滤；fallback 路径当前与其无交集）。若未来扩展 FALLBACK_NAMES 至含展示性名称，需同步检查此断言。
         {
             const s = sanitizeName(proxyGroupName);
             if (!s || EXCLUDED_NAMES.has(s.toUpperCase()) || EXCLUDED_CN_RE.test(s)) {
@@ -719,7 +721,7 @@ function main(config) {
         // "PROCESS-NAME,Wps.exe,REJECT",                    // ⚠️ 慎用：WPS 主进程，拦截后联网全失效
     ];
     const processProxyRules = [ // 进程代理（空占位）
-        // `PROCESS-NAME,Telegram.exe,${proxyGroupName}`,
+        `PROCESS-NAME,Telegram.exe,${proxyGroupName}`,
         // `PROCESS-NAME,Slack.exe,${proxyGroupName}`,
     ];
     const processDirectRules = [
