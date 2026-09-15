@@ -170,6 +170,10 @@ function main(config) {
     const FALLBACK_NAMES = new Set(["GLOBAL"]);
     const EXCLUDED_CN_RE = /^(?:全(?:部|网|球)|所有|默认|直连|拒绝)$/;
     const FALLBACK_CN_RE = /^全局$/;
+    // 展示性组名负筛选：启发式，非完备识别器；仅覆盖已知高置信度中文命名模式。覆盖 tier1/2/3/4/6；tier5 走 fallback 路径不读 eligible，不受此约束。
+    // 与 Merge.yaml 的 filter_basic 概念相关但独立维护，不应强制镜像词表。⚠️ 距离.{0,4}重置 未锚定、官网/网址 为低置信度，均可能误伤真实功能组名。
+    const DECORATIVE_GROUP_NAME_RE =
+        /订阅信息|流量信息|流量查询|剩余流量|到期时间|套餐(?:信息|到期)|距离.{0,4}重置|使用说明|免责声明|官网|网址/;
     const VALID_PROXY_TYPES = new Set(["select","url-test","fallback","load-balance","smart"]);
     const NONROUTABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
 
@@ -180,7 +184,7 @@ function main(config) {
     const _SANITIZE_RE = new RegExp(`[${_CONTROL_CHARS}]`, "gu");
     const sanitizeName = n => (typeof n === "string" && n) ? n.replace(_SANITIZE_RE, '').trim() : "";
     const _isFallback = t => !!(t && (FALLBACK_NAMES.has(t.toUpperCase()) || FALLBACK_CN_RE.test(t)));
-    const _isEligible = t => !!(t && (_isFallback(t) || (!EXCLUDED_NAMES.has(t.toUpperCase()) && !EXCLUDED_CN_RE.test(t))));
+    const _isEligible = t => !!(t && (_isFallback(t) || (!EXCLUDED_NAMES.has(t.toUpperCase()) && !EXCLUDED_CN_RE.test(t) && !DECORATIVE_GROUP_NAME_RE.test(t))));
 
     if (NEED_PROXY_GROUP) {
         if (config["proxy-groups"].length) {
