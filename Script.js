@@ -22,17 +22,36 @@ function main(config) {
     const DEFAULT_FINGERPRINT          = "chrome";        // TLS 指纹默认预设（对未设置 client-fingerprint 的代理配置统一注入；不按协议类型是否支持指纹注入情况过滤）
     const FINGERPRINT_SKIP             = [];              // 指纹跳过名单：节点名包含这些关键词（汉字按子串匹配；非汉字按预定义分隔符边界匹配，避免误伤更长子串）
     const PRIMARY_GROUP_NAME           = "";              // tier1：手动精确指定总控代理组名（留空时跳过 tier1，进入 tier2~tier6 自动识别）；填写时必须与代理组名完全一致（区分大小写），仅此一处生效，不做模糊匹配
-    const fireflyUseProxy              = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 规则的路由目标与动作（allow层代理 / block层拦截）
-    const NEED_PROXY_GROUP             = ENABLE_PROXY || fireflyUseProxy;  // 派生开关：仅当下游会消费 proxyGroupName 时才执行代理组识别；否则跳过
+    
+    // ── process-proxy 目标声明区 ──
+    // 唯一声明源：process-proxy 目标仅在此处维护。元素语义：进程名字符串；外围空白不具有业务意义
+    const PROCESS_PROXY_TARGETS = [
+        "Telegram.exe",
+    ];
+
+    // 唯一规范化下游输入：下游 process-proxy 逻辑统一消费 processProxyTargets，不得直接读取 PROCESS_PROXY_TARGETS 元素级输入策略：类型约束 → trim → 空值剔除；非法元素静默降级
+    const processProxyTargets = PROCESS_PROXY_TARGETS
+        .filter(name => typeof name === "string")
+        .map(name => name.trim())
+        .filter(name => name !== "");
+
+    const fireflyUseProxy = ENABLE_FIREFLY && ENABLE_BLOCK;
+
+    // ── proxyGroupName 消费者闭包 ──
+    //   ① ENABLE_PROXY                    → proxySuffixList
+    //   ② fireflyUseProxy                 → Firefly allow
+    //   ③ ENABLE_PROCESS_RULE + 目标非空  → processProxyRules
+    const NEED_PROXY_GROUP =
+        ENABLE_PROXY ||
+        fireflyUseProxy ||
+        (ENABLE_PROCESS_RULE && processProxyTargets.length > 0);
 
     // ═══════════════ 防御性检查 ═══════════════
     if (!config || typeof config !== "object" || Array.isArray(config)) {
         throw new Error("[Script] 非法 config");
     }
     // rules：缺失/null 为正常场景，静默重置；类型异常为异常场景，警告后重置。
-    // 重置而非跳过，是因为空数组是合法的 Mihomo 输入，
-    // 而保留非法类型会导致本函数内后续对 config.rules 的数组操作
-    // （filter、for...of、concat 等）抛出 TypeError。
+    // 重置而非跳过，是因为空数组是合法的 Mihomo 输入，而保留非法类型会导致本函数内后续对 config.rules 的数组操作（filter、for...of、concat 等）抛出 TypeError。
     if (config.rules == null) {
         config.rules = [];
     } else if (!Array.isArray(config.rules)) {
@@ -720,10 +739,12 @@ function main(config) {
         "PROCESS-NAME,DriverGenius.exe,REJECT",              // 驱动精灵
         // "PROCESS-NAME,Wps.exe,REJECT",                    // ⚠️ 慎用：WPS 主进程，拦截后联网全失效
     ];
-    const processProxyRules = [ // 进程代理（空占位）
-        `PROCESS-NAME,Telegram.exe,${proxyGroupName}`,
-        // `PROCESS-NAME,Slack.exe,${proxyGroupName}`,
-    ];
+
+    // 消费规范化目标数组，消除双数据源。位置保持：位于代理组识别块之后，同一同步 try 内
+    const processProxyRules = processProxyTargets.map(
+        name => `PROCESS-NAME,${name},${proxyGroupName}`
+    );
+
     const processDirectRules = [
         // "PROCESS-NAME,BaiduNetdisk.exe,DIRECT",              // 百度网盘
         "PROCESS-NAME,filezilla.exe,DIRECT",                 // FileZilla
