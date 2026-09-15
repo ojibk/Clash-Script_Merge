@@ -23,10 +23,11 @@ function main(config) {
     const FINGERPRINT_SKIP             = [];              // 指纹跳过名单：节点名包含这些关键词（汉字按子串匹配；非汉字按预定义分隔符边界匹配，避免误伤更长子串）
     const PRIMARY_GROUP_NAME           = "";              // tier1：手动精确指定总控代理组名（留空时跳过 tier1，进入 tier2~tier6 自动识别）；填写时必须与代理组名完全一致（区分大小写），仅此一处生效，不做模糊匹配
     
-    // ── process-proxy 目标声明区 ──
-    // 唯一声明源：process-proxy 目标仅在此处维护。元素语义：进程名字符串；外围空白不具有业务意义
+    // ═══════════════ process-proxy 目标声明（进程代理规则唯一维护点） ═══════════════
+    // 增删进程代理目标：仅修改此数组，不要修改 processProxyRules。元素语义：进程名字符串；外围空白不具有业务意义
     const PROCESS_PROXY_TARGETS = [
         "Telegram.exe",
+        // "Slack.exe",
     ];
 
     // 唯一规范化下游输入：下游 process-proxy 逻辑统一消费 processProxyTargets，不得直接读取 PROCESS_PROXY_TARGETS 元素级输入策略：类型约束 → trim → 空值剔除；非法元素静默降级
@@ -717,9 +718,9 @@ function main(config) {
     // ── 全局关键词兜底（默认关闭）──
     const globalKeyword = ["telemetry", "analytics", "stats", "metrics"]; // ⚠️ 慎用：存在误匹配风险，仅建议临时排查，不建议长期启用
 
-    // ── 进程规则（需满足 Mihomo 的进程识别与流量接管条件；Windows 下通常还需 TUN + 管理员权限）──
+    // ═══════════════ 进程规则（需满足 Mihomo 的进程识别与流量接管条件；Windows 下通常还需 TUN + 管理员权限）═══════════════
     // 注：规则中 REJECT-DROP（静默丢弃请求）不主动返回拒绝结果；REJECT（立即拒绝连接）TCP 场景通常表现为快速失败，具体表现取决于传输协议及应用自身的重试/超时策略。选择依据是进程对网络超时的敏感度。
-    const processBlockRules = [
+    const processBlockRules = [ // 进程拦截规则
         // "AND,((NETWORK,UDP),(DST-PORT,443),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 仅 UDP 443
         // "AND,((NETWORK,UDP),(PROCESS-NAME,AdobeGCClient.exe)),REJECT-DROP", // 全部 UDP
         "PROCESS-NAME,AdobeGCClient.exe,REJECT-DROP",        // Adobe 正版验证进程；在前置域名规则未命中时，兜底拦截该进程的剩余流量（TCP+UDP）
@@ -740,12 +741,13 @@ function main(config) {
         // "PROCESS-NAME,Wps.exe,REJECT",                    // ⚠️ 慎用：WPS 主进程，拦截后联网全失效
     ];
 
-    // 消费规范化目标数组，消除双数据源。位置保持：位于代理组识别块之后，同一同步 try 内
+    // ── 进程代理规则（只读，由 PROCESS_PROXY_TARGETS 派生） ──
+    // 不要直接修改此数组；增删进程代理目标请修改 PROCESS_PROXY_TARGETS。位置保持：位于代理组识别块之后，同一同步 try 内。
     const processProxyRules = processProxyTargets.map(
         name => `PROCESS-NAME,${name},${proxyGroupName}`
     );
 
-    const processDirectRules = [
+    const processDirectRules = [ // 进程直连规则
         // "PROCESS-NAME,BaiduNetdisk.exe,DIRECT",              // 百度网盘
         "PROCESS-NAME,filezilla.exe,DIRECT",                 // FileZilla
     ];
