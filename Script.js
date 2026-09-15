@@ -23,6 +23,7 @@ function main(config) {
     const FINGERPRINT_SKIP             = [];              // 指纹跳过名单：节点名包含这些关键词（汉字按子串匹配；非汉字按预定义分隔符边界匹配，避免误伤更长子串）
     const PRIMARY_GROUP_NAME           = "";              // tier1：手动精确指定总控代理组名（留空时跳过 tier1，进入 tier2~tier6 自动识别）；填写时必须与代理组名完全一致（区分大小写），仅此一处生效，不做模糊匹配
     const fireflyUseProxy              = ENABLE_FIREFLY && ENABLE_BLOCK;  // 派生开关：决定 Firefly 规则的路由目标与动作（allow层代理 / block层拦截）
+    const NEED_PROXY_GROUP             = ENABLE_PROXY || fireflyUseProxy;  // 派生开关：仅当下游会消费 proxyGroupName 时才执行代理组识别；否则跳过
 
     // ═══════════════ 防御性检查 ═══════════════
     if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -181,135 +182,137 @@ function main(config) {
     const _isFallback = t => !!(t && (FALLBACK_NAMES.has(t.toUpperCase()) || FALLBACK_CN_RE.test(t)));
     const _isEligible = t => !!(t && (_isFallback(t) || (!EXCLUDED_NAMES.has(t.toUpperCase()) && !EXCLUDED_CN_RE.test(t))));
 
-    if (config["proxy-groups"].length) {
-        const _KW_RE = /节点选择|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅|代理|选择/i;
-        const prepped = config["proxy-groups"].map(g => {
-            const clean = sanitizeName(g?.name);
-            return { g, clean, fallback: _isFallback(clean), eligible: _isEligible(clean) };
-        });
-
-        // ═══════════════ 保留代理目标常量（用于排除已知的非代理特殊目标） ═══════════════
-        const _RESERVED_PROXY_TARGETS = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"]);
-        // 仅做单层字面量检测：若 proxies 引用其他策略组，此处不会递归展开判断其最终是否包含真实代理来源。
-        // 此为有意保留的边界，避免为代理组识别引入递归展开及循环引用处理。
-        const isNonReservedProxyTarget = p => {
-            if (typeof p !== "string") return false;
-            const t = p.trim();
-            return t !== "" && !_RESERVED_PROXY_TARGETS.has(t.toUpperCase());
-        };
-        const hasAnyNonReservedProxyTarget = g => Array.isArray(g?.proxies) && g.proxies.some(isNonReservedProxyTarget); // proxies 可以是节点，也可以是其他策略组；此函数不递归。
-
-        // 配置代理目标来源单一数据源（hasConfiguredNodeSource 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可。
-        // ⚠️ 设计取舍说明：hasConfiguredNodeSource 使用 some() 按数组顺序短路判断，仅检查“是否至少有一个来源能提供节点”，不比较不同组的节点数量。这意味着：
-        //   若组A仅有1个静态节点，组B有50个 provider 节点，some() 对两者均返回 true；在 tier2/tier4 的 find() 中，匹配的第一个检测到节点来源组即被选中，而非“节点最多”的组。
-        // 原因：1. 静态节点通常是用户精选的高质量节点，“少而精”可能优于“多而杂”；2. 避免为统计节点总数引入额外遍历开销。
-        // ⚠️ 配置代理目标来源检测只判断配置中存在一种可接受的节点来源形态：不检查实际节点数量、过滤结果、健康状态或 provider 加载状态。新增节点来源方式时，在此追加 test/desc。
-        const NODE_SOURCE_CHECKS = [
-            {
-                test: g => hasAnyNonReservedProxyTarget(g),
-                desc: g => `${g.proxies.filter(isNonReservedProxyTarget).length} 个非保留 proxies 项`,
-            },
-            {
-                test: g => Array.isArray(g?.use) && g.use.length > 0,
-                desc: g => `use:${g.use.length} 个 provider`,         // 引用 proxy-providers
-            },
-            {
-                test: g => g?.["include-all"] === true || g?.["include-all"] === "true",
-                desc: () => "include-all",                             // 纳入全部代理节点及 provider 来源
-            },
-            {
-                test: g => g?.["include-all-proxies"] === true || g?.["include-all-proxies"] === "true",
-                desc: () => "include-all-proxies",                     // 包含所有代理节点
-            },
-            {
-                test: g => g?.["include-all-providers"] === true || g?.["include-all-providers"] === "true",
-                desc: () => "include-all-providers",                   // 包含全部代理集合（proxy providers）
-            },
-        ];
-
-        const hasConfiguredNodeSource = e => NODE_SOURCE_CHECKS.some(c => c.test(e.g));
-        const _nodeDesc = g => {
-            const hit = NODE_SOURCE_CHECKS.find(c => c.test(g));
-            return hit ? hit.desc(g) : "未检测到配置代理目标来源";
-        };
-
-        // tier（层级）多级降级识别：tier1 优先采用手动精确指定，tier2 匹配名称含关键词的合格策略组，tier3 包含 include-all，tier4 放宽名称限制，tier5 降级使用兜底组，tier6 最终容错
-        // tier1：手动精确指定（PRIMARY_GROUP_NAME 非空时）——指定组验证成功后直接采用并跳过 tier2~tier6 的启发式识别；基础候选验证失败时回退自动识别；命中后若代理组名存在非法空白/不可见字符则直接中止。
-        let entry = null;
-        if (PRIMARY_GROUP_NAME) {
-            const _hit = prepped.find(e => e.g?.name === PRIMARY_GROUP_NAME);
-            if (!_hit) {
-                console.warn(`⚠️ PRIMARY_GROUP_NAME=[${PRIMARY_GROUP_NAME}] 未在 proxy-groups 中找到同名条目，回退到自动识别`);
-            } else if (!_hit.eligible) {
-                // 提前用 eligible 拦一道，避免"这里预选成功、下面排除断言又将其剔除"这种前后矛盾的日志
-                console.warn(`⚠️ PRIMARY_GROUP_NAME=[${PRIMARY_GROUP_NAME}] 不符合代理组要求（命中保留目标/排除词，或不允许作为总控组），回退到自动识别`);
-            } else if (!VALID_PROXY_TYPES.has(_hit.g?.type) || !hasConfiguredNodeSource(_hit)) {
-                console.warn(`⚠️ PRIMARY_GROUP_NAME=[${PRIMARY_GROUP_NAME}] 存在，但类型不受支持或未检测到配置代理目标来源（type: ${_hit.g?.type}, ${_nodeDesc(_hit.g)}），回退到自动识别`);
-            } else {
-                entry = _hit;
-                console.log(`✅ 代理组（手动指定 PRIMARY_GROUP_NAME）: [${entry.g.name}]`);
-            }
-        }
-        // tier2: 关键词命中。多个候选并列时，优先取 type === "select"（人工总控选择组的惯例类型），
-        // 命中多个候选时打印诊断日志列出全部候选，避免地区级 url-test 组（如含"自动"）或展示性 select 组
-        // （如含"订阅"的"📊 订阅信息"）单纯因为排在数组前面而被静默选中。仍需强调：这不是"顺序无关"——
-        // 无 select 候选、或多个候选类型相同时，胜出者依旧由数组声明顺序决定。
-        if (!entry) {
-            const _tier2Candidates = prepped.filter(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-                _KW_RE.test(e.clean) && hasConfiguredNodeSource(e));
-            entry = _tier2Candidates.find(e => e.g?.type === "select") || _tier2Candidates[0];
-            if (_tier2Candidates.length > 1) {
-                console.warn(`⚠️ tier2 命中 ${_tier2Candidates.length} 个候选组，已选 [${entry?.g?.name}] (type: ${entry?.g?.type})，`
-                    + `其余候选: ${_tier2Candidates.filter(e => e !== entry).map(e => `[${e.g.name}](${e.g.type})`).join("、")}`);
-            }
-        }
-        // tier3: 仅当 tier2 全表落空时，才接受包含 include-all 的合格策略组（此时数组顺序才会成为决定因素）
-        if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
-            (e.g?.["include-all"] === true || e.g?.["include-all"] === "true") && hasConfiguredNodeSource(e));
-        // tier4: 放宽名称限制
-        if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && hasConfiguredNodeSource(e));
-        // tier5: 降级使用兜底组
-        if (!entry) {
-            entry = prepped.find(e => e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && hasConfiguredNodeSource(e));
-            if (entry) console.warn(`⚠️ 降级使用兜底组 [${entry.g.name}]`);
-        }
-        // tier6: 最终容错
-        if (!entry) {
-            entry = prepped.find(e => e.eligible && e.g?.type != null && !NONROUTABLE_TYPES.has(e.g?.type) && hasConfiguredNodeSource(e));
-            if (entry) console.warn(`🚨 已进入最终容错，选取代理组 [${entry.g.name}]`);
-        }
-
-        if (entry?.g?.name) {
-            if (entry.g.name !== entry.clean) { console.error(`❌ 代理组名含首尾空格或不可见字符`); throw new Error("proxy-group-setup-aborted: 代理组名含首尾空格或不可见字符"); }
-            proxyGroupName = entry.g.name;
-            console.log(`${entry.fallback ? "⚠️" : "✅"} 代理组: [${proxyGroupName}] (type: ${entry.g.type ?? "?"})`);
-        } else {
-            console.error("❌ 无可用代理组，中止注入");
-            prepped.forEach(({ g, eligible, fallback }, idx) => {
-                const status = !eligible ? "❌" : (fallback ? "⚠️" : "✅");
-                console.log(`   ${idx + 1}. ${status} [${g?.name}] (${g?.type ?? "?"}, ${_nodeDesc(g)})`);
+    if (NEED_PROXY_GROUP) {
+        if (config["proxy-groups"].length) {
+            const _KW_RE = /节点选择|手动选择|选节点|proxy|auto|自动|🚀|飞机|机场|线路|订阅|代理|选择/i;
+            const prepped = config["proxy-groups"].map(g => {
+                const clean = sanitizeName(g?.name);
+                return { g, clean, fallback: _isFallback(clean), eligible: _isEligible(clean) };
             });
-            throw new Error("proxy-group-setup-aborted: 无可用代理组");
-        }
-    } else {
-        console.error("❌ proxy-groups 为空，中止注入");
-        throw new Error("proxy-group-setup-aborted: proxy-groups 为空");
-    }
 
-    // 代理组排除断言
-    {
-        const s = sanitizeName(proxyGroupName);
-        if (!s || EXCLUDED_NAMES.has(s.toUpperCase()) || EXCLUDED_CN_RE.test(s)) {
-            console.error(`❌ 代理组排除断言触发：[${proxyGroupName}]`); throw new Error("proxy-group-setup-aborted: 代理组排除断言触发");
+            // ═══════════════ 保留代理目标常量（用于排除已知的非代理特殊目标） ═══════════════
+            const _RESERVED_PROXY_TARGETS = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"]);
+            // 仅做单层字面量检测：若 proxies 引用其他策略组，此处不会递归展开判断其最终是否包含真实代理来源。
+            // 此为有意保留的边界，避免为代理组识别引入递归展开及循环引用处理。
+            const isNonReservedProxyTarget = p => {
+                if (typeof p !== "string") return false;
+                const t = p.trim();
+                return t !== "" && !_RESERVED_PROXY_TARGETS.has(t.toUpperCase());
+            };
+            const hasAnyNonReservedProxyTarget = g => Array.isArray(g?.proxies) && g.proxies.some(isNonReservedProxyTarget); // proxies 可以是节点，也可以是其他策略组；此函数不递归。
+
+            // 配置代理目标来源单一数据源（hasConfiguredNodeSource 和 _nodeDesc 共用）；新增引入方式时在此追加记录即可。
+            // ⚠️ 设计取舍说明：hasConfiguredNodeSource 使用 some() 按数组顺序短路判断，仅检查“是否至少有一个来源能提供节点”，不比较不同组的节点数量。这意味着：
+            //   若组A仅有1个静态节点，组B有50个 provider 节点，some() 对两者均返回 true；在 tier2/tier4 的 find() 中，匹配的第一个检测到节点来源组即被选中，而非“节点最多”的组。
+            // 原因：1. 静态节点通常是用户精选的高质量节点，“少而精”可能优于“多而杂”；2. 避免为统计节点总数引入额外遍历开销。
+            // ⚠️ 配置代理目标来源检测只判断配置中存在一种可接受的节点来源形态：不检查实际节点数量、过滤结果、健康状态或 provider 加载状态。新增节点来源方式时，在此追加 test/desc。
+            const NODE_SOURCE_CHECKS = [
+                {
+                    test: g => hasAnyNonReservedProxyTarget(g),
+                    desc: g => `${g.proxies.filter(isNonReservedProxyTarget).length} 个非保留 proxies 项`,
+                },
+                {
+                    test: g => Array.isArray(g?.use) && g.use.length > 0,
+                    desc: g => `use:${g.use.length} 个 provider`,         // 引用 proxy-providers
+                },
+                {
+                    test: g => g?.["include-all"] === true || g?.["include-all"] === "true",
+                    desc: () => "include-all",                             // 纳入全部代理节点及 provider 来源
+                },
+                {
+                    test: g => g?.["include-all-proxies"] === true || g?.["include-all-proxies"] === "true",
+                    desc: () => "include-all-proxies",                     // 包含所有代理节点
+                },
+                {
+                    test: g => g?.["include-all-providers"] === true || g?.["include-all-providers"] === "true",
+                    desc: () => "include-all-providers",                   // 包含全部代理集合（proxy providers）
+                },
+            ];
+
+            const hasConfiguredNodeSource = e => NODE_SOURCE_CHECKS.some(c => c.test(e.g));
+            const _nodeDesc = g => {
+                const hit = NODE_SOURCE_CHECKS.find(c => c.test(g));
+                return hit ? hit.desc(g) : "未检测到配置代理目标来源";
+            };
+
+            // tier（层级）多级降级识别：tier1 优先采用手动精确指定，tier2 匹配名称含关键词的合格策略组，tier3 包含 include-all，tier4 放宽名称限制，tier5 降级使用兜底组，tier6 最终容错
+            // tier1：手动精确指定（PRIMARY_GROUP_NAME 非空时）——指定组验证成功后直接采用并跳过 tier2~tier6 的启发式识别；基础候选验证失败时回退自动识别；命中后若代理组名存在非法空白/不可见字符则直接中止。
+            let entry = null;
+            if (PRIMARY_GROUP_NAME) {
+                const _hit = prepped.find(e => e.g?.name === PRIMARY_GROUP_NAME);
+                if (!_hit) {
+                    console.warn(`⚠️ PRIMARY_GROUP_NAME=[${PRIMARY_GROUP_NAME}] 未在 proxy-groups 中找到同名条目，回退到自动识别`);
+                } else if (!_hit.eligible) {
+                    // 提前用 eligible 拦一道，避免"这里预选成功、下面排除断言又将其剔除"这种前后矛盾的日志
+                    console.warn(`⚠️ PRIMARY_GROUP_NAME=[${PRIMARY_GROUP_NAME}] 不符合代理组要求（命中保留目标/排除词，或不允许作为总控组），回退到自动识别`);
+                } else if (!VALID_PROXY_TYPES.has(_hit.g?.type) || !hasConfiguredNodeSource(_hit)) {
+                    console.warn(`⚠️ PRIMARY_GROUP_NAME=[${PRIMARY_GROUP_NAME}] 存在，但类型不受支持或未检测到配置代理目标来源（type: ${_hit.g?.type}, ${_nodeDesc(_hit.g)}），回退到自动识别`);
+                } else {
+                    entry = _hit;
+                    console.log(`✅ 代理组（手动指定 PRIMARY_GROUP_NAME）: [${entry.g.name}]`);
+                }
+            }
+            // tier2: 关键词命中。多个候选并列时，优先取 type === "select"（人工总控选择组的惯例类型），
+            // 命中多个候选时打印诊断日志列出全部候选，避免地区级 url-test 组（如含"自动"）或展示性 select 组
+            // （如含"订阅"的"📊 订阅信息"）单纯因为排在数组前面而被静默选中。仍需强调：这不是"顺序无关"——
+            // 无 select 候选、或多个候选类型相同时，胜出者依旧由数组声明顺序决定。
+            if (!entry) {
+                const _tier2Candidates = prepped.filter(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
+                    _KW_RE.test(e.clean) && hasConfiguredNodeSource(e));
+                entry = _tier2Candidates.find(e => e.g?.type === "select") || _tier2Candidates[0];
+                if (_tier2Candidates.length > 1) {
+                    console.warn(`⚠️ tier2 命中 ${_tier2Candidates.length} 个候选组，已选 [${entry?.g?.name}] (type: ${entry?.g?.type})，`
+                        + `其余候选: ${_tier2Candidates.filter(e => e !== entry).map(e => `[${e.g.name}](${e.g.type})`).join("、")}`);
+                }
+            }
+            // tier3: 仅当 tier2 全表落空时，才接受包含 include-all 的合格策略组（此时数组顺序才会成为决定因素）
+            if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) &&
+                (e.g?.["include-all"] === true || e.g?.["include-all"] === "true") && hasConfiguredNodeSource(e));
+            // tier4: 放宽名称限制
+            if (!entry) entry = prepped.find(e => e.eligible && !e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && hasConfiguredNodeSource(e));
+            // tier5: 降级使用兜底组
+            if (!entry) {
+                entry = prepped.find(e => e.fallback && VALID_PROXY_TYPES.has(e.g?.type) && hasConfiguredNodeSource(e));
+                if (entry) console.warn(`⚠️ 降级使用兜底组 [${entry.g.name}]`);
+            }
+            // tier6: 最终容错
+            if (!entry) {
+                entry = prepped.find(e => e.eligible && e.g?.type != null && !NONROUTABLE_TYPES.has(e.g?.type) && hasConfiguredNodeSource(e));
+                if (entry) console.warn(`🚨 已进入最终容错，选取代理组 [${entry.g.name}]`);
+            }
+
+            if (entry?.g?.name) {
+                if (entry.g.name !== entry.clean) { console.error(`❌ 代理组名含首尾空格或不可见字符`); throw new Error("proxy-group-setup-aborted: 代理组名含首尾空格或不可见字符"); }
+                proxyGroupName = entry.g.name;
+                console.log(`${entry.fallback ? "⚠️" : "✅"} 代理组: [${proxyGroupName}] (type: ${entry.g.type ?? "?"})`);
+            } else {
+                console.error("❌ 无可用代理组，中止注入");
+                prepped.forEach(({ g, eligible, fallback }, idx) => {
+                    const status = !eligible ? "❌" : (fallback ? "⚠️" : "✅");
+                    console.log(`   ${idx + 1}. ${status} [${g?.name}] (${g?.type ?? "?"}, ${_nodeDesc(g)})`);
+                });
+                throw new Error("proxy-group-setup-aborted: 无可用代理组");
+            }
+        } else {
+            console.error("❌ proxy-groups 为空，中止注入");
+            throw new Error("proxy-group-setup-aborted: proxy-groups 为空");
         }
-    }
-    // 结构字符校验：proxyGroupName 若含 ,[]{} 会破坏 "TYPE,domain,ACTION" 规则字符串结构
-    if (/[,\[\]{}]/u.test(proxyGroupName)) {
-        console.error(`❌ 代理组名含非法字符`); throw new Error("proxy-group-setup-aborted: 代理组名含非法字符");
-    }
-    // 防御性校验：确保识别的代理组仍存在于原数组中
-    if (!config["proxy-groups"].some(g => g?.name === proxyGroupName)) {
-        console.error(`❌ 代理组 [${proxyGroupName}] 不存在`); throw new Error("proxy-group-setup-aborted: 代理组不存在于原数组");
+
+        // 代理组排除断言
+        {
+            const s = sanitizeName(proxyGroupName);
+            if (!s || EXCLUDED_NAMES.has(s.toUpperCase()) || EXCLUDED_CN_RE.test(s)) {
+                console.error(`❌ 代理组排除断言触发：[${proxyGroupName}]`); throw new Error("proxy-group-setup-aborted: 代理组排除断言触发");
+            }
+        }
+        // 结构字符校验：proxyGroupName 若含 ,[]{} 会破坏 "TYPE,domain,ACTION" 规则字符串结构
+        if (/[,\[\]{}]/u.test(proxyGroupName)) {
+            console.error(`❌ 代理组名含非法字符`); throw new Error("proxy-group-setup-aborted: 代理组名含非法字符");
+        }
+        // 防御性校验：确保识别的代理组仍存在于原数组中
+        if (!config["proxy-groups"].some(g => g?.name === proxyGroupName)) {
+            console.error(`❌ 代理组 [${proxyGroupName}] 不存在`); throw new Error("proxy-group-setup-aborted: 代理组不存在于原数组");
+        }
     }
 
     // ═══════════════ 2. 数据层 ═══════════════
