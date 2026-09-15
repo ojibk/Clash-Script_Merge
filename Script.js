@@ -173,8 +173,8 @@ function main(config) {
     const NONROUTABLE_TYPES = new Set(["relay","url-latency-benchmark"]);
 
     // ═══════════════ 基础控制字符集（清洗和校验共用） ═══════════════
-    const _CONTROL_CHARS = "\u0000-\u001F\u007F\u0085\u00AD\u061C\u2000-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\uFEFF"; // 用于清除代理组名中可能破坏匹配或规则结构的不可见字符；
-    // .trim() 负责清理首尾可识别空白；此正则额外清理出现在名称中间位置的控制/格式字符。
+    const _CONTROL_CHARS = "\u0000-\u001F\u007F\u0085\u00AD\u061C\u2000-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u2069\uFEFF";
+    // 用于清除代理组名中可能破坏匹配或规则结构的控制字符及零宽/格式类不可见字符（含软连字符等条件性可见字符）；.trim() 负责清理首尾可识别空白；此正则额外清理出现在名称中间位置的控制/格式字符。
 
     const _SANITIZE_RE = new RegExp(`[${_CONTROL_CHARS}]`, "gu");
     const sanitizeName = n => (typeof n === "string" && n) ? n.replace(_SANITIZE_RE, '').trim() : "";
